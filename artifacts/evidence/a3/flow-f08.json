@@ -1,0 +1,53 @@
+{
+  "proposal_id": "prp_e4bf93119047401b84a9",
+  "proposal_status": "validated",
+  "approval_status": "approved",
+  "commit_status": "committed",
+  "committed_change_set": "cs_2aeda29c318044679d74",
+  "task_found": true,
+  "mcp_call_after_revoke": {
+    "called": true,
+    "isError": true,
+    "text": "{\"error\":{\"code\":\"PROVIDER_UNAVAILABLE\",\"message\":\"Core returned HTTP 403: {\\\"schema\\\":\\\"zodo.error/1\\\",\\\"request_id\\\":\\\"mcp-d15750788c8b410280b2e645c9cc143b\\\",\\\"error\\\":{\\\"code\\\":\\\"PERMISSION_DENIED\\\",\\\"message\\\":\\\"channel mcp_stdio has been revoked by the workspace owner\\\",\\\"retryable\\\":false,\\\"de"
+  },
+  "restore_status": 200,
+  "audit": {
+    "change_committed": true,
+    "channel_revocation_event": false,
+    "event_count": 100
+  },
+  "transcript": [
+    {
+      "mcp_propose": {
+        "intent": "FLOW-F08 external agent proposal",
+        "ok": true,
+        "proposal_id": "prp_e4bf93119047401b84a9",
+        "status": "validated"
+      }
+    },
+    {
+      "operation": "proposal.approve",
+      "status": 200,
+      "result_status": "approved"
+    },
+    {
+      "operation": "changes.commit",
+      "status": 200,
+      "result_status": "committed"
+    },
+    {
+      "mcp_revoke": {
+        "status": 200,
+        "body": {
+          "channel": "mcp_stdio",
+          "revoked": true,
+          "revoked_channels": [
+            "mcp_stdio"
+          ],
+          "schema": "zodo.auth/1"
+        }
+      }
+    }
+  ],
+  "agent_cannot_self_approve": true
+}

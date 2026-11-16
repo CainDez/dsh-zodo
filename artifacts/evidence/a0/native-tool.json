@@ -1,0 +1,323 @@
+{
+  "approvalClicked": false,
+  "doneSeen": true,
+  "bodyText": "新会话\nCtrl\n+\nAlt\n+\nN\n插件\n自动化任务\n更多\n工作区\n默认工作区\n进行中\n请调用 zodo_probe 工具，method 参\n刚刚\n未命名\n5分钟\n未命名\n19分钟\n更多\n请调用 zodo_probe 工具，method 参\n标准模式\n对话\n轨迹\n请调用 zodo_probe 工具，method 参数为 ping。调用完成后只回复 done。\n23:34\n深度求索中\n深度求索中，用时 1秒 ···\n发消息或创建任务, / 调用指令, @ 文件或对话\n工作区内修改\nQwen 3.5 local\nZodo",
+  "buttons": [
+    {
+      "text": "",
+      "aria": "新建会话",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "收起侧边栏",
+      "testid": null
+    },
+    {
+      "text": "新会话\nCtrl\n+\nAlt\n+\nN",
+      "aria": "新建会话",
+      "testid": null
+    },
+    {
+      "text": "插件",
+      "aria": "插件",
+      "testid": null
+    },
+    {
+      "text": "自动化任务",
+      "aria": "自动化任务",
+      "testid": null
+    },
+    {
+      "text": "更多",
+      "aria": "更多",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "搜索会话",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "视图选项",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "添加工作区",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "工作区“默认工作区”的操作",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "在“默认工作区”中新建会话",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "会话“请调用 zodo_probe 工具，method 参”的操作",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "归档会话",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "置顶会话",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "会话“未命名”的操作",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "归档会话",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "置顶会话",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "会话“未命名”的操作",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "归档会话",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "置顶会话",
+      "testid": null
+    },
+    {
+      "text": "更多",
+      "aria": "账号菜单",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "更多操作",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "打开右侧边栏",
+      "testid": null
+    },
+    {
+      "text": "对话",
+      "aria": null,
+      "testid": null
+    },
+    {
+      "text": "轨迹",
+      "aria": null,
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "更多会话视图",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "复制",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "添加文件或调用指令",
+      "testid": null
+    },
+    {
+      "text": "工作区内修改",
+      "aria": "访问模式，当前：工作区内修改",
+      "testid": null
+    },
+    {
+      "text": "Qwen 3.5 local",
+      "aria": "选择模型，当前 Qwen 3.5 local",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "停止生成",
+      "testid": null
+    },
+    {
+      "text": "Zodo",
+      "aria": null,
+      "testid": "zodo-a0-open"
+    },
+    {
+      "text": "",
+      "aria": "新标签页",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "分栏",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "全屏",
+      "testid": null
+    },
+    {
+      "text": "",
+      "aria": "收起右侧边栏",
+      "testid": null
+    }
+  ],
+  "consoleMessages": [],
+  "pageErrors": [],
+  "responses": [
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/settings/describe"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/dynamicCordisRunner/syncInspectManifest"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/credentials/describe"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/dynamicCordisRunner/inventory"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/session/modelCatalog"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/agentPresets/list"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/credentials/describe"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/credentials/describe"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/credentials/describe"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/permissionPresets/catalog"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/dynamicCordisRunner/inventory"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/agentPresets/list"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/agentPresets/list"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/session/modelCatalog"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/settings/describe"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/session/list"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/dynamicCordisRunner/syncInspectManifest"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/credentials/describe"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/credentials/describe"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/credentials/describe"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/llm/listProviders"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/llm/listConfigurableProviders"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/session/modelCatalog"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/credentials/describe"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/credentials/describe"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/session/create"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/agentPresets/list"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/schedule/catalog"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/commands/list"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/skills/list"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/agentPresets/list"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/schedule/list"
+    },
+    {
+      "status": 200,
+      "url": "http://127.0.0.1:3181/api/session/prompt"
+    }
+  ]
+}

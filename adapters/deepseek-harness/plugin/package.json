@@ -1,0 +1,41 @@
+{
+  "name": "@zodo/harness-plugin",
+  "version": "0.1.0-a0",
+  "private": true,
+  "description": "Zodo for DeepSeek Harness: A0 bridge probe and the first Zodo workbench shell.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.3 <0.3.0"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "privacy.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "bin/win32-x64/zodo-a0-probe.exe",
+    "bin/win32-x64/zodo-core.exe"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  }
+}

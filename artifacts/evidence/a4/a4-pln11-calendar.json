@@ -1,0 +1,17 @@
+{
+  "first_status": 200,
+  "first_events": 2,
+  "second_status": 200,
+  "second_events": 3,
+  "second_external_ids": [
+    "ext-会议一",
+    "ext-会议三",
+    "ext-会议二"
+  ],
+  "replace_status": 200,
+  "replace_events": 1,
+  "bad_status": 422,
+  "bad_code": "VALIDATION_FAILED",
+  "events_after_bad": 1,
+  "source_last_sync": "2026-10-24T18:29:43.944827900Z"
+}

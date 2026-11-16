@@ -1,0 +1,30 @@
+{
+  "version": "1.3",
+  "stage": "harness_first_design_handoff",
+  "direction": "clear-day",
+  "first_ui": "deepseek-harness-plugin",
+  "key_visual_references": 7,
+  "new_harness_screenshots": 0,
+  "screen_families_specified": 30,
+  "dialog_families_specified": 16,
+  "core_flows_specified": 8,
+  "full_scope": [
+    "P0",
+    "P1",
+    "P2",
+    "later Flutter clients"
+  ],
+  "all_states_drawn": false,
+  "harness_plugin_implemented": false,
+  "harness_integration_tested": false,
+  "clickable_flutter_prototype": false,
+  "rust_kernel_implemented": false,
+  "real_model_validated": false,
+  "platform_runtime_validated": [],
+  "document_render_review": "passed",
+  "document_pages": {
+    "documents/Zodo软件设计方案.docx": 29,
+    "documents/Zodo持续开发计划.docx": 6,
+    "documents/清晰日程视觉参考册.docx": 9
+  }
+}

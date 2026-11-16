@@ -1,0 +1,13 @@
+{
+  "first_count": 2,
+  "first_next_cursor": "ev_2",
+  "second_count": 1,
+  "second_types": [
+    "workspace.changed"
+  ],
+  "duplicate_count": 0,
+  "future_resync_required": true,
+  "limited_has_more": true,
+  "limited_next_cursor": "ev_1",
+  "all_queries_ok": true
+}

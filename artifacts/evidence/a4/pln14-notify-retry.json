@@ -1,0 +1,47 @@
+{
+  "reminder_status": 200,
+  "reminder_body": {
+    "schema": "zodo.result/1",
+    "request_id": "pln14",
+    "operation_id": "op_049d5da8c306405a8865",
+    "status": "committed",
+    "revision": 1,
+    "data": {
+      "changes": [
+        {
+          "action": "created",
+          "id": "rem_1cb31bbfe2244e609fbf",
+          "kind": "reminder"
+        }
+      ],
+      "warnings": []
+    },
+    "event_cursor": "ev_1",
+    "replayed": false
+  },
+  "failure_log": {
+    "attempts": 1,
+    "backend": "windows_toast",
+    "delivered": false,
+    "effect_id": "eff_61b9eef109f34b73991f",
+    "error": "Windows toast exited Some(1): ",
+    "message": "PLN14 通知恢复测试",
+    "reminder_id": "rem_1cb31bbfe2244e609fbf",
+    "schema": "zodo.notification/1",
+    "title": "Zodo 提醒"
+  },
+  "recovery_log": {
+    "attempts": 2,
+    "backend": "windows_toast",
+    "delivered": true,
+    "effect_id": "eff_61b9eef109f34b73991f",
+    "error": null,
+    "message": "PLN14 通知恢复测试",
+    "reminder_id": "rem_1cb31bbfe2244e609fbf",
+    "schema": "zodo.notification/1",
+    "title": "Zodo 提醒"
+  },
+  "failure_delivered": false,
+  "recovery_delivered": true,
+  "script_restored": true
+}

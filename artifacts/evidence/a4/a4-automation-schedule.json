@@ -1,0 +1,29 @@
+{
+  "rule_id": "aut_2fbcdedcbf65405fb619",
+  "title": "调度器自动任务 1792863674",
+  "rule": {
+    "actions": [
+      {
+        "kind": "task.create",
+        "task": {
+          "estimate_minutes": 5,
+          "title": "调度器自动任务 1792863674"
+        }
+      }
+    ],
+    "budget": 2,
+    "conditions": {
+      "interval_seconds": 60
+    },
+    "created_at": "2026-10-24T17:41:14.122513300Z",
+    "enabled": true,
+    "id": "aut_2fbcdedcbf65405fb619",
+    "last_run_at": "2026-10-24T17:41:15.422846500Z",
+    "name": "调度器测试 1792863674",
+    "runs": 1,
+    "trigger": "schedule",
+    "workspace_id": "ws_local"
+  },
+  "task_found": true,
+  "create_status": 200
+}

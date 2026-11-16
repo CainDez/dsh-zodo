@@ -1,0 +1,8 @@
+{
+  "activeBefore": "☰\n打开任务\nTasks",
+  "activeAfter": "□\n新建任务\n直接创建正式任务",
+  "dialogsAfterEnter": 1,
+  "taskView": true,
+  "closedDialogs": 0,
+  "errs": []
+}

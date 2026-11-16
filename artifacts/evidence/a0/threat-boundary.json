@@ -1,0 +1,17 @@
+{
+  "same_uid": "<user>",
+  "sqlite_header_readable_hex": "53514c69746520666f726d6174203300",
+  "sqlite_bytes_first_read": 16,
+  "runtime_json_readable": true,
+  "runtime_host": "127.0.0.1",
+  "runtime_port": 50063,
+  "runtime_token_fields_present": [
+    "agent",
+    "cli",
+    "mcp",
+    "ui"
+  ],
+  "token_values_recorded": false,
+  "limitation": "same OS user can read Core SQLite/runtime config and bypass RPC boundary; no OS sandbox is claimed",
+  "recovery": "deploy Core under a separate OS identity/VM with ACL and network isolation, then re-run this check"
+}

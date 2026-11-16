@@ -1,0 +1,70 @@
+{
+  "schema": "zodo.ai-eval/1",
+  "frozen_at": "2026-10-25T02:20:00+08:00",
+  "source": "A3 local model run run_7221b99885ec4400889b83abd59ca529, checkpoint extracted from artifacts/evidence/a3/a3-model-run.json",
+  "model": "aravhawk/qwen3.5-opus-4.6:latest",
+  "provider": "local-ollama",
+  "cases": [
+    {
+      "id": "goal-decompose-portfolio-v2",
+      "kind": "goal.decompose",
+      "input": {
+        "goal_title": "完成作品集第二版",
+        "success_criteria": "首页与三篇案例说明上线，链接可用，移动端可读",
+        "target_due": "2026-11-08"
+      },
+      "prediction": {
+        "assumptions": [
+          "User has access to all necessary content and assets for the three case studies",
+          "Portfolio platform is already set up and accessible",
+          "No major design changes are needed beyond what's in portfolio v2",
+          "Publishing process follows standard workflow without unexpected delays"
+        ],
+        "questions": [
+          "What specific content gaps exist for the three case studies that need to be filled?",
+          "Are there any brand guidelines or style preferences I should follow for the homepage design?",
+          "Is there a preferred portfolio platform or CMS for publishing the final version?",
+          "What are the most critical success metrics beyond the stated criteria?",
+          "Are there any stakeholders who need to review content before final publish?",
+          "What is the expected timeline for gathering case study materials from clients or internal sources?"
+        ],
+        "tasks": [
+          {"title": "Gather and organize content for all three case studies", "estimate_minutes": 90, "priority": 1, "target_due": "2026-11-08"},
+          {"title": "Draft homepage copy and visual structure", "estimate_minutes": 60, "priority": 2, "target_due": "2026-11-08"},
+          {"title": "Review and refine case study narratives for clarity and impact", "estimate_minutes": 90, "priority": 2, "target_due": "2026-11-08"},
+          {"title": "Design homepage mockup with visual hierarchy", "estimate_minutes": 120, "priority": 2, "target_due": "2026-11-08"},
+          {"title": "Build and populate case study pages in portfolio platform", "estimate_minutes": 180, "priority": 2, "target_due": "2026-11-08"},
+          {"title": "Conduct online publish check and cross-browser testing", "estimate_minutes": 60, "priority": 2, "target_due": "2026-11-08"},
+          {"title": "Final review against success criteria checklist", "estimate_minutes": 30, "priority": 1, "target_due": "2026-11-08"}
+        ]
+      },
+      "expect": {"min_tasks": 3, "max_tasks": 12, "min_questions": 0, "max_questions": 8, "duplicate_titles_forbidden": true}
+    },
+    {
+      "id": "goal-decompose-empty",
+      "kind": "goal.decompose",
+      "input": {"goal_title": "澄清一个模糊目标", "success_criteria": "明确下一步", "target_due": null},
+      "prediction": {"tasks": [], "assumptions": [], "questions": ["你希望先澄清目标还是先收集素材？"]},
+      "expect": {"min_tasks": 1, "max_tasks": 12, "min_questions": 0, "max_questions": 8, "duplicate_titles_forbidden": true},
+      "must_fail": true,
+      "must_fail_reason": "empty task list must be rejected by the kernel/model-output validator"
+    },
+    {
+      "id": "goal-decompose-bad-estimate",
+      "kind": "goal.decompose",
+      "input": {"goal_title": "一个需要过短估算的反例", "success_criteria": null, "target_due": null},
+      "prediction": {
+        "tasks": [
+          {"title": "过短估算", "estimate_minutes": 1, "priority": 2, "target_due": null},
+          {"title": "重复标题", "estimate_minutes": 30, "priority": 2, "target_due": null},
+          {"title": "重复标题", "estimate_minutes": 30, "priority": 2, "target_due": null}
+        ],
+        "assumptions": [],
+        "questions": []
+      },
+      "expect": {"min_tasks": 1, "max_tasks": 12, "min_questions": 0, "max_questions": 8, "duplicate_titles_forbidden": true},
+      "must_fail": true,
+      "must_fail_reason": "estimate below 15 and duplicate titles must be rejected"
+    }
+  ]
+}

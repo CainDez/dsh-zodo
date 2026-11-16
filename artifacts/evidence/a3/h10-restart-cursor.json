@@ -1,0 +1,12 @@
+{
+  "first_cursor": "ev_1",
+  "restart_status": 200,
+  "new_events": 1,
+  "new_event_types": [
+    "workspace.changed"
+  ],
+  "resync_required": false,
+  "next_cursor": "ev_2",
+  "same_workspace": true,
+  "same_instance": false
+}

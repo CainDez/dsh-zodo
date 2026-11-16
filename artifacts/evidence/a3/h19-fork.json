@@ -1,0 +1,14 @@
+{
+  "source_session_id": "session-ca9c70b5-f5ca-4017-a779-1932f8686cc4",
+  "fork_status": 200,
+  "fork_error": null,
+  "child_session_id": "session-9db54f25-efbe-4a90-8b9f-bab5f8888677",
+  "core_revision_before": 75,
+  "core_revision_after": 75,
+  "tasks_before": 28,
+  "tasks_after": 28,
+  "notes_before": 0,
+  "notes_after": 0,
+  "page_errors": [],
+  "facts_duplicated": false
+}

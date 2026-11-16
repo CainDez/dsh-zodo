@@ -1,0 +1,21 @@
+{
+  "schema": "zodo.result/1",
+  "request_id": "req_123",
+  "operation_id": "op_456",
+  "status": "committed",
+  "revision": 43,
+  "data": {
+    "change_set_id": "cs_18",
+    "changed_task_ids": [
+      "task_6"
+    ],
+    "effects": [
+      {
+        "id": "eff_2",
+        "status": "pending"
+      }
+    ]
+  },
+  "event_cursor": "ev_109",
+  "replayed": false
+}

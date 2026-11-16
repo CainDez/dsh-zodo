@@ -1,0 +1,53 @@
+# Local-only reference checkouts and runtime state
+.upstream/
+.runtime/
+design/v1.3-ORIGINAL.zip
+adapters/deepseek-harness/reference/
+
+# Rust
+target/
+**/target/
+*.pdb
+
+# Node
+node_modules/
+**/node_modules/
+.pnpm-store/
+*.tgz
+
+# Harness plugin build output
+adapters/deepseek-harness/plugin/bin/
+adapters/deepseek-harness/plugin/dist/
+
+# Flutter / Dart
+.dart_tool/
+build/
+apps/flutter/build/
+apps/flutter/.flutter-plugins
+apps/flutter/.flutter-plugins-dependencies
+
+# Test and runtime artifacts
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.log
+artifacts/tmp/
+coverage/
+
+# Supplied design reference assets remain on disk, not duplicated into git.
+design/v1.3/prototype/screens/
+design/v1.3/documents/
+design/v1.3/assets/
+# Supplied design archive is preserved on disk; the extracted text snapshot is tracked.
+Zodo-Harness首期插件-完整设计与开发计划-v1.3.zip
+/*.zip
+artifacts/release/
+
+# Local evidence: raw session transcripts and machine-specific captures stay private
+artifacts/evidence/a0/session-*.jsonl
+artifacts/evidence/a0/native-session-events.json
+artifacts/evidence/a2/*.jsonl
+artifacts/evidence/a2/capture_*.py
+artifacts/evidence/a2/extract_latest_session.py
+artifacts/evidence/regression-*/
+artifacts/evidence/a2/native-tools-session.txt

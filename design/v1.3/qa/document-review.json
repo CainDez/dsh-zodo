@@ -1,0 +1,459 @@
+{
+  "date": "2026-10-24",
+  "renderer": "WPS COM ExportAsFixedFormat then PDFium 1.5x",
+  "automated_checks": "passed",
+  "manual_visual_review": "passed",
+  "documents": [
+    {
+      "key": "software",
+      "file": "documents/Zodo软件设计方案.docx",
+      "sha256": "ad7e5de53e3e05b3d205dfb8e2a1f94959e6cd8222c19d8adace350620693f61",
+      "pdf_sha256": "fa665c475285b67bf2cd940223c6b03d06867e1b63d569325c06d5f9a39a93ac",
+      "pages": 29,
+      "inline_images": 1,
+      "page_reviews": [
+        {
+          "page": 1,
+          "render_sha256": "677a46aa9d24aea9dbb6fef6d566c321d082838786602bb43192f806af429610",
+          "text_characters": 415,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 2,
+          "render_sha256": "b28ce5ca2102439cd678eb1194e227553c5803a022a430e6e319e0a0473253a2",
+          "text_characters": 1128,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 3,
+          "render_sha256": "227655515f5c9a2857255ae6ef6590023aaaf4fca77b009793c9fa1e5c89ee79",
+          "text_characters": 1051,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 4,
+          "render_sha256": "a62cb41d0e19e849e805adf23fac9b73356aaf8ad23069df0d54004404327a74",
+          "text_characters": 1085,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 5,
+          "render_sha256": "41c97f43032143dae8c190742635ee8ec60927dadefe3f9138cf6d2b939d7525",
+          "text_characters": 1036,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "final changed original PNG opened by root",
+          "reviewer": "/root"
+        },
+        {
+          "page": 6,
+          "render_sha256": "3489c3c44c115a23efac1cfd6b3e959643c2d33d16e2231699f641814e19a811",
+          "text_characters": 1051,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 7,
+          "render_sha256": "d4f733c4151350eb5369b14a0b6cb0d9693129f8414075a69375961a7208b335",
+          "text_characters": 911,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 8,
+          "render_sha256": "8e6aebd9978529329444080e75a61d844be54326a5651e4faa16b87973d89c41",
+          "text_characters": 1053,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 9,
+          "render_sha256": "2e678a4b978cc71d7d7dc112ba14c0bfa321eb0a5c76f081aa8d8d1b14025c6c",
+          "text_characters": 1087,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 10,
+          "render_sha256": "ec3f1e1cb75eb9d2f8378996254c52fd8f91c27d03c80b4163f2a3c7a8051574",
+          "text_characters": 832,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 11,
+          "render_sha256": "3a74eb7d85ac172fea7838c6d516cc87a60d5ffab57983d505d45cc2f6ccbe98",
+          "text_characters": 1000,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 12,
+          "render_sha256": "c09f16aedde55619c6eb5f59e44ce103d6bd5edd3346d01556a04952fc7a1605",
+          "text_characters": 733,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 13,
+          "render_sha256": "ba2e5ee7c1b0a3d164fa426431eece651c55d45e6b1df8e526fd4ca632862c11",
+          "text_characters": 1246,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 14,
+          "render_sha256": "50580f5bdb9dd42183601fb7ed5301fa1d44ac1c4e998b7b05f2ac8f8c0ec124",
+          "text_characters": 1241,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 15,
+          "render_sha256": "a2d85e744a578974cdeb633a5a4698e0af97cffc5ce4420488c1e4af6e945ee7",
+          "text_characters": 1275,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/current_architecture"
+        },
+        {
+          "page": 16,
+          "render_sha256": "5291928333bfce910ad3878ac254eefce0f5587cfbfa334a102b747a1909fb41",
+          "text_characters": 1424,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 17,
+          "render_sha256": "7b0dcfd8557528280892af6c951804d77194f8bf068cb977077fa2cd6cb60ac4",
+          "text_characters": 1718,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 18,
+          "render_sha256": "3a04e0a88cc081ac92566b9b79c1dab9622a2503d818f969b559270cb99393fa",
+          "text_characters": 959,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 19,
+          "render_sha256": "45cc8798e16968c957980faef3ad81f31c64ab6fcd476dfc32c5f2a9ee666aa8",
+          "text_characters": 1118,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 20,
+          "render_sha256": "ecfb1cd092cd6ba7300c4b831377228cc0ff48e2d6e2b773a0f45d5c9a47c24f",
+          "text_characters": 813,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 21,
+          "render_sha256": "e6998e3d321096b12c94d9c0258f0e6fc898f29a3a1d86b98b4d2b4045776693",
+          "text_characters": 941,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 22,
+          "render_sha256": "850b8c7f7481f717b5b286c43e223b27b61ed892e411393af491bebf0ddbecf4",
+          "text_characters": 1092,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 23,
+          "render_sha256": "efc20d78d28f9d7f3d81186d3e98e6f35019a530a497769bc4c45ad4529fd2c1",
+          "text_characters": 962,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 24,
+          "render_sha256": "2ea9a7863625702830e86bed78e6c836f826dced8ba5017c174682eb6c494055",
+          "text_characters": 897,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 25,
+          "render_sha256": "a2ca82ae246ff6426b308f9a5695bdd49f103f89c39faf1b58656f792344cfbf",
+          "text_characters": 1394,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 26,
+          "render_sha256": "edd61cd923bfd06ae0533245d245883b5a025ae6a54ae57d28ddcb0fd3497891",
+          "text_characters": 1198,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 27,
+          "render_sha256": "7893f59c80f697529948f7c4e280cb33915ff79d85f3d0be224af95dbd47594d",
+          "text_characters": 1198,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 28,
+          "render_sha256": "ccd97f2816095eb30585b5c5f2b342d7005c8c42f254531f845d5f9edcfe41f7",
+          "text_characters": 1351,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 29,
+          "render_sha256": "d07572421e919c2660f6f886142bbd7e38ccf786af439763fbc895ab6da36777",
+          "text_characters": 560,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "final changed original PNG opened by root",
+          "reviewer": "/root"
+        }
+      ],
+      "initial_reviewed_docx_sha256": "241f4c82156017e11ff8967e4567ec348d4ff48d785a75b2f862d8a0c7ed2ef2",
+      "initial_reviewers": {
+        "1-15": "/root/current_architecture",
+        "16-29": "/root/kernel_design"
+      },
+      "changed_pages_reinspected_by_root": [
+        5,
+        29
+      ]
+    },
+    {
+      "key": "plan",
+      "file": "documents/Zodo持续开发计划.docx",
+      "sha256": "9c37b8e777f8dc32a77c2180c0631ed57476fa4936e55dd0e9e5dbf66da05c47",
+      "pdf_sha256": "85f95c4f5aa34a61a26150269641d75ea397e57d87afcdda233c9102a5de7521",
+      "pages": 6,
+      "inline_images": 0,
+      "page_reviews": [
+        {
+          "page": 1,
+          "render_sha256": "a5b01078695005492cefdaee423585a13f84c13d0b99c04e994543f51fd87c9a",
+          "text_characters": 1112,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 2,
+          "render_sha256": "2016441dacdd73e756feab7a59905dd788bd8658d6b031dbb8426d59d1e7d2fe",
+          "text_characters": 1153,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 3,
+          "render_sha256": "4277a05fcd2fe18e141b6777432206f535458946911adf24593ca65dcb88f7f4",
+          "text_characters": 1169,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 4,
+          "render_sha256": "d139fa2315479fd954e1ea6d3e7b448169bab6d2dfe8a6efe20bd37898b0a767",
+          "text_characters": 1092,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "final changed original PNG opened by root",
+          "reviewer": "/root"
+        },
+        {
+          "page": 5,
+          "render_sha256": "56902c4eae56fb42ff38ffddf2c58e945571e69a06f727b180cdf313e59cd311",
+          "text_characters": 1130,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        },
+        {
+          "page": 6,
+          "render_sha256": "a3fb775f8f8aba98270b76b612123bb1b506fea753381e4a5973de9dd18203b7",
+          "text_characters": 402,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root/kernel_design"
+        }
+      ],
+      "initial_reviewed_docx_sha256": "254678738a0b6eb6f0daf5c9217561c23f6e044f0e737967bd81a04558cd8e7f",
+      "initial_reviewers": {
+        "1-6": "/root/kernel_design"
+      },
+      "changed_pages_reinspected_by_root": [
+        4
+      ]
+    },
+    {
+      "key": "reference",
+      "file": "documents/清晰日程视觉参考册.docx",
+      "sha256": "afb8ee835adfb30909b83c88f294a5bfc426fb8cebd08e5f346353325611753b",
+      "pdf_sha256": "ed0c722d9f833d3ab8b1695bc9a2c3efd2e530785d8d2cf8fe0fd0e5eda61b93",
+      "pages": 9,
+      "inline_images": 7,
+      "page_reviews": [
+        {
+          "page": 1,
+          "render_sha256": "ae1a3e03471a18f3a59ad8f97f07864a4749865f53aa5a71f29b6aa0c2d1a53a",
+          "text_characters": 475,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root"
+        },
+        {
+          "page": 2,
+          "render_sha256": "ffd5d1e4c1fa8f1e97e2007e11abe5264c9add4297b376c8f06bf12c5aff0e02",
+          "text_characters": 349,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root"
+        },
+        {
+          "page": 3,
+          "render_sha256": "97c1a1065d81fbff5d9ad4d4a36fe517c7caa8ae8a1ffe14ef9787a474bf1052",
+          "text_characters": 93,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root"
+        },
+        {
+          "page": 4,
+          "render_sha256": "821c5eeddb6f4beab061e28bb40db11efc23e72071210b119be2610a1e54e663",
+          "text_characters": 96,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root"
+        },
+        {
+          "page": 5,
+          "render_sha256": "66b1f0479dce43c11b43417258fb42417e4abf2436aee580a78bdad3832f9f78",
+          "text_characters": 95,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root"
+        },
+        {
+          "page": 6,
+          "render_sha256": "8fe91ffec2828f6a0457e840b2005db826b69fbca030540cf97ce404518f5319",
+          "text_characters": 95,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root"
+        },
+        {
+          "page": 7,
+          "render_sha256": "da8a8c92e0aaeca95ba744386c794964c996fa897ff203304594d55109275238",
+          "text_characters": 95,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root"
+        },
+        {
+          "page": 8,
+          "render_sha256": "6970e845a900da00ca20eade0a07005a63b71dcb5551d074f933ca06e8a5d475",
+          "text_characters": 97,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root"
+        },
+        {
+          "page": 9,
+          "render_sha256": "9a8ee60dc31c78478ab8f2c79a620e0c9dd9fe69ab93cfb6fea933ccdfdce14f",
+          "text_characters": 94,
+          "out_of_page_glyphs": 0,
+          "manual_review": "passed",
+          "review_basis": "original PNG opened; unchanged SHA256 from reviewed initial rendering",
+          "reviewer": "/root"
+        }
+      ],
+      "initial_reviewed_docx_sha256": "bb152b2ad2b8047ade380fab98e0bc484c5c498663de172bcb1130b1124d6d7a",
+      "initial_reviewers": {
+        "1-9": "/root"
+      },
+      "changed_pages_reinspected_by_root": []
+    }
+  ],
+  "product_interaction_tested": false,
+  "reviewed_pages": 44,
+  "content_consistency_review": "passed after phase boundary corrections",
+  "source_review": "Core independence; A0/A2/A3 boundaries; permissions/log/privacy; lifecycle; full scope retained"
+}

@@ -1,0 +1,13 @@
+{
+  "reminder_id": "rem_251343fb698d42e18331",
+  "reminder_status_after_mark": "delivered",
+  "effect_rows": [
+    {
+      "status": "delivered",
+      "attempts": 0,
+      "last_error": ""
+    }
+  ],
+  "reconciled": true,
+  "note": "delivery result was recorded as delivered before the effect worker retried; worker must reconcile without a second toast"
+}

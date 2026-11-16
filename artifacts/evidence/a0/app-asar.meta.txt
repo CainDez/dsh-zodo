@@ -1,0 +1,8 @@
+﻿
+
+FullName      : C:\Users\<user>\AppData\Local\Programs\DeepSeek Harness\resources\app.asar
+Length        : 182434783
+LastWriteTime : 2026/10/23 16:00:56
+
+
+

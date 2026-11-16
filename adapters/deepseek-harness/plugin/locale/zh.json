@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Zodo",
+    "description": "独立 Rust 个人事务内核的 Harness 工作台与 Agent 工具。"
+  }
+}

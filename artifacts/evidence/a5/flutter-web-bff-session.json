@@ -1,0 +1,20 @@
+{
+  "responses": [
+    {
+      "url": "http://127.0.0.1:8090/zodo-bridge/v1/session",
+      "status": 200
+    },
+    {
+      "url": "http://127.0.0.1:8090/zodo-bridge/v1/rpc",
+      "status": 200
+    }
+  ],
+  "cookie": {
+    "httpOnly": true,
+    "sameSite": "Strict",
+    "path": "/zodo-bridge"
+  },
+  "urlHasToken": false,
+  "errors": [],
+  "note": "Host BFF session cookie minted; rpc returned 200; Flutter web rendered Today without URL token"
+}

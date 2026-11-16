@@ -1,0 +1,31 @@
+{
+  "schema": "zodo.ai-privacy-eval/1",
+  "source": "A3 ai11-cloud-stub cloud request",
+  "forbidden": [
+    "device-only secret body",
+    "api_key",
+    "Bearer"
+  ],
+  "required": [
+    "云路由目标"
+  ],
+  "request": {
+    "format": "json",
+    "messages": [
+      {
+        "content": "You are the planning component of Zodo, a personal operations system. Return ONLY a JSON object. Do not include prose. The object must have this shape: {\"tasks\":[{\"title\":\"...\",\"estimate_minutes\":30,\"priority\":2,\"target_due\":\"YYYY-MM-DD or null\"}],\"assumptions\":[\"...\"],\"questions\":[\"...\"]}. Produce 3 to 7 concrete tasks, each independently executable, with estimates between 15 and 240 minutes. Do not invent facts about the user. Put uncertainty into questions.",
+        "role": "system"
+      },
+      {
+        "content": "Goal: 云路由目标\nSuccess criteria: 产出三个任务\nTarget due: (none)\n",
+        "role": "user"
+      }
+    ],
+    "model": "stub-cloud-model",
+    "response_format": {
+      "type": "json_object"
+    },
+    "stream": false,
+    "temperature": 0.1
+  }
+}

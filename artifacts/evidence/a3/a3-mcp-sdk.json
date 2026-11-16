@@ -1,0 +1,205 @@
+{
+  "server": {
+    "name": "zodo",
+    "version": "0.1.0"
+  },
+  "tools": [
+    "zodo_list_tasks",
+    "zodo_propose",
+    "zodo_plan_propose",
+    "zodo_get_proposal"
+  ],
+  "listPayload": {
+    "ok": true,
+    "revision": 28,
+    "tasks": [
+      {
+        "estimate_minutes": 45,
+        "id": "tsk_14ee523f0a3a4ecabc44",
+        "priority": 2,
+        "status": "open",
+        "target_due": null,
+        "title": "筛选 3 个项目素材"
+      },
+      {
+        "estimate_minutes": 30,
+        "id": "tsk_4414fc25b95c4f6f8828",
+        "priority": 2,
+        "status": "open",
+        "target_due": "2026-10-26",
+        "title": "每周整理案例素材"
+      },
+      {
+        "estimate_minutes": 45,
+        "id": "tsk_ba31bfb3a3d94978a1d2",
+        "priority": 1,
+        "status": "open",
+        "target_due": "2026-10-28",
+        "title": "Select and finalize the 3 projects to feature in Portfolio v2"
+      },
+      {
+        "estimate_minutes": 60,
+        "id": "tsk_fcae55111d7443b9aa30",
+        "priority": 2,
+        "status": "open",
+        "target_due": "2026-10-29",
+        "title": "Create online display structure (choose platform, set up pages)"
+      },
+      {
+        "estimate_minutes": 90,
+        "id": "tsk_1c3c0f39e86440238cc1",
+        "priority": 1,
+        "status": "open",
+        "target_due": "2026-10-29",
+        "title": "Draft case descriptions for all 3 selected projects"
+      },
+      {
+        "estimate_minutes": 45,
+        "id": "tsk_b9cf93001708437b93e1",
+        "priority": 2,
+        "status": "open",
+        "target_due": "2026-10-30",
+        "title": "Review and refine all content for clarity and impact"
+      },
+      {
+        "estimate_minutes": 30,
+        "id": "tsk_be15bbcf9ec04c14a11a",
+        "priority": 2,
+        "status": "open",
+        "target_due": "2026-10-30",
+        "title": "Upload project materials and verify all links work"
+      },
+      {
+        "estimate_minutes": 180,
+        "id": "tsk_0194c66c593b4faa88f8",
+        "priority": 3,
+        "status": "open",
+        "target_due": "2026-10-31",
+        "title": "Implement online showcase on chosen platform"
+      },
+      {
+        "estimate_minutes": 45,
+        "id": "tsk_1117c482cd874cd384c8",
+        "priority": 3,
+        "status": "open",
+        "target_due": "2026-10-31",
+        "title": "Test all links, navigation, and functionality"
+      },
+      {
+        "estimate_minutes": 90,
+        "id": "tsk_1b391927552e451d9a9f",
+        "priority": 2,
+        "status": "open",
+        "target_due": "2026-10-31",
+        "title": "Create visual mockups for online display layout"
+      }
+    ]
+  },
+  "planPayload": {
+    "assigned_minutes": 45,
+    "diagnostics": [],
+    "ok": true,
+    "proposal_id": "prp_ad9da76e495b45e8b492",
+    "status": "validated",
+    "unplaced_minutes": 0
+  },
+  "proposalPayload": {
+    "intent": "MCP 客户端测试：提交一个待人工审阅的任务",
+    "ok": true,
+    "proposal_id": "prp_a3fd963506a34c6883ed",
+    "status": "validated"
+  },
+  "fetchedPayload": {
+    "base_revision": 28,
+    "diagnostics": [],
+    "intent": "MCP 客户端测试：提交一个待人工审阅的任务",
+    "ok": true,
+    "preview": {
+      "added": [
+        {
+          "id": "tag_0489af5f35394b54b7ae",
+          "kind": "tag",
+          "summary": "tag_0489af5f35394b54b7ae"
+        },
+        {
+          "id": "tag_2e7df3abe46645e2b693",
+          "kind": "tag",
+          "summary": "tag_2e7df3abe46645e2b693"
+        },
+        {
+          "id": "tsk_cc7ab7108a164ac8bbfd",
+          "kind": "task",
+          "summary": "MCP 提议任务（尚未批准）"
+        }
+      ],
+      "changed": [],
+      "changes": [
+        {
+          "action": "created",
+          "id": "tsk_cc7ab7108a164ac8bbfd",
+          "kind": "task"
+        }
+      ],
+      "counts": {
+        "added": 3,
+        "total_after": 59,
+        "total_before": 56
+      },
+      "removed": [],
+      "warnings": []
+    },
+    "proposal_id": "prp_a3fd963506a34c6883ed",
+    "status": "validated"
+  },
+  "toolCalls": [
+    {
+      "name": "zodo_list_tasks",
+      "list": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"ok\":true,\"revision\":28,\"tasks\":[{\"estimate_minutes\":45,\"id\":\"tsk_14ee523f0a3a4ecabc44\",\"priority\":2,\"status\":\"open\",\"target_due\":null,\"title\":\"筛选 3 个项目素材\"},{\"estimate_minutes\":30,\"id\":\"tsk_4414fc25b95c4f6f8828\",\"priority\":2,\"status\":\"open\",\"target_due\":\"2026-10-26\",\"title\":\"每周整理案例素材\"},{\"estimate_minutes\":45,\"id\":\"tsk_ba31bfb3a3d94978a1d2\",\"priority\":1,\"status\":\"open\",\"target_due\":\"2026-10-28\",\"title\":\"Select and finalize the 3 projects to feature in Portfolio v2\"},{\"estimate_minutes\":60,\"id\":\"tsk_fcae55111d7443b9aa30\",\"priority\":2,\"status\":\"open\",\"target_due\":\"2026-10-29\",\"title\":\"Create online display structure (choose platform, set up pages)\"},{\"estimate_minutes\":90,\"id\":\"tsk_1c3c0f39e86440238cc1\",\"priority\":1,\"status\":\"open\",\"target_due\":\"2026-10-29\",\"title\":\"Draft case descriptions for all 3 selected projects\"},{\"estimate_minutes\":45,\"id\":\"tsk_b9cf93001708437b93e1\",\"priority\":2,\"status\":\"open\",\"target_due\":\"2026-10-30\",\"title\":\"Review and refine all content for clarity and impact\"},{\"estimate_minutes\":30,\"id\":\"tsk_be15bbcf9ec04c14a11a\",\"priority\":2,\"status\":\"open\",\"target_due\":\"2026-10-30\",\"title\":\"Upload project materials and verify all links work\"},{\"estimate_minutes\":180,\"id\":\"tsk_0194c66c593b4faa88f8\",\"priority\":3,\"status\":\"open\",\"target_due\":\"2026-10-31\",\"title\":\"Implement online showcase on chosen platform\"},{\"estimate_minutes\":45,\"id\":\"tsk_1117c482cd874cd384c8\",\"priority\":3,\"status\":\"open\",\"target_due\":\"2026-10-31\",\"title\":\"Test all links, navigation, and functionality\"},{\"estimate_minutes\":90,\"id\":\"tsk_1b391927552e451d9a9f\",\"priority\":2,\"status\":\"open\",\"target_due\":\"2026-10-31\",\"title\":\"Create visual mockups for online display layout\"}]}"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "name": "zodo_plan_propose",
+      "plan": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"assigned_minutes\":45,\"diagnostics\":[],\"ok\":true,\"proposal_id\":\"prp_ad9da76e495b45e8b492\",\"status\":\"validated\",\"unplaced_minutes\":0}"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "name": "zodo_propose",
+      "proposal": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"intent\":\"MCP 客户端测试：提交一个待人工审阅的任务\",\"ok\":true,\"proposal_id\":\"prp_a3fd963506a34c6883ed\",\"status\":\"validated\"}"
+          }
+        ],
+        "isError": false
+      }
+    },
+    {
+      "name": "zodo_get_proposal",
+      "fetched": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"base_revision\":28,\"diagnostics\":[],\"intent\":\"MCP 客户端测试：提交一个待人工审阅的任务\",\"ok\":true,\"preview\":{\"added\":[{\"id\":\"tag_0489af5f35394b54b7ae\",\"kind\":\"tag\",\"summary\":\"tag_0489af5f35394b54b7ae\"},{\"id\":\"tag_2e7df3abe46645e2b693\",\"kind\":\"tag\",\"summary\":\"tag_2e7df3abe46645e2b693\"},{\"id\":\"tsk_cc7ab7108a164ac8bbfd\",\"kind\":\"task\",\"summary\":\"MCP 提议任务（尚未批准）\"}],\"changed\":[],\"changes\":[{\"action\":\"created\",\"id\":\"tsk_cc7ab7108a164ac8bbfd\",\"kind\":\"task\"}],\"counts\":{\"added\":3,\"total_after\":59,\"total_before\":56},\"removed\":[],\"warnings\":[]},\"proposal_id\":\"prp_a3fd963506a34c6883ed\",\"status\":\"validated\"}"
+          }
+        ],
+        "isError": false
+      }
+    }
+  ],
+  "noApprovalTool": true
+}

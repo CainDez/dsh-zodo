@@ -1,0 +1,10 @@
+{
+  "schema": "zodo.error/1",
+  "request_id": "req_contract_error_1",
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "example validation failure",
+    "retryable": false,
+    "details": {}
+  }
+}

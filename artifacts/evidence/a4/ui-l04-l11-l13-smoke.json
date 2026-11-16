@@ -1,0 +1,146 @@
+{
+  "url": "http://127.0.0.1:3181/?token=<redacted>",
+  "views": [
+    {
+      "view": "today",
+      "ok": true,
+      "chars": 356,
+      "newPageErrors": []
+    },
+    {
+      "view": "inbox",
+      "ok": true,
+      "chars": 365,
+      "newPageErrors": []
+    },
+    {
+      "view": "goals",
+      "ok": true,
+      "chars": 237,
+      "newPageErrors": []
+    },
+    {
+      "view": "projects",
+      "ok": true,
+      "chars": 236,
+      "newPageErrors": []
+    },
+    {
+      "view": "habits",
+      "ok": true,
+      "chars": 247,
+      "newPageErrors": []
+    },
+    {
+      "view": "views",
+      "ok": true,
+      "chars": 203,
+      "newPageErrors": []
+    },
+    {
+      "view": "automation",
+      "ok": true,
+      "chars": 389,
+      "newPageErrors": []
+    },
+    {
+      "view": "tasks",
+      "ok": true,
+      "chars": 1360,
+      "newPageErrors": []
+    },
+    {
+      "view": "schedule",
+      "ok": true,
+      "chars": 1042,
+      "newPageErrors": []
+    },
+    {
+      "view": "proposals",
+      "ok": true,
+      "chars": 953,
+      "newPageErrors": []
+    },
+    {
+      "view": "runs",
+      "ok": true,
+      "chars": 818,
+      "newPageErrors": []
+    },
+    {
+      "view": "search",
+      "ok": true,
+      "chars": 148,
+      "newPageErrors": []
+    },
+    {
+      "view": "models",
+      "ok": true,
+      "chars": 738,
+      "newPageErrors": []
+    },
+    {
+      "view": "data",
+      "ok": true,
+      "chars": 535,
+      "newPageErrors": []
+    },
+    {
+      "view": "sync",
+      "ok": true,
+      "chars": 273,
+      "newPageErrors": []
+    },
+    {
+      "view": "settings",
+      "ok": true,
+      "chars": 506,
+      "newPageErrors": []
+    },
+    {
+      "view": "privacy",
+      "ok": true,
+      "chars": 494,
+      "newPageErrors": []
+    },
+    {
+      "view": "agents",
+      "ok": true,
+      "chars": 801,
+      "newPageErrors": []
+    },
+    {
+      "view": "audit",
+      "ok": true,
+      "chars": 4654,
+      "newPageErrors": []
+    },
+    {
+      "view": "focus",
+      "ok": true,
+      "chars": 823,
+      "newPageErrors": []
+    },
+    {
+      "view": "review",
+      "ok": true,
+      "chars": 431,
+      "newPageErrors": []
+    }
+  ],
+  "pageErrors": [],
+  "consoleErrors": [],
+  "checks": {
+    "scheduleTimeEntry": {
+      "chosen": "tsk_0194c66c593b4faa88f8",
+      "dateValue": "2026-10-31",
+      "hasPreview": true
+    },
+    "timeDetailEntry": true
+  },
+  "shots": [
+    "ui-l04-schedule-entry.png",
+    "ui-l04-time-detail-entry.png"
+  ],
+  "finalText": "Z\nZodo\nCore 已连接\nr57\n＋ 收集\n刷新\n今天\n收集箱\n目标\n日程\n回顾\n任务\n项目\n习惯\n视图\n自动化\n专注\n提案\nAI 运行\n搜索\n模型\n数据\n同步\n设置\n隐私\nAgent\n活动\n容量、预约与任务分配\n日程\n任务时间\n增加预约\n增加容量\n导入忙碌\n生成计划\n10/25\n周日\n空闲\n10/26\n周一\n14:00–16:00\n作品集专注时间\n120 分容量\n14:00–14:45\n筛选 3 个项目素材\n45 分钟\n10/27\n周二\n空闲\n10/28\n周三\n空闲\n10/29\n周四\n空闲\n10/30\n周五\n空闲\n10/31\n周六\n空闲\n未排入工作\nImplement online showcase on chosen platform\n180 分钟\nSelect and finalize the 3 projects to include in Portfolio v2\n45 分钟\nTest all links, navigation, and functionality\n45 分钟\nCreate visual mockups for online display layout\n90 分钟\nDraft case descriptions for all 3 selected projects\n90 分钟\n校对案例说明\n5 分钟\n每周整理案例素材\n30 分钟\n每周整理案例素材\n30 分钟\nReview and refine all content and design elements\n60 分钟\n调度器自动任务 1792863674\n5 分钟\n每周整理案例素材\n30 分钟\n每周整理案例素材\n30 分钟\nReview and refine all content for clarity and impact\n45 分钟\nUpload project materials and verify all links work\n30 分钟\nWrite detailed case descriptions for each selected project\n180 分钟\n每周整理案例素材\n30 分钟\n调度器自动任务 1792863674\n5 分钟\nCreate online display structure (choose platform, set up pages)\n60 分钟\n日历新鲜度\n手动忙碌快照\nmanual · 10/25 00:17"
+}

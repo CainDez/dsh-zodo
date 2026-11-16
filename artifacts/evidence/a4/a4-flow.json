@@ -1,0 +1,35 @@
+{
+  "steps": [
+    {
+      "name": "habit-create",
+      "ok": true
+    },
+    {
+      "name": "habit-log",
+      "ok": true
+    },
+    {
+      "name": "saved-view-create",
+      "ok": true
+    },
+    {
+      "name": "milestone",
+      "ok": true
+    },
+    {
+      "name": "data-backup",
+      "ok": true
+    },
+    {
+      "name": "data-export",
+      "ok": true
+    },
+    {
+      "name": "models-save",
+      "ok": true
+    }
+  ],
+  "finalText": "Z\nZodo\nCore 已连接\nr68\n＋ 收集\n刷新\n今天\n收集箱\n目标\n日程\n回顾\n任务\n项目\n习惯\n视图\n自动化\n专注\n提案\nAI 运行\n搜索\n模型\n数据\n同步\n设置\n隐私\nAgent\n活动\nCORE 自己的模型网关\n模型连接\n刷新\n保存\n模型凭据由 Core 的启动环境/凭据服务提供，浏览器只看到“是否存在”，永远不会收到 API key。\n路由策略\n当前路由\n仅本地（禁止云端回退）\n私密资料\ndevice_only\n允许的云提供方\n未配置\n已启用\n本地 Ollama\nlocal-ollama\n模型\naravhawk/qwen3.5-opus-4.6:latest\n位置\n本机设备\n端点\nhttp://127.0.0.1:11434/v1\n凭据\n已由启动环境保护\n\nlocal_only 时只调用此本地端点；不可用时返回错误，不静默回退云端。\n\n未启用\nDeepSeek 云端\ndeepseek-cloud\n模型\ndeepseek-chat\n位置\n云端\n端点\nhttps://api.deepseek.com/v1\n凭据\n未设置 DEEPSEEK_API_KEY（本地 Ollama 可无鉴权）\n\n云端只有在 local_only 被明确改为 cloud_allowed、私密资料等级允许且提供方在允许列表时才会被选中。\n\n编辑连接（不含凭据）\n本地模型 ID\n本地 OpenAI 兼容端点\n云端模型 ID\n云端端点\n启用本地提供方\n启用云端提供方（仍受隐私策略与允许列表约束）\n配置来源\n\n`model.json` 只保存模型 ID、端点和环境变量名。修改配置需要管理员权限。\n\n拆解提示只包含目标标题、成功标准、截止日期和现有项目范围；不发送笔记正文或附件。\n\n模型配置已保存；新的 AI 运行会使用它。",
+  "consoleMessages": [],
+  "pageErrors": []
+}

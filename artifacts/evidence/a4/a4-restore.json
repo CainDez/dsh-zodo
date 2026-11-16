@@ -1,0 +1,22 @@
+{
+  "backup": {
+    "credentials_included": false,
+    "db_path": "<repo>\\.runtime\\a4-restore-test\\zodo.sqlite3",
+    "file": "zodo-20261024-171940-961.sqlite3",
+    "path": "<repo>\\.runtime\\a4-restore-test\\backups\\zodo-20261024-171940-961.sqlite3",
+    "schema": "zodo.backup/1",
+    "sha256": "cf37531f955121f07092c61a722d4e9cc5bc27823f03dd24459855764dbca711",
+    "size_bytes": 102400
+  },
+  "before_count": 2,
+  "restore_exit": 0,
+  "restore_stdout": "{\n  \"auth_reset\": true,\n  \"backup\": \"\\\\\\\\?\\\\D:\\\\projects\\\\zodo_dsh\\\\.runtime\\\\a4-restore-test\\\\backups\\\\zodo-20261024-171940-961.sqlite3\",\n  \"pre_restore_snapshot\": \"D:\\\\projects\\\\zodo_dsh\\\\.runtime\\\\a4-restore-test\\\\backups\\\\pre-restore-20261024-171941.sqlite3\",\n  \"restored_tasks\": 1,\n  \"runtime_restart_required\": true,\n  \"schema\": \"zodo.restore/1\"\n}\n",
+  "restore_stderr": "",
+  "after_count": 1,
+  "auth_file_exists": false,
+  "runtime_json_exists": true,
+  "pre_restore_snapshots": [
+    "<repo>\\.runtime\\a4-restore-test\\backups\\pre-restore-20261024-171941.sqlite3"
+  ],
+  "query_status": 200
+}

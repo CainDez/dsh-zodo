@@ -1,0 +1,38 @@
+{
+  "urls": [
+    "http://127.0.0.1:3181/"
+  ],
+  "body": "新会话\nCtrl\n+\nAlt\n+\nN\n插件\n自动化任务\n更多\n工作区\n默认工作区\n新会话\nZodo Probe Ping\n2分钟\n未命名\n8分钟\n未命名\n22分钟\n更多\n探索未至之境\n预览版\n默认工作区\n标准模式\n描述你想要构建的内容, / 调用指令, @ 文件或对话\n工作区内修改\nQwen 3.5 local",
+  "reqs": [
+    "POST http://127.0.0.1:3181/api/settings/describe",
+    "POST http://127.0.0.1:3181/api/dynamicCordisRunner/syncInspectManifest",
+    "POST http://127.0.0.1:3181/api/credentials/describe",
+    "POST http://127.0.0.1:3181/api/dynamicCordisRunner/inventory",
+    "POST http://127.0.0.1:3181/api/session/modelCatalog",
+    "POST http://127.0.0.1:3181/api/agentPresets/list",
+    "POST http://127.0.0.1:3181/api/session/list",
+    "POST http://127.0.0.1:3181/api/permissionPresets/catalog",
+    "POST http://127.0.0.1:3181/api/dynamicCordisRunner/inventory",
+    "POST http://127.0.0.1:3181/api/agentPresets/list",
+    "POST http://127.0.0.1:3181/api/agentPresets/list",
+    "POST http://127.0.0.1:3181/api/session/modelCatalog",
+    "POST http://127.0.0.1:3181/api/dynamicCordisRunner/syncInspectManifest",
+    "POST http://127.0.0.1:3181/api/credentials/describe",
+    "POST http://127.0.0.1:3181/api/credentials/describe",
+    "POST http://127.0.0.1:3181/api/credentials/describe",
+    "POST http://127.0.0.1:3181/api/settings/describe",
+    "POST http://127.0.0.1:3181/api/credentials/describe",
+    "POST http://127.0.0.1:3181/api/credentials/describe",
+    "POST http://127.0.0.1:3181/api/credentials/describe",
+    "POST http://127.0.0.1:3181/api/session/create",
+    "POST http://127.0.0.1:3181/api/llm/listProviders",
+    "POST http://127.0.0.1:3181/api/llm/listConfigurableProviders",
+    "POST http://127.0.0.1:3181/api/agentPresets/list",
+    "POST http://127.0.0.1:3181/api/schedule/catalog",
+    "POST http://127.0.0.1:3181/api/commands/list",
+    "POST http://127.0.0.1:3181/api/skills/list",
+    "POST http://127.0.0.1:3181/api/session/modelCatalog",
+    "POST http://127.0.0.1:3181/api/credentials/describe",
+    "POST http://127.0.0.1:3181/api/credentials/describe"
+  ]
+}

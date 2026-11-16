@@ -1,0 +1,72 @@
+{
+  "tools": [
+    "zodo_list_tasks",
+    "zodo_propose",
+    "zodo_plan_propose",
+    "zodo_replan",
+    "zodo_get_proposal"
+  ],
+  "task_ids": [
+    "tsk_14ee523f0a3a4ecabc44",
+    "tsk_52aadf1dd234403e82a3"
+  ],
+  "replan": {
+    "assigned_minutes": 55,
+    "diagnostics": [],
+    "ok": true,
+    "proposal_id": "prp_baf9e36b7cdf46e492d4",
+    "status": "draft",
+    "unplaced_minutes": 0
+  },
+  "proposal": {
+    "base_revision": 85,
+    "diagnostics": [
+      {
+        "code": "VALIDATIONFAILED",
+        "message": "allocation overlaps another allocation (2026-10-25 01:00:00 UTC..2026-10-25 01:45:00 UTC)",
+        "related_ids": [],
+        "severity": "error"
+      }
+    ],
+    "intent": "Schedule work within capacity",
+    "ok": true,
+    "preview": {
+      "diff": {
+        "error": "proposal failed validation"
+      },
+      "plan": {
+        "diagnostics": [],
+        "plan": {
+          "assignments": [
+            {
+              "capacity_block_id": "cap_687c978fffdb491fb43e",
+              "end": "2026-10-25T01:45:00Z",
+              "locked": false,
+              "minutes": 45,
+              "start": "2026-10-25T01:00:00Z",
+              "task_id": "tsk_14ee523f0a3a4ecabc44"
+            },
+            {
+              "capacity_block_id": "cap_687c978fffdb491fb43e",
+              "end": "2026-10-25T01:10:00Z",
+              "locked": false,
+              "minutes": 10,
+              "start": "2026-10-25T01:00:00Z",
+              "task_id": "tsk_52aadf1dd234403e82a3"
+            }
+          ],
+          "diagnostics": [],
+          "fixed_allocations": [],
+          "replace_task_ids": [
+            "tsk_14ee523f0a3a4ecabc44",
+            "tsk_52aadf1dd234403e82a3"
+          ],
+          "unplaced": []
+        }
+      }
+    },
+    "proposal_id": "prp_baf9e36b7cdf46e492d4",
+    "status": "draft"
+  },
+  "no_approve_or_commit_tool": true
+}

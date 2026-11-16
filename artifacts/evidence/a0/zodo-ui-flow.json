@@ -1,0 +1,48 @@
+{
+  "panelPresent": true,
+  "initialStatus": "桥接可用",
+  "initialResult": "{\n  \"message\": \"pong\",\n  \"pid\": 23648,\n  \"received_at_unix_ms\": 1792856396420,\n  \"version\": \"0.1.0\"\n}",
+  "echoResult": "{\n  \"message\": \"A0 回显：你好 Zodo\"\n}",
+  "pendingStatus": "{\n  \"pending\": \"sleep\",\n  \"request_id\": \"sleep:6d5da436-679d-4cb9-bc66-5d0236dfb573\",\n  \"delay_ms\": 15000\n}",
+  "cancelResult": "{\n  \"cancelled_or_failed\": \"CANCELLED\",\n  \"request_id\": \"sleep:6d5da436-679d-4cb9-bc66-5d0236dfb573\"\n}",
+  "finalStatus": "桥接可用",
+  "bridgeTraffic": [
+    {
+      "url": "http://127.0.0.1:3181/zodo-bridge/v1/session",
+      "status": 200,
+      "request": "{}",
+      "body": "{\"ok\":true,\"schema\":\"zodo.harness-bridge/0.1\",\"ui_face\":\"interactive\",\"bridge_protocol\":\"zodo-a0-bridge/1\",\"expires_in\":3600,\"host_locked\":\"0.2.1-rc.3\"}"
+    },
+    {
+      "url": "http://127.0.0.1:3181/zodo-bridge/v1/rpc",
+      "status": 200,
+      "request": "{\"request_id\":\"ui:d6981904-2fe1-4232-a907-ea8e6546e711\",\"method\":\"ping\",\"params\":{}}",
+      "body": "{\"ok\":true,\"request_id\":\"ui:d6981904-2fe1-4232-a907-ea8e6546e711\",\"bridge\":\"zodo.harness-bridge/0.1\",\"ui_face\":\"interactive\",\"channel\":\"harness-ui\",\"core\":{\"protocol\":\"zodo-a0-bridge/1\",\"instance\":\"686340e7-44d4-43c7-99ac-3ab8bdd2959d\"},\"result\":{\"message\":\"pong\",\"pid\":23648,\"received_at_unix_ms\":1792856396420,\"version\":\"0.1.0\"}}"
+    },
+    {
+      "url": "http://127.0.0.1:3181/zodo-bridge/v1/rpc",
+      "status": 200,
+      "request": "{\"request_id\":\"ui:15aca5c0-ac4c-4e59-b4fc-2415d7dd05a0\",\"method\":\"echo\",\"params\":{\"text\":\"A0 回显：你好 Zodo\"}}",
+      "body": "{\"ok\":true,\"request_id\":\"ui:15aca5c0-ac4c-4e59-b4fc-2415d7dd05a0\",\"bridge\":\"zodo.harness-bridge/0.1\",\"ui_face\":\"interactive\",\"channel\":\"harness-ui\",\"core\":{\"protocol\":\"zodo-a0-bridge/1\",\"instance\":\"686340e7-44d4-43c7-99ac-3ab8bdd2959d\"},\"result\":{\"message\":\"A0 回显：你好 Zodo\"}}"
+    },
+    {
+      "url": "http://127.0.0.1:3181/zodo-bridge/v1/rpc",
+      "status": 200,
+      "request": "{\"request_id\":\"ui:fb919b65-fa18-4b6c-beeb-655697b70778\",\"method\":\"cancel\",\"params\":{\"target_id\":\"sleep:6d5da436-679d-4cb9-bc66-5d0236dfb573\"}}",
+      "body": "{\"ok\":true,\"request_id\":\"ui:fb919b65-fa18-4b6c-beeb-655697b70778\",\"bridge\":\"zodo.harness-bridge/0.1\",\"ui_face\":\"interactive\",\"channel\":\"harness-ui\",\"core\":{\"protocol\":\"zodo-a0-bridge/1\",\"instance\":\"686340e7-44d4-43c7-99ac-3ab8bdd2959d\"},\"result\":{\"cancelled\":true,\"target_id\":\"sleep:6d5da436-679d-4cb9-bc66-5d0236dfb573\"}}"
+    },
+    {
+      "url": "http://127.0.0.1:3181/zodo-bridge/v1/rpc",
+      "status": 409,
+      "request": "{\"request_id\":\"sleep:6d5da436-679d-4cb9-bc66-5d0236dfb573\",\"method\":\"sleep\",\"params\":{\"delay_ms\":15000}}",
+      "body": "{\"ok\":false,\"error\":{\"code\":\"CANCELLED\",\"message\":\"operation cancelled\",\"retryable\":false}}"
+    }
+  ],
+  "consoleMessages": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 409 (Conflict)"
+    }
+  ],
+  "pageErrors": []
+}

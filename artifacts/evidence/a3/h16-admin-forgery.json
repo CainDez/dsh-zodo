@@ -1,0 +1,24 @@
+{
+  "no_cookie_health": {
+    "status": 200,
+    "ok": true
+  },
+  "forged_cookie_rpc": {
+    "status": 401,
+    "code": "UI_SESSION_REQUIRED"
+  },
+  "evil_origin_session": {
+    "status": 403,
+    "code": "ORIGIN_DENIED"
+  },
+  "agent_admin_backup": {
+    "status": 403,
+    "code": "PERMISSION_DENIED"
+  },
+  "agent_policy_update": {
+    "status": 403,
+    "code": "PERMISSION_DENIED"
+  },
+  "session_body_has_tokens": false,
+  "session_status": 200
+}

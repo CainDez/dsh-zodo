@@ -1,0 +1,53 @@
+{
+  "version": "1.3",
+  "source_base": "design workspace",
+  "selection": "first direction, clear-day",
+  "sources": [
+    {
+      "file": "design/spec/01-product-and-architecture.md",
+      "sha256": "79cd49d9c246af6b54131aa44cccf4b929fbd10676cb5c48074db162a32f1b7a"
+    },
+    {
+      "file": "design/spec/02-domain-and-capabilities.md",
+      "sha256": "1c80e8a96f2f5db27397dbfe7ac5f26cef1aae30206d075abfcd9772c09b5036"
+    },
+    {
+      "file": "design/spec/03-runtime-contracts-and-platforms.md",
+      "sha256": "be9c46efa728db777efea91d93246758d5409de3c85b9dc31c07924cbfca401d"
+    },
+    {
+      "file": "design/spec/04-ui-product-and-delivery.md",
+      "sha256": "699bd79105f92e2b57e0ac668d6b1cfd2481fb539d078aa7703b490355ef8249"
+    },
+    {
+      "file": "design/spec/05-architecture-decisions.md",
+      "sha256": "e49da32d5a938a5962030c46511c56581550353a949b0e86654921119458d0d6"
+    },
+    {
+      "file": "design/ui-complete/01-screen-and-flow-spec.md",
+      "sha256": "db66028a99634c3c22b95410c05cd005f158f1546b3a7a4ebc7e7044fdf31fe6"
+    },
+    {
+      "file": "design/ui-complete/02-ai-and-settings-flows.md",
+      "sha256": "5350d03d3abc200944f0ef207f547218d307496c9c02cc8a0556ba9eadb15b2b"
+    },
+    {
+      "file": "design/ui-complete/visual-manifest.json",
+      "sha256": "8154442a959eb0c6be1ba6ccf317e55a21412f899241436ebf6193bbd14a514d"
+    }
+  ],
+  "curation": [
+    "selected clear-day only",
+    "resolved visual selection wording",
+    "clarified P0 stability and P1/P2 recurrence scope",
+    "portable relative links",
+    "synthetic fixtures only",
+    "unified mobile and desktop five primary destinations; projects and habits use secondary entry points"
+  ],
+  "old_product_code_included": false,
+  "private_data_included": false,
+  "baseline": "zodo-clear-day-v1.2",
+  "route_update": "Harness first UI, independent Rust core scope unchanged, Flutter later",
+  "verification_date": "2026-10-24",
+  "harness_runtime_tested": false
+}

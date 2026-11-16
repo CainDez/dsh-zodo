@@ -1,0 +1,16 @@
+{
+  "first_session": 200,
+  "first_events_status": 200,
+  "first_events_count": 50,
+  "cursor": "ev_50",
+  "create_status": 200,
+  "second_events_status": 200,
+  "second_events_count": 45,
+  "reconnect_session": 200,
+  "reconnect_events_status": 200,
+  "reconnect_events_count": 45,
+  "revoke_status": 200,
+  "agent_events_after_revoke": 403,
+  "restore_status": 200,
+  "token_values_recorded": false
+}

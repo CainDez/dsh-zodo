@@ -1,0 +1,14 @@
+{
+  "schema": "zodo.error/1",
+  "request_id": "req_124",
+  "error": {
+    "code": "REVISION_CONFLICT",
+    "message": "计划所依据的数据已改变",
+    "retryable": false,
+    "details": {
+      "expected_revision": 42,
+      "current_revision": 44,
+      "recovery": "refresh_and_repropose"
+    }
+  }
+}

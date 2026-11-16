@@ -1,0 +1,382 @@
+{
+  "capture": {
+    "data": {
+      "inbox_entry": {
+        "clarifications": [],
+        "converted_refs": [],
+        "created_at": "2026-10-24T16:27:40.045995600Z",
+        "id": "inb_6deec8675f5341e1993a",
+        "source": {
+          "actor_id": "owner_cli",
+          "kind": "user"
+        },
+        "status": "unprocessed",
+        "text": "证据：明天下午联系印刷店并确认封面",
+        "updated_at": "2026-10-24T16:27:40.045995600Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      }
+    },
+    "event_cursor": "ev_1",
+    "operation_id": "op_b18b502fc18f48dab537",
+    "replayed": false,
+    "request_id": "req_0d39082e9b864a309eef7ba971f21cdf",
+    "revision": 1,
+    "schema": "zodo.result/1",
+    "status": "committed"
+  },
+  "task_add": {
+    "data": {
+      "changes": [
+        {
+          "action": "created",
+          "id": "tsk_f181b9b3dc7e4b509e26",
+          "kind": "task"
+        }
+      ],
+      "warnings": []
+    },
+    "event_cursor": "ev_2",
+    "operation_id": "op_e94fcb7af370487a96ed",
+    "replayed": false,
+    "request_id": "req_35f70f1b606b42dea936858f0a1a61eb",
+    "revision": 2,
+    "schema": "zodo.result/1",
+    "status": "committed"
+  },
+  "task_list": {
+    "data": {
+      "tasks": [
+        {
+          "allocated_minutes": 0,
+          "blocked": false,
+          "task": {
+            "actual_minutes": 0,
+            "archived": false,
+            "blocked_manual": false,
+            "created_at": "2026-10-24T16:27:40.147368300Z",
+            "estimate_minutes": 45,
+            "id": "tsk_f181b9b3dc7e4b509e26",
+            "priority": 2,
+            "remaining_minutes": 45,
+            "status": "open",
+            "tags": [],
+            "title": "证据任务：筛选三个案例素材",
+            "updated_at": "2026-10-24T16:27:40.147368300Z",
+            "version": 1,
+            "workspace_id": "ws_local"
+          }
+        }
+      ]
+    },
+    "event_cursor": "ev_2",
+    "request_id": "req_2bc661cf44f24fca8d03b3bcf925bb05",
+    "revision": 2,
+    "schema": "zodo.query-result/1"
+  },
+  "capacity": {
+    "data": {
+      "changes": [
+        {
+          "action": "created",
+          "id": "cap_af62292e383e4776895f",
+          "kind": "capacity_block"
+        }
+      ],
+      "warnings": []
+    },
+    "event_cursor": "ev_3",
+    "operation_id": "op_707a229c728244298b95",
+    "replayed": false,
+    "request_id": "req_e2d5d0fb113c4c0c8758d9bebe7b4a30",
+    "revision": 3,
+    "schema": "zodo.result/1",
+    "status": "committed"
+  },
+  "plan": {
+    "data": {
+      "plan": {
+        "assignments": [
+          {
+            "capacity_block_id": "cap_af62292e383e4776895f",
+            "end": "2026-10-24T18:12:40Z",
+            "locked": false,
+            "minutes": 45,
+            "start": "2026-10-24T17:27:40Z",
+            "task_id": "tsk_f181b9b3dc7e4b509e26"
+          }
+        ],
+        "diagnostics": [],
+        "fixed_allocations": [],
+        "replace_task_ids": [
+          "tsk_f181b9b3dc7e4b509e26"
+        ],
+        "unplaced": []
+      },
+      "proposal": {
+        "actor_id": "owner_cli",
+        "actor_kind": "owner",
+        "assumptions": [],
+        "base_revision": 3,
+        "content_hash": "1d5a64f40ffebb808087b4d77c68500daf44182bf006aae3b10c36aa687599c1",
+        "created_at": "2026-10-24T16:27:40.467601500Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-24T17:27:40.467601500Z",
+        "id": "prp_42f50649aa374d4f915c",
+        "intent": "Schedule work within capacity",
+        "operations": [
+          {
+            "operation": "plan.apply",
+            "payload": {
+              "assignments": [
+                {
+                  "capacity_block_id": "cap_af62292e383e4776895f",
+                  "end": "2026-10-24T18:12:40Z",
+                  "locked": false,
+                  "minutes": 45,
+                  "start": "2026-10-24T17:27:40Z",
+                  "task_id": "tsk_f181b9b3dc7e4b509e26"
+                }
+              ],
+              "replace_task_ids": [
+                "tsk_f181b9b3dc7e4b509e26"
+              ],
+              "unplaced": []
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "diff": {
+            "added": [
+              {
+                "id": "alc_2a4a211c33c443548c00",
+                "kind": "allocation",
+                "summary": "alc_2a4a211c33c443548c00"
+              }
+            ],
+            "changed": [],
+            "changes": [
+              {
+                "action": "created",
+                "id": "alc_2a4a211c33c443548c00",
+                "kind": "allocation"
+              }
+            ],
+            "counts": {
+              "added": 1,
+              "total_after": 4,
+              "total_before": 3
+            },
+            "removed": [],
+            "warnings": []
+          },
+          "plan": {
+            "diagnostics": [],
+            "plan": {
+              "assignments": [
+                {
+                  "capacity_block_id": "cap_af62292e383e4776895f",
+                  "end": "2026-10-24T18:12:40Z",
+                  "locked": false,
+                  "minutes": 45,
+                  "start": "2026-10-24T17:27:40Z",
+                  "task_id": "tsk_f181b9b3dc7e4b509e26"
+                }
+              ],
+              "diagnostics": [],
+              "fixed_allocations": [],
+              "replace_task_ids": [
+                "tsk_f181b9b3dc7e4b509e26"
+              ],
+              "unplaced": []
+            }
+          }
+        },
+        "questions": [],
+        "reads": [],
+        "source": {
+          "actor_id": "owner_cli",
+          "kind": "cli"
+        },
+        "status": "validated",
+        "validated_at": "2026-10-24T16:27:40.467601500Z",
+        "workspace_id": "ws_local"
+      }
+    },
+    "event_cursor": "ev_4",
+    "operation_id": "op_f7bd6a0ef18f40418fd4",
+    "replayed": false,
+    "request_id": "req_ce68192787514bd8a1f5891b9615c248",
+    "revision": 3,
+    "schema": "zodo.result/1",
+    "status": "validated"
+  },
+  "approve": {
+    "data": {
+      "approval": {
+        "base_revision": 3,
+        "channel": "cli",
+        "content_hash": "1d5a64f40ffebb808087b4d77c68500daf44182bf006aae3b10c36aa687599c1",
+        "effects": [
+          "schedule"
+        ],
+        "expires_at": "2026-10-24T16:42:40.566749400Z",
+        "id": "apr_2af2ba82bdb14be18a74",
+        "issued_at": "2026-10-24T16:27:40.566749400Z",
+        "policy_revision": 1,
+        "principal_id": "owner_cli",
+        "proposal_id": "prp_42f50649aa374d4f915c",
+        "workspace_id": "ws_local"
+      }
+    },
+    "event_cursor": "ev_5",
+    "operation_id": "op_79890952e7404a109561",
+    "replayed": false,
+    "request_id": "req_a43125a41368430ebb9056a67fa8c50d",
+    "revision": 3,
+    "schema": "zodo.result/1",
+    "status": "approved"
+  },
+  "commit": {
+    "data": {
+      "change_set_id": "cs_c4c3cd7d5cea41ebac22",
+      "changed": [
+        {
+          "action": "created",
+          "id": "alc_61f5bc34676a4d54b9bd",
+          "kind": "allocation"
+        }
+      ],
+      "effects": [],
+      "proposal_id": "prp_42f50649aa374d4f915c",
+      "revision": 4,
+      "warnings": []
+    },
+    "event_cursor": "ev_6",
+    "operation_id": "op_9e3f148041f04fc98d39",
+    "replayed": false,
+    "request_id": "req_034049a77dde4ea8872a1a411c5a1385",
+    "revision": 4,
+    "schema": "zodo.result/1",
+    "status": "committed"
+  },
+  "progress": {
+    "data": {
+      "activity_id": "act_93e820e39af94f48a774",
+      "task": {
+        "actual_minutes": 10,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:27:40.147368300Z",
+        "estimate_minutes": 45,
+        "id": "tsk_f181b9b3dc7e4b509e26",
+        "priority": 2,
+        "remaining_minutes": 35,
+        "status": "in_progress",
+        "tags": [],
+        "title": "证据任务：筛选三个案例素材",
+        "updated_at": "2026-10-24T16:27:40.701498200Z",
+        "version": 2,
+        "workspace_id": "ws_local"
+      }
+    },
+    "event_cursor": "ev_7",
+    "operation_id": "op_1d9fa93ae9444923ae6b",
+    "replayed": false,
+    "request_id": "req_5beef08b38d24dcf828b259fb9bfa958",
+    "revision": 5,
+    "schema": "zodo.result/1",
+    "status": "committed"
+  },
+  "focus_start": {
+    "data": {
+      "focus": {
+        "accumulated_seconds": 0,
+        "active_started_at": "2026-10-24T16:27:40.734923Z",
+        "id": "foc_d742c0fe1ff64c4ab0d9",
+        "segments": [],
+        "started_at": "2026-10-24T16:27:40.734923Z",
+        "state": "running",
+        "task_id": "tsk_f181b9b3dc7e4b509e26",
+        "updated_at": "2026-10-24T16:27:40.734923Z",
+        "workspace_id": "ws_local"
+      }
+    },
+    "event_cursor": "ev_8",
+    "operation_id": "op_3c1bbfe71a024f9c8836",
+    "replayed": false,
+    "request_id": "req_ad1e9ba809734ffebf229a18b0fd70cb",
+    "revision": 6,
+    "schema": "zodo.result/1",
+    "status": "committed"
+  },
+  "focus_finish": {
+    "data": {
+      "activity_id": "act_1aeb168150e84e4eb821",
+      "focus": {
+        "accumulated_seconds": 0,
+        "ended_at": "2026-10-24T16:27:40.766924Z",
+        "id": "foc_d742c0fe1ff64c4ab0d9",
+        "segments": [
+          {
+            "end": "2026-10-24T16:27:40.766924Z",
+            "start": "2026-10-24T16:27:40.734923Z"
+          }
+        ],
+        "started_at": "2026-10-24T16:27:40.734923Z",
+        "state": "completed",
+        "task_id": "tsk_f181b9b3dc7e4b509e26",
+        "updated_at": "2026-10-24T16:27:40.766924Z",
+        "workspace_id": "ws_local"
+      }
+    },
+    "event_cursor": "ev_9",
+    "operation_id": "op_18c5492f0b8e421c8bd9",
+    "replayed": false,
+    "request_id": "req_b02466636922400c979095034d3e0e3a",
+    "revision": 7,
+    "schema": "zodo.result/1",
+    "status": "committed"
+  },
+  "review": {
+    "data": {
+      "review": {
+        "created_at": "2026-10-24T16:27:40.798020200Z",
+        "facts": {
+          "active_goals": 0,
+          "activity_records": 2,
+          "actual_minutes": 10,
+          "blocked_open": 0,
+          "focus_minutes": 0,
+          "focus_sessions": 1,
+          "goals_achieved": 0,
+          "habit_completions": 0,
+          "overdue_open": 0,
+          "tasks_completed": 0,
+          "tasks_opened": 1,
+          "unplaced_minutes": 0
+        },
+        "id": "rev_e1ad0b215cd442519ebe",
+        "notes": [],
+        "period_end": "2026-10-25",
+        "period_start": "2026-10-25",
+        "recommendations": [
+          "安排一段可执行的专注时间，而不是继续增加清单"
+        ],
+        "source": {
+          "actor_id": "owner_cli",
+          "kind": "cli"
+        },
+        "workspace_id": "ws_local"
+      }
+    },
+    "event_cursor": "ev_10",
+    "operation_id": "op_89e47ac3dbac4a5cb4ba",
+    "replayed": false,
+    "request_id": "req_ae04bdd2286b4653b1ae8218745ad54f",
+    "revision": 8,
+    "schema": "zodo.result/1",
+    "status": "committed"
+  }
+}

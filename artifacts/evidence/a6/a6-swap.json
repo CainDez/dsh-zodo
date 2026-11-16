@@ -1,0 +1,100 @@
+{
+  "export_a_status": 200,
+  "import_b_status": 200,
+  "import_b": {
+    "added": 1,
+    "device_id": "dev_93b4d2575b1c42bdb38041d61f20d328",
+    "event_cursor": "ev_2",
+    "imported": true,
+    "resolved": 0,
+    "revision": 2,
+    "schema": "zodo.sync-result/1"
+  },
+  "b_tasks_after_first_sync": 2,
+  "export_b_status": 200,
+  "import_a_status": 200,
+  "import_a": {
+    "added": 1,
+    "device_id": "dev_e9a2c462eb524d3e8651c4deaab0689a",
+    "event_cursor": "ev_2",
+    "imported": true,
+    "resolved": 0,
+    "revision": 2,
+    "schema": "zodo.sync-result/1"
+  },
+  "a_tasks_after_roundtrip": 2,
+  "conflict_status": 409,
+  "conflict": {
+    "schema": "zodo.error/1",
+    "request_id": "",
+    "error": {
+      "code": "VALIDATION_FAILED",
+      "message": "sync has conflicting entities; no partial import was written",
+      "retryable": false,
+      "details": {
+        "conflicts": [
+          {
+            "id": "tsk_973a0603a73d42f1b4cc",
+            "kind": "task"
+          }
+        ]
+      }
+    }
+  },
+  "b_tasks_after_conflict": 2,
+  "b_shared_title_unchanged": "B 修改后的标题",
+  "retry_status": 200,
+  "retry_body": {
+    "added": 1,
+    "device_id": "dev_93b4d2575b1c42bdb38041d61f20d328",
+    "event_cursor": "ev_4",
+    "imported": true,
+    "resolved": 1,
+    "revision": 4,
+    "schema": "zodo.sync-result/1"
+  },
+  "b_retry_shared_title": "A 修改后的标题",
+  "device_a": "dev_e9a2c462eb524d3e8651c4deaab0689a",
+  "device_b": "dev_93b4d2575b1c42bdb38041d61f20d328",
+  "revoke_status": 200,
+  "revoke_body": {
+    "revoked_devices": [
+      "dev_93b4d2575b1c42bdb38041d61f20d328"
+    ],
+    "schema": "zodo.auth/1"
+  },
+  "revoked_import_status": 403,
+  "revoked_import": {
+    "schema": "zodo.error/1",
+    "request_id": "",
+    "error": {
+      "code": "PERMISSION_DENIED",
+      "message": "this sync device has been revoked by the workspace owner",
+      "retryable": false,
+      "details": null
+    }
+  },
+  "unrevoke_status": 200,
+  "unrevoke_body": {
+    "revoked_devices": [],
+    "schema": "zodo.auth/1"
+  },
+  "unrevoked_import_status": 409,
+  "unrevoked_import": {
+    "schema": "zodo.error/1",
+    "request_id": "",
+    "error": {
+      "code": "VALIDATION_FAILED",
+      "message": "sync has conflicting entities; no partial import was written",
+      "retryable": false,
+      "details": {
+        "conflicts": [
+          {
+            "id": "tsk_973a0603a73d42f1b4cc",
+            "kind": "task"
+          }
+        ]
+      }
+    }
+  }
+}

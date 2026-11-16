@@ -1,0 +1,13 @@
+{
+  "version": "1.3",
+  "date": "2026-10-24",
+  "core_language": "Rust",
+  "core_scope": "unchanged_full_personal_affairs_ai",
+  "first_ui": "deepseek-harness-plugin",
+  "host_adapter": "TypeScript/Cordis",
+  "client_adapter": "React/Slots",
+  "later_ui": "Flutter independent cross-platform client",
+  "visual_reference": "clear-day",
+  "old_frames_role": "reference_not_harness_screenshots",
+  "user_confirmed_route": true
+}

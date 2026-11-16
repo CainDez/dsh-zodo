@@ -1,0 +1,31 @@
+﻿screen_id,screen_name,text_design,visual_reference,visual_coverage,interactive,real_kernel,platform_validation,specification,delivery_phase,harness_view
+S01,首次进入与工作空间,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S02,Today,文字已定义,D01,旧视觉参考/局部,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S03,Inbox,文字已定义,D02,旧视觉参考/局部,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S04,收集与理解工作区,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S05,Goals 目标列表,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S06,目标详情与拆解,文字已定义,D03,旧视觉参考/局部,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S07,Projects 项目列表,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S08,项目工作区,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S09,Tasks 全部任务,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S10,任务详情,文字已定义,D02局部,旧视觉参考/局部,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S11,全局搜索,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S12,条件构建与保存视图,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S13,Schedule 日/周计划,文字已定义,D04,旧视觉参考/局部,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S14,时间对象详情,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S15,提案与工作流中心,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S16,提案比较,文字已定义,D04/M01,旧视觉参考/局部,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S17,澄清问题,文字已定义,D02局部,旧视觉参考/局部,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S18,冲突与容量诊断,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S19,过期提案与版本比较,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S20,提交回执与效果,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S21,Focus 专注与进度,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S22,Review 回顾,文字已定义,D05,旧视觉参考/局部,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S23,Habits 习惯列表,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S24,习惯/循环详情,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S25,设置总览与时间连接,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S26,Models 模型连接,文字已定义,D06局部,旧视觉参考/局部,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S27,Privacy 数据流向,文字已定义,D06局部,旧视觉参考/局部,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S28,Data 数据与恢复,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S29,Agents 连接与授权,文字已定义,D06局部,旧视觉参考/局部,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现
+S30,Audit 操作与恢复,文字已定义,无独立关键帧,待设计宿主载体,未实现,未接入,未验证,ui/01-screen-and-flow-spec.md,Harness plugin first; Flutter later,未绘制/未实现

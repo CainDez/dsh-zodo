@@ -1,0 +1,163 @@
+{
+  "text": "新会话\nCtrl\n+\nAlt\n+\nN\n插件\n自动化任务\n更多\n工作区\n默认工作区\n新会话\n更多\n探索未至之境\n预览版\n默认工作区\n标准模式\n描述你想要构建的内容, / 调用指令, @ 文件或对话\n请选择模型\n开始\n收起侧边栏\nCtrl\n+\nShift\n+\nB\nZodo 桥接验证\n检查 Harness → Host → Rust 的真实连接\n工作区文件\n浏览会话工作区的文件\nCtrl\n+\nAlt\n+\nP\n新建终端\n在会话工作区运行命令\nCtrl\n+\n`\n更多工具",
+  "buttons": [
+    {
+      "text": "",
+      "testid": null,
+      "aria": "新建会话",
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "收起侧边栏",
+      "title": null
+    },
+    {
+      "text": "新会话\nCtrl\n+\nAlt\n+\nN",
+      "testid": null,
+      "aria": "新建会话",
+      "title": null
+    },
+    {
+      "text": "插件",
+      "testid": null,
+      "aria": "插件",
+      "title": null
+    },
+    {
+      "text": "自动化任务",
+      "testid": null,
+      "aria": "自动化任务",
+      "title": null
+    },
+    {
+      "text": "更多",
+      "testid": null,
+      "aria": "更多",
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "搜索会话",
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "视图选项",
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "添加工作区",
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "工作区“默认工作区”的操作",
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "在“默认工作区”中新建会话",
+      "title": null
+    },
+    {
+      "text": "更多",
+      "testid": null,
+      "aria": "账号菜单",
+      "title": null
+    },
+    {
+      "text": "默认工作区",
+      "testid": null,
+      "aria": "选择工作区",
+      "title": null
+    },
+    {
+      "text": "标准模式",
+      "testid": null,
+      "aria": null,
+      "title": "选择新任务使用的 Agent 预设"
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "添加文件或调用指令",
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "访问模式，当前：工作区内修改",
+      "title": null
+    },
+    {
+      "text": "请选择模型",
+      "testid": null,
+      "aria": "请选择模型",
+      "title": "请选择模型"
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "发送消息",
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "分栏",
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "全屏",
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "收起右侧边栏",
+      "title": null
+    },
+    {
+      "text": "Zodo 桥接验证\n检查 Harness → Host → Rust 的真实连接",
+      "testid": null,
+      "aria": null,
+      "title": null
+    },
+    {
+      "text": "工作区文件\n浏览会话工作区的文件\nCtrl\n+\nAlt\n+\nP",
+      "testid": null,
+      "aria": null,
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "新建终端 在会话工作区运行命令",
+      "title": null
+    },
+    {
+      "text": "",
+      "testid": null,
+      "aria": "选择 Shell",
+      "title": null
+    },
+    {
+      "text": "更多工具",
+      "testid": null,
+      "aria": "更多工具",
+      "title": null
+    }
+  ],
+  "consoleMessages": [],
+  "pageErrors": []
+}

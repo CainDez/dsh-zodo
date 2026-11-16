@@ -1,0 +1,57 @@
+{
+  "merged_count": 4,
+  "survivor_count": 1,
+  "merged": [
+    {
+      "id": "tsk_8769ff20a8f74801a897",
+      "title": "每周整理案例素材（系列更新）",
+      "archived": true,
+      "tags": [
+        "merged_into:tsk_71649698333242c0bde0"
+      ]
+    },
+    {
+      "id": "tsk_b8dfc7931de341c9b033",
+      "title": "每周整理案例素材（系列更新）",
+      "archived": true,
+      "tags": [
+        "merged_into:tsk_71649698333242c0bde0"
+      ]
+    },
+    {
+      "id": "tsk_b8fe47dc08cb48f59782",
+      "title": "每周整理案例素材（系列更新）",
+      "archived": true,
+      "tags": [
+        "merged_into:tsk_71649698333242c0bde0"
+      ]
+    },
+    {
+      "id": "tsk_e12d85ca01124a83aae1",
+      "title": "每周整理案例素材（系列更新）",
+      "archived": true,
+      "tags": [
+        "merged_into:tsk_71649698333242c0bde0"
+      ]
+    }
+  ],
+  "survivors": [
+    {
+      "id": "tsk_71649698333242c0bde0",
+      "title": "每周整理案例素材（系列更新）",
+      "tags": [
+        "merged_from:tsk_8769ff20a8f74801a897",
+        "merged_from:tsk_b8dfc7931de341c9b033",
+        "merged_from:tsk_b8fe47dc08cb48f59782",
+        "merged_from:tsk_e12d85ca01124a83aae1"
+      ]
+    }
+  ],
+  "audit_operations": [
+    "capture.collect",
+    "task.create",
+    "capacity.create",
+    "plan.propose",
+    "proposal.approve"
+  ]
+}

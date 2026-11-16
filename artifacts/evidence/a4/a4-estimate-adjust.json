@@ -1,0 +1,5 @@
+{
+  "body": "Z\nZodo\nCore 已连接\nr40\n＋ 收集\n刷新\n今天\n收集箱\n目标\n日程\n回顾\n任务\n项目\n习惯\n视图\n自动化\n专注\n提案\nAI 运行\n搜索\n模型\n数据\n设置\n隐私\nAgent\n活动\n候选与批准\n提案\n\n这里列出人工计划、外部 Agent 和后续模型提交的候选。预览不写正式事实；只有确认后才会提交。\n\nvalidated\n根据实际投入为 1 个任务提交估算调整建议\nprp_c71ed3f585\n依据 r40\n策略 p1\ninteractive_ui · user_ui\n检查并批准\nvalidated\n根据实际投入为 1 个任务提交估算调整建议\nprp_340888aedf\n依据 r40\n策略 p1\ninteractive_ui · user_ui\n检查并批准\nvalidated\n根据实际投入为 1 个任务提交估算调整建议\nprp_97058c5e6e\n依据 r40\n策略 p1\ninteractive_ui · user_ui\n检查并批准\nvalidated\nMCP 权限测试：只允许提案\nprp_e2e052e941\n依据 r28\n策略 p1\nmcp_client · agent_mcp\n检查并批准\nvalidated\nMCP 客户端测试：提交一个待人工审阅的任务\nprp_a3fd963506\n依据 r28\n策略 p1\nmcp_client · agent_mcp\n检查并批准\nvalidated\nSchedule work within capacity\nprp_ad9da76e49\n依据 r28\n策略 p1\nmcp_client · agent_mcp\n检查并批准\nvalidated\nAI 拆解目标「完成作品集第二版」为 5 个任务（待审阅，不自动提交）\nprp_6f4900fd64\n依据 r24\n策略 p1\ndelegated_agent · ai_planner\n检查并批准\n最近历史\nAI 拆解目标「完成作品集第二版」为 6 个任务（待审阅，不自动提交）\napplied\nAI 拆解目标「完成作品集第二版」为 5 个任务（待审阅，不自动提交）\napplied\nSchedule work within capacity\napplied\nSchedule work within capacity\napplied\n估算调整已生成提案，需要人工批准。",
+  "toast": "计划已应用 · cs_90e54449aefb446d9bc9 · r41",
+  "errors": []
+}

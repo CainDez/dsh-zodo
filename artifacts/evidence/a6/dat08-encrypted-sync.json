@@ -1,0 +1,21 @@
+{
+  "export_status": 200,
+  "schema": "zodo.sync.encrypted/1",
+  "kdf": "pbkdf2-hmac-sha256",
+  "contains_credentials": false,
+  "plaintext_absent": true,
+  "ciphertext_len": 4108,
+  "import_status": 200,
+  "imported": {
+    "added": 1,
+    "device_id": "dev_0da2711c304a4263834d9d0c8aa66e1b",
+    "event_cursor": "ev_1",
+    "imported": true,
+    "revision": 1,
+    "schema": "zodo.sync-result/1"
+  },
+  "target_tasks": 1,
+  "wrong_status": 403,
+  "wrong_code": "PERMISSION_DENIED",
+  "wrong_tasks": 0
+}

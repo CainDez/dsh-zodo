@@ -1,0 +1,123 @@
+{
+  "goal_status": 200,
+  "model_status": 200,
+  "model_body": {
+    "base_url": "http://127.0.0.1:39091/v1",
+    "credential_env": "DEEPSEEK_API_KEY",
+    "credential_present": true,
+    "enabled": true,
+    "id": "cloud-stub",
+    "label": "Stub cloud",
+    "location": "cloud",
+    "model": "stub-cloud-model"
+  },
+  "model_roles": {
+    "decompose": "cloud"
+  },
+  "run_status": 202,
+  "run": {
+    "cancel_requested": false,
+    "checkpoint": {
+      "assumptions": [
+        "stub cloud route"
+      ],
+      "elapsed_ms": 1,
+      "model": "stub-cloud-model",
+      "provider": "cloud-stub",
+      "questions": [],
+      "route": "cloud",
+      "tasks": [
+        {
+          "depends_on": [],
+          "estimate_minutes": 30,
+          "priority": 2,
+          "target_due": null,
+          "title": "云路由任务一"
+        },
+        {
+          "depends_on": [
+            0
+          ],
+          "estimate_minutes": 45,
+          "priority": 1,
+          "target_due": null,
+          "title": "云路由任务二"
+        },
+        {
+          "depends_on": [
+            1
+          ],
+          "estimate_minutes": 20,
+          "priority": 2,
+          "target_due": null,
+          "title": "云路由任务三"
+        }
+      ]
+    },
+    "created_at": "2026-10-24T22:40:03.840266100+00:00",
+    "ended_at": "2026-10-24T22:40:04.132374700+00:00",
+    "error": null,
+    "id": "run_c6077c39399840e68b50d74235eaed2b",
+    "input": {
+      "goal_id": "goal_dc835e18a50d4d6cb196"
+    },
+    "intent": "goal.decompose",
+    "output": {
+      "base_revision": 3,
+      "model": "stub-cloud-model",
+      "proposal_id": "prp_25d244d59cc74570a4cb",
+      "provider": "cloud-stub",
+      "route": "cloud",
+      "status": "proposal_created",
+      "task_count": 5
+    },
+    "schema": "zodo.run/1",
+    "started_at": "2026-10-24T22:40:04.129621700+00:00",
+    "state": "succeeded",
+    "updated_at": "2026-10-24T22:40:04.132374700+00:00",
+    "workspace_id": "ws_local"
+  },
+  "cloud_requests": 1,
+  "cloud_route": "cloud",
+  "cloud_provider": "cloud-stub",
+  "private_note_in_cloud_request": false,
+  "stub_received_goal": true,
+  "task_count": 5,
+  "approved_status": 200,
+  "committed_status": 200,
+  "dependencies": [
+    {
+      "predecessor": "云路由任务二",
+      "successor": "云路由任务三"
+    },
+    {
+      "predecessor": "云路由任务一",
+      "successor": "云路由任务二"
+    }
+  ],
+  "evidence_request": [
+    {
+      "path": "/v1/chat/completions",
+      "authorization_present": true,
+      "body": {
+        "format": "json",
+        "messages": [
+          {
+            "content": "You are the planning component of Zodo, a personal operations system. Return ONLY a JSON object. Do not include prose. The object must have this shape: {\"tasks\":[{\"title\":\"...\",\"estimate_minutes\":30,\"priority\":2,\"target_due\":\"YYYY-MM-DD or null\",\"depends_on\":[0]}],\"assumptions\":[\"...\"],\"questions\":[\"...\"]}. Use depends_on only for 0-based indexes of tasks in this same array that must finish first; leave it [] when independent. Produce 3 to 7 concrete tasks, each independently executable, with estimates between 15 and 240 minutes. Do not invent facts about the user. Put uncertainty into questions.",
+            "role": "system"
+          },
+          {
+            "content": "Goal: 云路由目标\nSuccess criteria: 产出三个任务\nTarget due: (none)\n",
+            "role": "user"
+          }
+        ],
+        "model": "stub-cloud-model",
+        "response_format": {
+          "type": "json_object"
+        },
+        "stream": false,
+        "temperature": 0.1
+      }
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "agent_before": [
+    200,
+    {
+      "config": {
+        "cloud": {
+          "base_url": "https://api.deepseek.com/v1",
+          "credential_env": "DEEPSEEK_API_KEY",
+          "credential_present": false,
+          "enabled": false,
+          "id": "deepseek-cloud",
+          "label": "DeepSeek 云端",
+          "location": "cloud",
+          "model": "deepseek-chat"
+        },
+        "local": {
+          "base_url": "http://127.0.0.1:11434/v1",
+          "credential_env": "OLLAMA_API_KEY",
+          "credential_present": true,
+          "enabled": true,
+          "id": "local-ollama",
+          "label": "本地 Ollama",
+          "location": "device",
+          "model": "aravhawk/qwen3.5-opus-4.6:latest"
+        },
+        "policy_note": "模型配置只保存环境变量名；API key 本身不进入此文件、浏览器或证据。",
+        "version": 1
+      },
+      "schema": "zodo.model/1"
+    }
+  ],
+  "revoke": [
+    200,
+    {
+      "channel": "harness_agent",
+      "revoked": true,
+      "revoked_channels": [
+        "harness_agent"
+      ],
+      "schema": "zodo.auth/1"
+    }
+  ],
+  "agent_after_revoke": [
+    403,
+    {
+      "schema": "zodo.error/1",
+      "request_id": "",
+      "error": {
+        "code": "PERMISSION_DENIED",
+        "message": "channel harness_agent has been revoked by the workspace owner",
+        "retryable": false,
+        "details": null
+      }
+    }
+  ],
+  "ui_after_revoke": [
+    200,
+    {
+      "config": {
+        "cloud": {
+          "base_url": "https://api.deepseek.com/v1",
+          "credential_env": "DEEPSEEK_API_KEY",
+          "credential_present": false,
+          "enabled": false,
+          "id": "deepseek-cloud",
+          "label": "DeepSeek 云端",
+          "location": "cloud",
+          "model": "deepseek-chat"
+        },
+        "local": {
+          "base_url": "http://127.0.0.1:11434/v1",
+          "credential_env": "OLLAMA_API_KEY",
+          "credential_present": true,
+          "enabled": true,
+          "id": "local-ollama",
+          "label": "本地 Ollama",
+          "location": "device",
+          "model": "aravhawk/qwen3.5-opus-4.6:latest"
+        },
+        "policy_note": "模型配置只保存环境变量名；API key 本身不进入此文件、浏览器或证据。",
+        "version": 1
+      },
+      "schema": "zodo.model/1"
+    }
+  ],
+  "auth_file": {
+    "revoked_channels": [
+      "harness_agent"
+    ]
+  },
+  "restore": [
+    200,
+    {
+      "channel": "harness_agent",
+      "revoked": false,
+      "revoked_channels": [],
+      "schema": "zodo.auth/1"
+    }
+  ],
+  "agent_after_restore": [
+    200,
+    {
+      "config": {
+        "cloud": {
+          "base_url": "https://api.deepseek.com/v1",
+          "credential_env": "DEEPSEEK_API_KEY",
+          "credential_present": false,
+          "enabled": false,
+          "id": "deepseek-cloud",
+          "label": "DeepSeek 云端",
+          "location": "cloud",
+          "model": "deepseek-chat"
+        },
+        "local": {
+          "base_url": "http://127.0.0.1:11434/v1",
+          "credential_env": "OLLAMA_API_KEY",
+          "credential_present": true,
+          "enabled": true,
+          "id": "local-ollama",
+          "label": "本地 Ollama",
+          "location": "device",
+          "model": "aravhawk/qwen3.5-opus-4.6:latest"
+        },
+        "policy_note": "模型配置只保存环境变量名；API key 本身不进入此文件、浏览器或证据。",
+        "version": 1
+      },
+      "schema": "zodo.model/1"
+    }
+  ],
+  "auth_file_after": {
+    "revoked_channels": []
+  }
+}

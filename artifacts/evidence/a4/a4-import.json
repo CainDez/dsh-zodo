@@ -1,0 +1,35 @@
+{
+  "export_counts": {
+    "activities": 3,
+    "goals": 1,
+    "habits": 1,
+    "inbox": 4,
+    "notes": 0,
+    "projects": 1,
+    "tasks": 22
+  },
+  "import_status": 200,
+  "imported": {
+    "counts": {
+      "goals": 1,
+      "habits": 1,
+      "inbox": 4,
+      "projects": 1,
+      "tasks": 22
+    },
+    "credentials_imported": false,
+    "event_cursor": "ev_1",
+    "imported": true,
+    "revision": 1,
+    "schema": "zodo.import-result/1"
+  },
+  "fresh_counts": {
+    "tasks": 22,
+    "goals": 1,
+    "projects": 1,
+    "inbox": 4,
+    "habits": 1
+  },
+  "revision": 1,
+  "auth_file_absent": true
+}

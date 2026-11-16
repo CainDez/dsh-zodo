@@ -1,0 +1,45 @@
+{
+  "schema": "zodo.model-catalog/1",
+  "catalog_version": 1,
+  "providers": [
+    {
+      "id": "local-ollama",
+      "location": "device",
+      "model": "aravhawk/qwen3.5-opus-4.6:latest",
+      "credential_present": true
+    },
+    {
+      "id": "deepseek-cloud",
+      "location": "cloud",
+      "model": "deepseek-chat",
+      "credential_present": false
+    }
+  ],
+  "actions": [
+    {
+      "id": "chat.completions",
+      "budgets": {
+        "max_questions": 8,
+        "max_tasks_per_run": 12,
+        "timeout_seconds": 60
+      },
+      "failure_count": 3
+    },
+    {
+      "id": "goal.decompose",
+      "budgets": {
+        "estimates_minutes": "15..240",
+        "tasks": "3..7"
+      },
+      "failure_count": 0
+    },
+    {
+      "id": "capture.clarify",
+      "budgets": {
+        "input_chars_max": 4000,
+        "questions_max": 4
+      },
+      "failure_count": 0
+    }
+  ]
+}

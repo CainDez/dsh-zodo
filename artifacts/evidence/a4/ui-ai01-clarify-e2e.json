@@ -1,0 +1,28 @@
+{
+  "url": "http://127.0.0.1:3181/?token=<redacted>",
+  "steps": [
+    {
+      "name": "open-inbox-detail",
+      "ok": true
+    },
+    {
+      "name": "run-ai-clarify",
+      "ok": true
+    }
+  ],
+  "pageErrors": [],
+  "consoleErrors": [],
+  "checks": {
+    "inboxDetail": "收集详情\n\n来源 · user · 10/25 00:22\n\n×\n明天下午联系印刷店并确认封面 4559\nprocessed\nAI 澄清（只提问，不写事实）\n\n运行意图 capture.clarify：把这段原文发给 Core 模型网关，返回需要澄清的问题。它不创建任务/目标/笔记，不产生提案，也不自动批准；转换仍需你明确操作。\n\nAI 澄清\n已有澄清\n希望在几点前完成？\n下午六点前\n人工补充澄清\n问题\n回答（可稍后）\n保存澄清\n已转换到\ntask · tsk_a010356971874c1fab9f\n关闭\n忽略\n转换…",
+    "aiClarify": {
+      "kind": "success",
+      "text": "收集详情\n\n来源 · user · 10/25 00:22\n\n×\n明天下午联系印刷店并确认封面 4559\nprocessed\nAI 澄清（只提问，不写事实）\n\n运行意图 capture.clarify：把这段原文发给 Core 模型网关，返回需要澄清的问题。它不创建任务/目标/笔记，不产生提案，也不自动批准；转换仍需你明确操作。\n\nrun_b503bcfc409f403e8ce5e1fa9e44a7a7\nsucceeded\nlocal-ollama · device\nfacts_written: false\n1. What does 'cover 4559' refer to - is it an order number, project code, or something else?\n未回答\n2. What specific confirmation do you need from the printing shop (status, pricing, delivery date, quality specs)?\n未回答\n3. Who should make this call - yourself or someone else?\n未回答\n4. What's the expected outcome of this conversation?\n未回答\n\n模型建议类型：任务（只是建议，不自动转换）\n\nAI 澄清\n运行只读；不会写入事实。\n已有澄清\n希望在几点前完成？\n下午六点前\n人工补充澄清\n问题\n回答（可稍后）\n保存澄清\n已转换到\ntask · tsk_a010356971874c1fab9f\n关闭\n忽略\n转换…"
+    },
+    "aiClarifySuccess": true
+  },
+  "shots": [
+    "ui-ai01-inbox-detail.png",
+    "ui-ai01-clarify.png"
+  ],
+  "finalText": "Z\nZodo\nCore 已连接\nr49\n＋ 收集\n刷新\n今天\n收集箱\n目标\n日程\n回顾\n任务\n项目\n习惯\n视图\n自动化\n专注\n提案\nAI 运行\n搜索\n模型\n数据\n同步\n设置\n隐私\nAgent\n活动\n原文先保留\n收集箱\n快速收集\n明天下午联系印刷店并确认封面 4559\nprocessed\n10/25 00:22\n明天下午联系印刷店并确认封面 1371\nunprocessed\n10/25 00:22\n明天下午联系印刷店并确认封面 6505\nunprocessed\n10/25 00:17\n明天下午联系印刷店，并确认作品集封面\nunprocessed\n10/25 00:10\n处理原则\n\n原文保留；澄清与转换是明确动作。转换后仍可以在任务详情中继续编辑。\n\n没有模型也能收集、澄清和手工转换。\n\n收集详情\n\n来源 · user · 10/25 00:22\n\n×\n明天下午联系印刷店并确认封面 4559\nprocessed\nAI 澄清（只提问，不写事实）\n\n运行意图 capture.clarify：把这段原文发给 Core 模型网关，返回需要澄清的问题。它不创建任务/目标/笔记，不产生提案，也不自动批准；转换仍需你明确操作。\n\nrun_b503bcfc409f403e8ce5e1fa9e44a7a7\nsucceeded\nlocal-ollama · device\nfacts_written: false\n1. What does 'cover 4559' refer to - is it an order number, project code, or something else?\n未回答\n2. What specific confirmation do you need from the printing shop (status, pricing, delivery date, quality specs)?\n未回答\n3. Who should make this call - yourself or someone else?\n未回答\n4. What's the expected outcome of this conversation?\n未回答\n\n模型建议类型：任务（只是建议，不自动转换）\n\nAI 澄清\n运行只读；不会写入事实。\n已有澄清\n希望在几点前完成？\n下午六点前\n人工补充澄清\n问题\n回答（可稍后）\n保存澄清\n已转换到\ntask · tsk_a010356971874c1fab9f\n关闭\n忽略\n转换…"
+}

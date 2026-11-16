@@ -1,0 +1,5 @@
+{
+  "visible": 1,
+  "text": "未解析条件：natural_language；应用时会被忽略，不会静默当作已支持",
+  "errs": []
+}

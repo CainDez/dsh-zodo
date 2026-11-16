@@ -1,0 +1,2600 @@
+{
+  "contains_credentials": false,
+  "counts": {
+    "activities": 5,
+    "goals": 1,
+    "habits": 3,
+    "inbox": 5,
+    "notes": 0,
+    "projects": 1,
+    "tasks": 26
+  },
+  "exported_at": "2026-10-24T18:34:02.258491600Z",
+  "facts": {
+    "activities": [
+      {
+        "created_at": "2026-10-24T16:17:30.944232800Z",
+        "id": "act_376bdfe5c048467385a9",
+        "kind": "progress",
+        "minutes": 10,
+        "note": "校对前两页",
+        "occurred_at": "2026-10-24T16:17:30.944232800Z",
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "harness_ui"
+        },
+        "task_id": "tsk_5871faaf72f04115be9d",
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T18:32:19.646245100Z",
+        "dedupe_key": "habitlog_312270fe-661b-4935-9a84-bea1b567151a",
+        "habit_id": "hab_100f7f8c20c3426e845c",
+        "id": "act_57e50b2195c54c77ab9e",
+        "kind": "habit",
+        "minutes": 20,
+        "occurred_at": "2026-10-25T04:00:00Z",
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "harness_ui"
+        },
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T16:17:31.634794400Z",
+        "id": "act_6e3f0438289b4eeebf0b",
+        "kind": "focus",
+        "minutes": 0,
+        "occurred_at": "2026-10-24T16:17:31.634794400Z",
+        "source": {
+          "kind": "system"
+        },
+        "task_id": "tsk_5871faaf72f04115be9d",
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T16:58:20.043657200Z",
+        "dedupe_key": "habitlog_e32d2c1a-6d73-4698-bb48-ca38ca2a22bc",
+        "habit_id": "hab_0aeefc849a5749839d16",
+        "id": "act_9454bd5331a54b108db0",
+        "kind": "habit",
+        "minutes": 20,
+        "occurred_at": "2026-10-25T04:00:00Z",
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "harness_ui"
+        },
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T18:33:58.659549800Z",
+        "dedupe_key": "habitlog_cf11ab51-2b67-4111-b2d7-dcfc3ecafb57",
+        "habit_id": "hab_708cc664a23547bf83d7",
+        "id": "act_f301f5fdf598497f92f4",
+        "kind": "habit",
+        "minutes": 20,
+        "occurred_at": "2026-10-25T04:00:00Z",
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "harness_ui"
+        },
+        "workspace_id": "ws_local"
+      }
+    ],
+    "allocations": [
+      {
+        "capacity_block_id": "cap_1769ad8e3dc641bdba54",
+        "created_at": "2026-10-24T16:16:32.304320300Z",
+        "end": "2026-10-26T06:45:00Z",
+        "id": "alc_99bc018c00f443a38299",
+        "locked": false,
+        "minutes": 45,
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "harness_ui"
+        },
+        "start": "2026-10-26T06:00:00Z",
+        "state": "planned",
+        "task_id": "tsk_14ee523f0a3a4ecabc44",
+        "updated_at": "2026-10-24T16:16:32.304320300Z",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "approval_grants": [
+      {
+        "base_revision": 4,
+        "channel": "harness_ui",
+        "consumed_at": "2026-10-24T16:16:32.304320300Z",
+        "consumed_revision": 5,
+        "content_hash": "f2d4a6e0ac1ac7355139e660f00f0b934a2594a8f5b32dba25363e490c3f9229",
+        "effects": [
+          "schedule"
+        ],
+        "expires_at": "2026-10-24T16:31:32.269305400Z",
+        "id": "apr_44bd51bbbb334d6197d1",
+        "issued_at": "2026-10-24T16:16:32.269305400Z",
+        "policy_revision": 1,
+        "principal_id": "user_ui",
+        "proposal_id": "prp_a339db7525c0408889da",
+        "workspace_id": "ws_local"
+      },
+      {
+        "base_revision": 24,
+        "channel": "harness_ui",
+        "consumed_at": "2026-10-24T16:43:13.820873600Z",
+        "consumed_revision": 25,
+        "content_hash": "1c1979b11f11e2a7191de035a092003ef10440e0389edc7af74330881ec79826",
+        "effects": [],
+        "expires_at": "2026-10-24T16:58:13.810998800Z",
+        "id": "apr_6e39dd756aa34e05b5d5",
+        "issued_at": "2026-10-24T16:43:13.810998800Z",
+        "policy_revision": 1,
+        "principal_id": "user_ui",
+        "proposal_id": "prp_ec7bde734281435b9151",
+        "workspace_id": "ws_local"
+      },
+      {
+        "base_revision": 25,
+        "channel": "harness_ui",
+        "consumed_at": "2026-10-24T16:44:04.945651200Z",
+        "consumed_revision": 26,
+        "content_hash": "d7cc321fe23271d0e9a63b15ab5ff50d1d66e2e4ac51ec7e4364be9d10c25851",
+        "effects": [],
+        "expires_at": "2026-10-24T16:59:04.936509700Z",
+        "id": "apr_e8705454a7d045268d90",
+        "issued_at": "2026-10-24T16:44:04.936509700Z",
+        "policy_revision": 1,
+        "principal_id": "user_ui",
+        "proposal_id": "prp_866a7ed7dba84f0aa696",
+        "workspace_id": "ws_local"
+      },
+      {
+        "base_revision": 3,
+        "channel": "harness_ui",
+        "consumed_at": "2026-10-24T16:10:06.122547Z",
+        "consumed_revision": 4,
+        "content_hash": "13780b7c62cb5c4c6e333e66be8d7d5387ead789a9fdd28d1c91c24d9c665a9a",
+        "effects": [
+          "schedule"
+        ],
+        "expires_at": "2026-10-24T16:25:06.109858800Z",
+        "id": "apr_eac803a0077e48bfabb2",
+        "issued_at": "2026-10-24T16:10:06.109858800Z",
+        "policy_revision": 1,
+        "principal_id": "user_ui",
+        "proposal_id": "prp_c7754dfb07eb41238178",
+        "workspace_id": "ws_local"
+      },
+      {
+        "base_revision": 40,
+        "channel": "harness_ui",
+        "consumed_at": "2026-10-24T17:44:39.290734200Z",
+        "consumed_revision": 41,
+        "content_hash": "a03805172947cb01dd27e6504fb42f40ad0746b8517c67809933202e1707e78f",
+        "effects": [],
+        "expires_at": "2026-10-24T17:59:39.281596900Z",
+        "id": "apr_fecb0bd3f7d24f0485cf",
+        "issued_at": "2026-10-24T17:44:39.281596900Z",
+        "policy_revision": 1,
+        "principal_id": "user_ui",
+        "proposal_id": "prp_c71ed3f5855d43c096bc",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "attachments": [],
+    "automation_rules": [
+      {
+        "actions": [
+          {
+            "kind": "task.create",
+            "task": {
+              "estimate_minutes": 5,
+              "title": "调度器自动任务 1792863674"
+            }
+          }
+        ],
+        "budget": 2,
+        "conditions": {
+          "interval_seconds": 60
+        },
+        "created_at": "2026-10-24T17:41:14.122513300Z",
+        "enabled": false,
+        "id": "aut_2fbcdedcbf65405fb619",
+        "last_run_at": "2026-10-24T17:42:15.440753600Z",
+        "name": "调度器测试 1792863674",
+        "runs": 2,
+        "trigger": "schedule",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "calendar_events": [
+      {
+        "busy": true,
+        "end": "2026-10-24T19:17:33.652Z",
+        "external_id": "busy-1",
+        "fetched_at": "2026-10-24T16:17:33.727024400Z",
+        "id": "cev_e32eca3de8a940b28833",
+        "source_id": "cal_f1db24221aff4ae48d8b",
+        "start": "2026-10-24T18:17:33.652Z",
+        "title": "外部会议",
+        "updated_at": "2026-10-24T16:17:33.727024400Z",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "calendar_sources": [
+      {
+        "display_name": "手动忙碌快照",
+        "external_id": "manual-busy",
+        "freshness_seconds": 900,
+        "id": "cal_f1db24221aff4ae48d8b",
+        "last_sync_at": "2026-10-24T16:17:33.727024400Z",
+        "provider": "manual",
+        "workspace_id": "ws_local",
+        "writable": false
+      }
+    ],
+    "capacity_blocks": [
+      {
+        "capacity_minutes": 120,
+        "created_at": "2026-10-24T16:10:03.777032400Z",
+        "end": "2026-10-26T08:00:00Z",
+        "id": "cap_1769ad8e3dc641bdba54",
+        "locked": false,
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "harness_ui"
+        },
+        "start": "2026-10-26T06:00:00Z",
+        "title": "作品集专注时间",
+        "updated_at": "2026-10-24T16:10:03.777032400Z",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "commitments": [],
+    "dependencies": [
+      {
+        "created_at": "2026-10-24T16:17:30.221459400Z",
+        "id": "dep_8a2710ab8b3b4db29bc6",
+        "predecessor_id": "tsk_14ee523f0a3a4ecabc44",
+        "successor_id": "tsk_5871faaf72f04115be9d",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "focus_sessions": [
+      {
+        "accumulated_seconds": 0,
+        "ended_at": "2026-10-24T16:17:31.634794400Z",
+        "id": "foc_7b31dfeeacf442f7a810",
+        "segments": [
+          {
+            "end": "2026-10-24T16:17:31.634794400Z",
+            "start": "2026-10-24T16:17:31.471261Z"
+          }
+        ],
+        "started_at": "2026-10-24T16:17:31.471261Z",
+        "state": "completed",
+        "task_id": "tsk_5871faaf72f04115be9d",
+        "updated_at": "2026-10-24T16:17:31.634794400Z",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "goals": [
+      {
+        "achieved_at": "2026-10-24T16:22:28.082304300Z",
+        "created_at": "2026-10-24T16:17:27.471571100Z",
+        "evidence": [
+          {
+            "recorded_at": "2026-10-24T16:22:28.082304300Z",
+            "source": {
+              "actor_id": "user_ui",
+              "kind": "harness_ui"
+            },
+            "text": "演示证据：三个案例已在线发布"
+          }
+        ],
+        "id": "goal_79a31ac8c9ca4d4c9561",
+        "status": "achieved",
+        "success_criteria": "精选 3 个项目，完成案例说明与在线展示",
+        "target_due": "2026-10-31",
+        "title": "完成作品集第二版",
+        "updated_at": "2026-10-24T16:22:28.082304300Z",
+        "version": 2,
+        "workspace_id": "ws_local"
+      }
+    ],
+    "habits": [
+      {
+        "created_at": "2026-10-24T16:58:19.340126100Z",
+        "id": "hab_0aeefc849a5749839d16",
+        "scheduled_weekdays": [
+          1,
+          3,
+          5
+        ],
+        "start_date": "2026-10-25",
+        "timezone": "Asia/Shanghai",
+        "title": "晨间写作 101",
+        "updated_at": "2026-10-24T16:58:19.340126100Z",
+        "version": 1,
+        "weekly_target": 5,
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T18:32:18.908595Z",
+        "id": "hab_100f7f8c20c3426e845c",
+        "scheduled_weekdays": [
+          1,
+          3,
+          5
+        ],
+        "start_date": "2026-10-25",
+        "timezone": "Asia/Shanghai",
+        "title": "晨间写作 654",
+        "updated_at": "2026-10-24T18:32:18.908595Z",
+        "version": 1,
+        "weekly_target": 5,
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T18:33:57.951353500Z",
+        "id": "hab_708cc664a23547bf83d7",
+        "scheduled_weekdays": [
+          1,
+          3,
+          5
+        ],
+        "start_date": "2026-10-25",
+        "timezone": "Asia/Shanghai",
+        "title": "晨间写作 716",
+        "updated_at": "2026-10-24T18:33:57.951353500Z",
+        "version": 1,
+        "weekly_target": 5,
+        "workspace_id": "ws_local"
+      }
+    ],
+    "inbox": [
+      {
+        "clarifications": [
+          {
+            "answer": "下午六点前",
+            "answered_at": "2026-10-24T16:22:25.737417400Z",
+            "asked_at": "2026-10-24T16:22:25.737417400Z",
+            "id": "clr_bf3a3c2a2aa74947a1fd",
+            "question": "希望在几点前完成？"
+          }
+        ],
+        "converted_refs": [
+          {
+            "id": "tsk_a010356971874c1fab9f",
+            "kind": "task"
+          }
+        ],
+        "created_at": "2026-10-24T16:22:24.682581400Z",
+        "id": "inb_143a7ebf08744b4293a2",
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "user"
+        },
+        "status": "processed",
+        "text": "明天下午联系印刷店并确认封面 4559",
+        "updated_at": "2026-10-24T16:22:27.232258500Z",
+        "version": 3,
+        "workspace_id": "ws_local"
+      },
+      {
+        "clarifications": [],
+        "converted_refs": [],
+        "created_at": "2026-10-24T16:17:56.724619200Z",
+        "id": "inb_3af7fbfd9d90425f887f",
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "user"
+        },
+        "status": "unprocessed",
+        "text": "明天下午联系印刷店并确认封面 6505",
+        "updated_at": "2026-10-24T16:17:56.724619200Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "clarifications": [
+          {
+            "answer": "下午六点前",
+            "answered_at": "2026-10-24T16:22:12.746459100Z",
+            "asked_at": "2026-10-24T16:22:12.746459100Z",
+            "id": "clr_13f543df1b9f46989331",
+            "question": "希望在几点前完成？"
+          }
+        ],
+        "converted_refs": [],
+        "created_at": "2026-10-24T16:22:11.549253500Z",
+        "id": "inb_99dc6066db594d799e87",
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "user"
+        },
+        "status": "unprocessed",
+        "text": "明天下午联系印刷店并确认封面 1371",
+        "updated_at": "2026-10-24T16:22:12.746459100Z",
+        "version": 2,
+        "workspace_id": "ws_local"
+      },
+      {
+        "clarifications": [],
+        "converted_refs": [],
+        "created_at": "2026-10-24T18:31:41.243627200Z",
+        "id": "inb_dd70d3451ca54642b72a",
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "user"
+        },
+        "status": "unprocessed",
+        "text": "离线草稿测试 1792866696179",
+        "updated_at": "2026-10-24T18:31:41.243627200Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "clarifications": [],
+        "converted_refs": [],
+        "created_at": "2026-10-24T16:10:01.368620500Z",
+        "id": "inb_f27ff34b23e74ed8b8f7",
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "user"
+        },
+        "status": "unprocessed",
+        "text": "明天下午联系印刷店，并确认作品集封面",
+        "updated_at": "2026-10-24T16:10:01.368620500Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      }
+    ],
+    "notes": [],
+    "occurrences": [
+      {
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "current_date": "2026-11-02",
+        "id": "occ_000d601437e84f819f78",
+        "occurrence_key": "2026-11-02",
+        "original_date": "2026-11-02",
+        "rule_id": "rec_9fe393843e634514b73e",
+        "status": "generated",
+        "task_id": "tsk_b8fe47dc08cb48f59782",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "current_date": "2026-11-09",
+        "id": "occ_757fabd0dde44b5ea222",
+        "occurrence_key": "2026-11-09",
+        "original_date": "2026-11-09",
+        "rule_id": "rec_9fe393843e634514b73e",
+        "status": "generated",
+        "task_id": "tsk_8769ff20a8f74801a897",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "current_date": "2026-11-30",
+        "id": "occ_8cee9618f403488baf1e",
+        "occurrence_key": "2026-11-30",
+        "original_date": "2026-11-30",
+        "rule_id": "rec_9fe393843e634514b73e",
+        "status": "generated",
+        "task_id": "tsk_e12d85ca01124a83aae1",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "current_date": "2026-10-26",
+        "id": "occ_a73ad19e7c5d4afda61c",
+        "occurrence_key": "2026-10-26",
+        "original_date": "2026-10-26",
+        "rule_id": "rec_9fe393843e634514b73e",
+        "status": "generated",
+        "task_id": "tsk_4414fc25b95c4f6f8828",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "current_date": "2026-11-16",
+        "id": "occ_ad0d56b0178342339289",
+        "occurrence_key": "2026-11-16",
+        "original_date": "2026-11-16",
+        "rule_id": "rec_9fe393843e634514b73e",
+        "status": "generated",
+        "task_id": "tsk_71649698333242c0bde0",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "current_date": "2026-11-23",
+        "id": "occ_e190da9ce36e47daad66",
+        "occurrence_key": "2026-11-23",
+        "original_date": "2026-11-23",
+        "rule_id": "rec_9fe393843e634514b73e",
+        "status": "generated",
+        "task_id": "tsk_b8dfc7931de341c9b033",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "projects": [
+      {
+        "created_at": "2026-10-24T16:17:28.214147300Z",
+        "goal_id": "goal_79a31ac8c9ca4d4c9561",
+        "id": "prj_f0905244f4ba43e1acfb",
+        "milestones": [
+          {
+            "done": true,
+            "due": "2026-11-10",
+            "id": "mil_cd07ba1e6e5e4cc799c7",
+            "title": "A4 里程碑验收"
+          },
+          {
+            "done": false,
+            "due": "2026-11-10",
+            "id": "mil_f9d47c53f13945258410",
+            "title": "A4 里程碑验收"
+          },
+          {
+            "done": false,
+            "due": "2026-11-10",
+            "id": "mil_1c4d15d8b6ec4eb1847e",
+            "title": "A4 里程碑验收"
+          }
+        ],
+        "scope": "素材、案例说明、上线检查",
+        "status": "active",
+        "title": "作品集第二版",
+        "updated_at": "2026-10-24T18:34:00.940001Z",
+        "version": 7,
+        "workspace_id": "ws_local"
+      }
+    ],
+    "proposals": [
+      {
+        "actor_id": "user_ui",
+        "actor_kind": "interactive_ui",
+        "assumptions": [
+          "估算建议只基于已有实际投入与剩余分钟，不自动修改永久偏好"
+        ],
+        "base_revision": 40,
+        "content_hash": "a03805172947cb01dd27e6504fb42f40ad0746b8517c67809933202e1707e78f",
+        "created_at": "2026-10-24T17:44:22.138217100Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-24T18:44:22.138217100Z",
+        "id": "prp_340888aedf55495d847d",
+        "intent": "根据实际投入为 1 个任务提交估算调整建议",
+        "operations": [
+          {
+            "operation": "task.update",
+            "payload": {
+              "expected_version": 3,
+              "id": "tsk_5871faaf72f04115be9d",
+              "task": {
+                "estimate_minutes": 15,
+                "priority": 2,
+                "project_id": "prj_f0905244f4ba43e1acfb",
+                "tags": [],
+                "title": "校对案例说明"
+              }
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "added": [],
+          "changed": [
+            {
+              "after": {
+                "actual_minutes": 10,
+                "archived": false,
+                "blocked_manual": false,
+                "created_at": "2026-10-24T16:17:28.953669700Z",
+                "estimate_minutes": 15,
+                "id": "tsk_5871faaf72f04115be9d",
+                "priority": 2,
+                "project_id": "prj_f0905244f4ba43e1acfb",
+                "remaining_minutes": 5,
+                "status": "in_progress",
+                "tags": [],
+                "title": "校对案例说明",
+                "updated_at": "2026-10-24T17:44:22.138217100Z",
+                "version": 4,
+                "workspace_id": "ws_local"
+              },
+              "before": {
+                "actual_minutes": 10,
+                "archived": false,
+                "blocked_manual": false,
+                "created_at": "2026-10-24T16:17:28.953669700Z",
+                "estimate_minutes": 5,
+                "id": "tsk_5871faaf72f04115be9d",
+                "priority": 2,
+                "project_id": "prj_f0905244f4ba43e1acfb",
+                "remaining_minutes": 0,
+                "status": "in_progress",
+                "tags": [],
+                "title": "校对案例说明",
+                "updated_at": "2026-10-24T17:43:18.344732Z",
+                "version": 3,
+                "workspace_id": "ws_local"
+              },
+              "id": "tsk_5871faaf72f04115be9d",
+              "kind": "task",
+              "summary": "校对案例说明"
+            }
+          ],
+          "changes": [
+            {
+              "action": "updated",
+              "id": "tsk_5871faaf72f04115be9d",
+              "kind": "task"
+            }
+          ],
+          "counts": {
+            "added": 0,
+            "total_after": 65,
+            "total_before": 65
+          },
+          "removed": [],
+          "warnings": [
+            "editing the estimate recalculates remaining minutes"
+          ]
+        },
+        "questions": [],
+        "reads": [],
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "harness_ui"
+        },
+        "status": "validated",
+        "validated_at": "2026-10-24T17:44:22.138217100Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "actor_id": "ai_planner",
+        "actor_kind": "delegated_agent",
+        "assumptions": [
+          "The user has at least 3 completed projects suitable for portfolio inclusion",
+          "Existing case descriptions may exist and need refinement, or new ones must be created from scratch",
+          "The user will handle online display setup separately (e.g., personal website, Behance, Dribbble, etc.)"
+        ],
+        "base_revision": 24,
+        "content_hash": "92095a1f881312fec19c3459c4269c18d53b0c9366649a19ccc7cb7397ae3dcb",
+        "created_at": "2026-10-24T16:41:55.440065800Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-25T16:41:55.440065800Z",
+        "id": "prp_6f4900fd646544e0a072",
+        "intent": "AI 拆解目标「完成作品集第二版」为 5 个任务（待审阅，不自动提交）",
+        "operations": [
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 45,
+                "priority": 1,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-31",
+                "title": "Identify and select the 3 projects to feature in Portfolio Version 2"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 60,
+                "priority": 2,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-31",
+                "title": "Draft case descriptions for Project 1 (background, role, challenges, solutions, results)"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 60,
+                "priority": 2,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-31",
+                "title": "Draft case descriptions for Project 2 (background, role, challenges, solutions, results)"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 60,
+                "priority": 2,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-31",
+                "title": "Draft case descriptions for Project 3 (background, role, challenges, solutions, results)"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 45,
+                "priority": 3,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-31",
+                "title": "Review and refine all case descriptions for consistency and impact"
+              }
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "added": [
+            {
+              "id": "tag_76b8eefacf89430fa33e",
+              "kind": "tag",
+              "summary": "tag_76b8eefacf89430fa33e"
+            },
+            {
+              "id": "tag_c2211e6df83e48abacd5",
+              "kind": "tag",
+              "summary": "tag_c2211e6df83e48abacd5"
+            },
+            {
+              "id": "tsk_1123fdd7d7f1474b935a",
+              "kind": "task",
+              "summary": "Review and refine all case descriptions for consistency and impact"
+            },
+            {
+              "id": "tsk_3063f1f08fbf41e58d13",
+              "kind": "task",
+              "summary": "Draft case descriptions for Project 1 (background, role, challenges, solutions, results)"
+            },
+            {
+              "id": "tsk_66c5ee1b3c9d4f679e3e",
+              "kind": "task",
+              "summary": "Draft case descriptions for Project 2 (background, role, challenges, solutions, results)"
+            },
+            {
+              "id": "tsk_ecdf8423712f4f44a66f",
+              "kind": "task",
+              "summary": "Identify and select the 3 projects to feature in Portfolio Version 2"
+            },
+            {
+              "id": "tsk_ff41e781ae344cb58e2f",
+              "kind": "task",
+              "summary": "Draft case descriptions for Project 3 (background, role, challenges, solutions, results)"
+            }
+          ],
+          "changed": [],
+          "changes": [
+            {
+              "action": "created",
+              "id": "tsk_ecdf8423712f4f44a66f",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_3063f1f08fbf41e58d13",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_66c5ee1b3c9d4f679e3e",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_ff41e781ae344cb58e2f",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_1123fdd7d7f1474b935a",
+              "kind": "task"
+            }
+          ],
+          "counts": {
+            "added": 7,
+            "total_after": 43,
+            "total_before": 36
+          },
+          "removed": [],
+          "warnings": []
+        },
+        "questions": [
+          "What platform or website will you use for the online display of your portfolio?",
+          "Do you have existing case descriptions that need to be expanded, or should I assume they need to be written from scratch?",
+          "Are there specific projects already identified as candidates for inclusion, or do you need help selecting them?",
+          "What tone or style should the case descriptions follow (e.g., technical, creative, business-focused)?",
+          "Do you have any brand guidelines or visual preferences for how the online display should look?"
+        ],
+        "reads": [
+          {
+            "id": "goal_79a31ac8c9ca4d4c9561",
+            "kind": "goal"
+          }
+        ],
+        "source": {
+          "actor_id": "ai_planner",
+          "kind": "ai"
+        },
+        "status": "validated",
+        "validated_at": "2026-10-24T16:41:55.440065800Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "actor_id": "ai_planner",
+        "actor_kind": "delegated_agent",
+        "applied_revision": 26,
+        "assumptions": [
+          "User has access to project materials and documentation for the 3 selected projects",
+          "A platform or website builder is available for online display implementation",
+          "The target due date of October 31, 2026 provides sufficient time for all tasks",
+          "User can dedicate focused work sessions to complete these tasks"
+        ],
+        "base_revision": 25,
+        "change_set_id": "cs_e49c8fbe691c49339d6b",
+        "content_hash": "d7cc321fe23271d0e9a63b15ab5ff50d1d66e2e4ac51ec7e4364be9d10c25851",
+        "created_at": "2026-10-24T16:43:59.786067600Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-25T16:43:59.786067600Z",
+        "id": "prp_866a7ed7dba84f0aa696",
+        "intent": "AI 拆解目标「完成作品集第二版」为 6 个任务（待审阅，不自动提交）",
+        "operations": [
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 45,
+                "priority": 1,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-31",
+                "title": "Select and finalize the 3 projects to include in Portfolio v2"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 180,
+                "priority": 2,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-31",
+                "title": "Write detailed case descriptions for each selected project"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 90,
+                "priority": 2,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-31",
+                "title": "Create visual mockups for online display layout"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 180,
+                "priority": 3,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-31",
+                "title": "Implement online showcase on chosen platform"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 60,
+                "priority": 2,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-31",
+                "title": "Review and refine all content and design elements"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 45,
+                "priority": 3,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-31",
+                "title": "Test all links, navigation, and functionality"
+              }
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "added": [
+            {
+              "id": "tsk_2507e115c9ca406095c6",
+              "kind": "task",
+              "summary": "Select and finalize the 3 projects to include in Portfolio v2"
+            },
+            {
+              "id": "tsk_2ae832d34e59405cba79",
+              "kind": "task",
+              "summary": "Review and refine all content and design elements"
+            },
+            {
+              "id": "tsk_a2bb52bd548042e2ad9b",
+              "kind": "task",
+              "summary": "Test all links, navigation, and functionality"
+            },
+            {
+              "id": "tsk_a581f452463b4805a9b4",
+              "kind": "task",
+              "summary": "Create visual mockups for online display layout"
+            },
+            {
+              "id": "tsk_ab2ad7e1fec748baa672",
+              "kind": "task",
+              "summary": "Write detailed case descriptions for each selected project"
+            },
+            {
+              "id": "tsk_c909094ed15c46198000",
+              "kind": "task",
+              "summary": "Implement online showcase on chosen platform"
+            }
+          ],
+          "changed": [],
+          "changes": [
+            {
+              "action": "created",
+              "id": "tsk_2507e115c9ca406095c6",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_ab2ad7e1fec748baa672",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_a581f452463b4805a9b4",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_c909094ed15c46198000",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_2ae832d34e59405cba79",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_a2bb52bd548042e2ad9b",
+              "kind": "task"
+            }
+          ],
+          "counts": {
+            "added": 6,
+            "total_after": 52,
+            "total_before": 46
+          },
+          "removed": [],
+          "warnings": []
+        },
+        "questions": [
+          "Which specific projects should be selected for the portfolio?",
+          "What existing materials or documentation is available for each project?",
+          "Is there a preferred platform or website builder for the online display?",
+          "Are there any brand guidelines or style requirements to follow?",
+          "What level of detail is expected in the case descriptions?",
+          "Is there flexibility in the timeline if certain tasks require more time?",
+          "Should the portfolio include additional sections like an about page or contact information?"
+        ],
+        "reads": [
+          {
+            "id": "goal_79a31ac8c9ca4d4c9561",
+            "kind": "goal"
+          }
+        ],
+        "source": {
+          "actor_id": "ai_planner",
+          "kind": "ai"
+        },
+        "status": "applied",
+        "validated_at": "2026-10-24T16:43:59.786067600Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "actor_id": "user_ui",
+        "actor_kind": "interactive_ui",
+        "assumptions": [
+          "估算建议只基于已有实际投入与剩余分钟，不自动修改永久偏好"
+        ],
+        "base_revision": 40,
+        "content_hash": "a03805172947cb01dd27e6504fb42f40ad0746b8517c67809933202e1707e78f",
+        "created_at": "2026-10-24T17:43:31.930203Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-24T18:43:31.930203Z",
+        "id": "prp_97058c5e6e4f4d2fb590",
+        "intent": "根据实际投入为 1 个任务提交估算调整建议",
+        "operations": [
+          {
+            "operation": "task.update",
+            "payload": {
+              "expected_version": 3,
+              "id": "tsk_5871faaf72f04115be9d",
+              "task": {
+                "estimate_minutes": 15,
+                "priority": 2,
+                "project_id": "prj_f0905244f4ba43e1acfb",
+                "tags": [],
+                "title": "校对案例说明"
+              }
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "added": [],
+          "changed": [
+            {
+              "after": {
+                "actual_minutes": 10,
+                "archived": false,
+                "blocked_manual": false,
+                "created_at": "2026-10-24T16:17:28.953669700Z",
+                "estimate_minutes": 15,
+                "id": "tsk_5871faaf72f04115be9d",
+                "priority": 2,
+                "project_id": "prj_f0905244f4ba43e1acfb",
+                "remaining_minutes": 5,
+                "status": "in_progress",
+                "tags": [],
+                "title": "校对案例说明",
+                "updated_at": "2026-10-24T17:43:31.930203Z",
+                "version": 4,
+                "workspace_id": "ws_local"
+              },
+              "before": {
+                "actual_minutes": 10,
+                "archived": false,
+                "blocked_manual": false,
+                "created_at": "2026-10-24T16:17:28.953669700Z",
+                "estimate_minutes": 5,
+                "id": "tsk_5871faaf72f04115be9d",
+                "priority": 2,
+                "project_id": "prj_f0905244f4ba43e1acfb",
+                "remaining_minutes": 0,
+                "status": "in_progress",
+                "tags": [],
+                "title": "校对案例说明",
+                "updated_at": "2026-10-24T17:43:18.344732Z",
+                "version": 3,
+                "workspace_id": "ws_local"
+              },
+              "id": "tsk_5871faaf72f04115be9d",
+              "kind": "task",
+              "summary": "校对案例说明"
+            }
+          ],
+          "changes": [
+            {
+              "action": "updated",
+              "id": "tsk_5871faaf72f04115be9d",
+              "kind": "task"
+            }
+          ],
+          "counts": {
+            "added": 0,
+            "total_after": 64,
+            "total_before": 64
+          },
+          "removed": [],
+          "warnings": [
+            "editing the estimate recalculates remaining minutes"
+          ]
+        },
+        "questions": [],
+        "reads": [],
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "harness_ui"
+        },
+        "status": "validated",
+        "validated_at": "2026-10-24T17:43:31.930203Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "actor_id": "agent_harness",
+        "actor_kind": "delegated_agent",
+        "applied_revision": 5,
+        "assumptions": [],
+        "base_revision": 4,
+        "change_set_id": "cs_38bfd4a261734f24a083",
+        "content_hash": "f2d4a6e0ac1ac7355139e660f00f0b934a2594a8f5b32dba25363e490c3f9229",
+        "created_at": "2026-10-24T16:16:03.523124600Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-24T17:16:03.523124600Z",
+        "id": "prp_a339db7525c0408889da",
+        "intent": "Schedule work within capacity",
+        "operations": [
+          {
+            "operation": "plan.apply",
+            "payload": {
+              "assignments": [
+                {
+                  "capacity_block_id": "cap_1769ad8e3dc641bdba54",
+                  "end": "2026-10-26T06:45:00Z",
+                  "locked": false,
+                  "minutes": 45,
+                  "start": "2026-10-26T06:00:00Z",
+                  "task_id": "tsk_14ee523f0a3a4ecabc44"
+                }
+              ],
+              "replace_task_ids": [
+                "tsk_14ee523f0a3a4ecabc44"
+              ],
+              "unplaced": []
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "diff": {
+            "added": [
+              {
+                "id": "alc_798e676ae1294431a8b1",
+                "kind": "allocation",
+                "summary": "alc_798e676ae1294431a8b1"
+              }
+            ],
+            "changed": [],
+            "changes": [
+              {
+                "action": "removed_by_plan",
+                "id": "alc_545b44be1abe43c48691",
+                "kind": "allocation"
+              },
+              {
+                "action": "created",
+                "id": "alc_798e676ae1294431a8b1",
+                "kind": "allocation"
+              }
+            ],
+            "counts": {
+              "added": 1,
+              "total_after": 6,
+              "total_before": 6
+            },
+            "removed": [
+              {
+                "id": "alc_545b44be1abe43c48691",
+                "kind": "allocation",
+                "summary": "alc_545b44be1abe43c48691"
+              }
+            ],
+            "warnings": []
+          },
+          "plan": {
+            "diagnostics": [],
+            "plan": {
+              "assignments": [
+                {
+                  "capacity_block_id": "cap_1769ad8e3dc641bdba54",
+                  "end": "2026-10-26T06:45:00Z",
+                  "locked": false,
+                  "minutes": 45,
+                  "start": "2026-10-26T06:00:00Z",
+                  "task_id": "tsk_14ee523f0a3a4ecabc44"
+                }
+              ],
+              "diagnostics": [],
+              "fixed_allocations": [],
+              "replace_task_ids": [
+                "tsk_14ee523f0a3a4ecabc44"
+              ],
+              "unplaced": []
+            }
+          }
+        },
+        "questions": [],
+        "reads": [],
+        "source": {
+          "actor_id": "agent_harness",
+          "kind": "harness_agent"
+        },
+        "status": "applied",
+        "validated_at": "2026-10-24T16:16:03.523124600Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "actor_id": "agent_mcp",
+        "actor_kind": "mcp_client",
+        "assumptions": [],
+        "base_revision": 28,
+        "content_hash": "2562696b7e9812e16096989632a8716719e202ef7658b0fcf36baf9a840f926e",
+        "created_at": "2026-10-24T16:47:20.217288500Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-24T17:47:20.217288500Z",
+        "id": "prp_a3fd963506a34c6883ed",
+        "intent": "MCP 客户端测试：提交一个待人工审阅的任务",
+        "operations": [
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "estimate_minutes": 20,
+                "priority": 2,
+                "tags": [
+                  "mcp",
+                  "proposal-only"
+                ],
+                "title": "MCP 提议任务（尚未批准）"
+              }
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "added": [
+            {
+              "id": "tag_0489af5f35394b54b7ae",
+              "kind": "tag",
+              "summary": "tag_0489af5f35394b54b7ae"
+            },
+            {
+              "id": "tag_2e7df3abe46645e2b693",
+              "kind": "tag",
+              "summary": "tag_2e7df3abe46645e2b693"
+            },
+            {
+              "id": "tsk_cc7ab7108a164ac8bbfd",
+              "kind": "task",
+              "summary": "MCP 提议任务（尚未批准）"
+            }
+          ],
+          "changed": [],
+          "changes": [
+            {
+              "action": "created",
+              "id": "tsk_cc7ab7108a164ac8bbfd",
+              "kind": "task"
+            }
+          ],
+          "counts": {
+            "added": 3,
+            "total_after": 59,
+            "total_before": 56
+          },
+          "removed": [],
+          "warnings": []
+        },
+        "questions": [],
+        "reads": [],
+        "source": {
+          "actor_id": "agent_mcp",
+          "kind": "mcp_stdio"
+        },
+        "status": "validated",
+        "validated_at": "2026-10-24T16:47:20.217288500Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "actor_id": "agent_mcp",
+        "actor_kind": "mcp_client",
+        "assumptions": [],
+        "base_revision": 28,
+        "content_hash": "3589e9a791d4f948f2cbd03d1018cad473e4be6d158bbe5c3cf3a3ca675fcdb7",
+        "created_at": "2026-10-24T16:47:20.214715900Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-24T17:47:20.214715900Z",
+        "id": "prp_ad9da76e495b45e8b492",
+        "intent": "Schedule work within capacity",
+        "operations": [
+          {
+            "operation": "plan.apply",
+            "payload": {
+              "assignments": [
+                {
+                  "capacity_block_id": "cap_1769ad8e3dc641bdba54",
+                  "end": "2026-10-26T06:45:00Z",
+                  "locked": false,
+                  "minutes": 45,
+                  "start": "2026-10-26T06:00:00Z",
+                  "task_id": "tsk_14ee523f0a3a4ecabc44"
+                }
+              ],
+              "replace_task_ids": [
+                "tsk_14ee523f0a3a4ecabc44"
+              ],
+              "unplaced": []
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "diff": {
+            "added": [
+              {
+                "id": "alc_a367a1f87a264cd5be33",
+                "kind": "allocation",
+                "summary": "alc_a367a1f87a264cd5be33"
+              }
+            ],
+            "changed": [],
+            "changes": [
+              {
+                "action": "removed_by_plan",
+                "id": "alc_99bc018c00f443a38299",
+                "kind": "allocation"
+              },
+              {
+                "action": "created",
+                "id": "alc_a367a1f87a264cd5be33",
+                "kind": "allocation"
+              }
+            ],
+            "counts": {
+              "added": 1,
+              "total_after": 55,
+              "total_before": 55
+            },
+            "removed": [
+              {
+                "id": "alc_99bc018c00f443a38299",
+                "kind": "allocation",
+                "summary": "alc_99bc018c00f443a38299"
+              }
+            ],
+            "warnings": []
+          },
+          "plan": {
+            "diagnostics": [],
+            "plan": {
+              "assignments": [
+                {
+                  "capacity_block_id": "cap_1769ad8e3dc641bdba54",
+                  "end": "2026-10-26T06:45:00Z",
+                  "locked": false,
+                  "minutes": 45,
+                  "start": "2026-10-26T06:00:00Z",
+                  "task_id": "tsk_14ee523f0a3a4ecabc44"
+                }
+              ],
+              "diagnostics": [],
+              "fixed_allocations": [],
+              "replace_task_ids": [
+                "tsk_14ee523f0a3a4ecabc44"
+              ],
+              "unplaced": []
+            }
+          }
+        },
+        "questions": [],
+        "reads": [],
+        "source": {
+          "actor_id": "agent_mcp",
+          "kind": "mcp_stdio"
+        },
+        "status": "validated",
+        "validated_at": "2026-10-24T16:47:20.214715900Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "actor_id": "user_ui",
+        "actor_kind": "interactive_ui",
+        "applied_revision": 41,
+        "assumptions": [
+          "估算建议只基于已有实际投入与剩余分钟，不自动修改永久偏好"
+        ],
+        "base_revision": 40,
+        "change_set_id": "cs_90e54449aefb446d9bc9",
+        "content_hash": "a03805172947cb01dd27e6504fb42f40ad0746b8517c67809933202e1707e78f",
+        "created_at": "2026-10-24T17:44:37.904874700Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-24T18:44:37.904874700Z",
+        "id": "prp_c71ed3f5855d43c096bc",
+        "intent": "根据实际投入为 1 个任务提交估算调整建议",
+        "operations": [
+          {
+            "operation": "task.update",
+            "payload": {
+              "expected_version": 3,
+              "id": "tsk_5871faaf72f04115be9d",
+              "task": {
+                "estimate_minutes": 15,
+                "priority": 2,
+                "project_id": "prj_f0905244f4ba43e1acfb",
+                "tags": [],
+                "title": "校对案例说明"
+              }
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "added": [],
+          "changed": [
+            {
+              "after": {
+                "actual_minutes": 10,
+                "archived": false,
+                "blocked_manual": false,
+                "created_at": "2026-10-24T16:17:28.953669700Z",
+                "estimate_minutes": 15,
+                "id": "tsk_5871faaf72f04115be9d",
+                "priority": 2,
+                "project_id": "prj_f0905244f4ba43e1acfb",
+                "remaining_minutes": 5,
+                "status": "in_progress",
+                "tags": [],
+                "title": "校对案例说明",
+                "updated_at": "2026-10-24T17:44:37.904874700Z",
+                "version": 4,
+                "workspace_id": "ws_local"
+              },
+              "before": {
+                "actual_minutes": 10,
+                "archived": false,
+                "blocked_manual": false,
+                "created_at": "2026-10-24T16:17:28.953669700Z",
+                "estimate_minutes": 5,
+                "id": "tsk_5871faaf72f04115be9d",
+                "priority": 2,
+                "project_id": "prj_f0905244f4ba43e1acfb",
+                "remaining_minutes": 0,
+                "status": "in_progress",
+                "tags": [],
+                "title": "校对案例说明",
+                "updated_at": "2026-10-24T17:43:18.344732Z",
+                "version": 3,
+                "workspace_id": "ws_local"
+              },
+              "id": "tsk_5871faaf72f04115be9d",
+              "kind": "task",
+              "summary": "校对案例说明"
+            }
+          ],
+          "changes": [
+            {
+              "action": "updated",
+              "id": "tsk_5871faaf72f04115be9d",
+              "kind": "task"
+            }
+          ],
+          "counts": {
+            "added": 0,
+            "total_after": 66,
+            "total_before": 66
+          },
+          "removed": [],
+          "warnings": [
+            "editing the estimate recalculates remaining minutes"
+          ]
+        },
+        "questions": [],
+        "reads": [],
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "harness_ui"
+        },
+        "status": "applied",
+        "validated_at": "2026-10-24T17:44:37.904874700Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "actor_id": "user_ui",
+        "actor_kind": "interactive_ui",
+        "applied_revision": 4,
+        "assumptions": [],
+        "base_revision": 3,
+        "change_set_id": "cs_1477ab490c734cedbc87",
+        "content_hash": "13780b7c62cb5c4c6e333e66be8d7d5387ead789a9fdd28d1c91c24d9c665a9a",
+        "created_at": "2026-10-24T16:10:04.787936400Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-24T17:10:04.787936400Z",
+        "id": "prp_c7754dfb07eb41238178",
+        "intent": "Schedule work within capacity",
+        "operations": [
+          {
+            "operation": "plan.apply",
+            "payload": {
+              "assignments": [
+                {
+                  "capacity_block_id": "cap_1769ad8e3dc641bdba54",
+                  "end": "2026-10-26T06:45:00Z",
+                  "locked": false,
+                  "minutes": 45,
+                  "start": "2026-10-26T06:00:00Z",
+                  "task_id": "tsk_14ee523f0a3a4ecabc44"
+                }
+              ],
+              "replace_task_ids": [
+                "tsk_14ee523f0a3a4ecabc44"
+              ],
+              "unplaced": []
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "diff": {
+            "added": [
+              {
+                "id": "alc_5f8ed634a6714ea3a511",
+                "kind": "allocation",
+                "summary": "alc_5f8ed634a6714ea3a511"
+              }
+            ],
+            "changed": [],
+            "changes": [
+              {
+                "action": "created",
+                "id": "alc_5f8ed634a6714ea3a511",
+                "kind": "allocation"
+              }
+            ],
+            "counts": {
+              "added": 1,
+              "total_after": 4,
+              "total_before": 3
+            },
+            "removed": [],
+            "warnings": []
+          },
+          "plan": {
+            "diagnostics": [],
+            "plan": {
+              "assignments": [
+                {
+                  "capacity_block_id": "cap_1769ad8e3dc641bdba54",
+                  "end": "2026-10-26T06:45:00Z",
+                  "locked": false,
+                  "minutes": 45,
+                  "start": "2026-10-26T06:00:00Z",
+                  "task_id": "tsk_14ee523f0a3a4ecabc44"
+                }
+              ],
+              "diagnostics": [],
+              "fixed_allocations": [],
+              "replace_task_ids": [
+                "tsk_14ee523f0a3a4ecabc44"
+              ],
+              "unplaced": []
+            }
+          }
+        },
+        "questions": [],
+        "reads": [],
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "harness_ui"
+        },
+        "status": "applied",
+        "validated_at": "2026-10-24T16:10:04.787936400Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "actor_id": "agent_mcp",
+        "actor_kind": "mcp_client",
+        "assumptions": [],
+        "base_revision": 28,
+        "content_hash": "b061ee8ab287f94dc7fad338f6d03ab70b05b7e5ebbd65299f243c1a38c5d20c",
+        "created_at": "2026-10-24T16:48:20.009985100Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-24T17:48:20.009985100Z",
+        "id": "prp_e2e052e941a948db8ff6",
+        "intent": "MCP 权限测试：只允许提案",
+        "operations": [
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "priority": 0,
+                "tags": [],
+                "title": "MCP 权限测试任务"
+              }
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "added": [
+            {
+              "id": "tsk_3f706348a3744f8bb356",
+              "kind": "task",
+              "summary": "MCP 权限测试任务"
+            }
+          ],
+          "changed": [],
+          "changes": [
+            {
+              "action": "created",
+              "id": "tsk_3f706348a3744f8bb356",
+              "kind": "task"
+            }
+          ],
+          "counts": {
+            "added": 1,
+            "total_after": 58,
+            "total_before": 57
+          },
+          "removed": [],
+          "warnings": []
+        },
+        "questions": [],
+        "reads": [],
+        "source": {
+          "actor_id": "agent_mcp",
+          "kind": "mcp_stdio"
+        },
+        "status": "validated",
+        "validated_at": "2026-10-24T16:48:20.009985100Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "actor_id": "ai_planner",
+        "actor_kind": "delegated_agent",
+        "applied_revision": 25,
+        "assumptions": [
+          "User has at least 3 completed projects available to showcase",
+          "User has access to project materials (screenshots, data, etc.)",
+          "User can choose their preferred online display platform"
+        ],
+        "base_revision": 24,
+        "change_set_id": "cs_2df5c9e4d10046f482a1",
+        "content_hash": "1c1979b11f11e2a7191de035a092003ef10440e0389edc7af74330881ec79826",
+        "created_at": "2026-10-24T16:43:09.065218400Z",
+        "diagnostics": [],
+        "expires_at": "2026-10-25T16:43:09.065218400Z",
+        "id": "prp_ec7bde734281435b9151",
+        "intent": "AI 拆解目标「完成作品集第二版」为 5 个任务（待审阅，不自动提交）",
+        "operations": [
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 45,
+                "priority": 1,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-28",
+                "title": "Select and finalize the 3 projects to feature in Portfolio v2"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 90,
+                "priority": 1,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-29",
+                "title": "Draft case descriptions for all 3 selected projects"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 60,
+                "priority": 2,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-29",
+                "title": "Create online display structure (choose platform, set up pages)"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 30,
+                "priority": 2,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-30",
+                "title": "Upload project materials and verify all links work"
+              }
+            }
+          },
+          {
+            "operation": "task.create",
+            "payload": {
+              "task": {
+                "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+                "estimate_minutes": 45,
+                "priority": 2,
+                "tags": [
+                  "ai",
+                  "goal:goal_79a31ac8c9ca4d4c9561"
+                ],
+                "target_due": "2026-10-30",
+                "title": "Review and refine all content for clarity and impact"
+              }
+            }
+          }
+        ],
+        "policy_revision": 1,
+        "preview": {
+          "added": [
+            {
+              "id": "tag_05bbe7beed0248559618",
+              "kind": "tag",
+              "summary": "tag_05bbe7beed0248559618"
+            },
+            {
+              "id": "tag_8f98ab838f2142fe9a0a",
+              "kind": "tag",
+              "summary": "tag_8f98ab838f2142fe9a0a"
+            },
+            {
+              "id": "tsk_663b05a6c2814fc09d78",
+              "kind": "task",
+              "summary": "Review and refine all content for clarity and impact"
+            },
+            {
+              "id": "tsk_72071e210f0545fbbdb5",
+              "kind": "task",
+              "summary": "Create online display structure (choose platform, set up pages)"
+            },
+            {
+              "id": "tsk_a1e3c4499243486e8e8e",
+              "kind": "task",
+              "summary": "Draft case descriptions for all 3 selected projects"
+            },
+            {
+              "id": "tsk_d67a56453f944f0383c9",
+              "kind": "task",
+              "summary": "Upload project materials and verify all links work"
+            },
+            {
+              "id": "tsk_e0702994e4e047e39942",
+              "kind": "task",
+              "summary": "Select and finalize the 3 projects to feature in Portfolio v2"
+            }
+          ],
+          "changed": [],
+          "changes": [
+            {
+              "action": "created",
+              "id": "tsk_e0702994e4e047e39942",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_a1e3c4499243486e8e8e",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_72071e210f0545fbbdb5",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_d67a56453f944f0383c9",
+              "kind": "task"
+            },
+            {
+              "action": "created",
+              "id": "tsk_663b05a6c2814fc09d78",
+              "kind": "task"
+            }
+          ],
+          "counts": {
+            "added": 7,
+            "total_after": 44,
+            "total_before": 37
+          },
+          "removed": [],
+          "warnings": []
+        },
+        "questions": [
+          "What platform is preferred for online display (personal website, Behance, Dribbble, etc.)?",
+          "Are there specific projects already identified as candidates for selection?",
+          "What level of detail should case descriptions have for each project?",
+          "Do any projects require additional research or data gathering before description?",
+          "Is there a particular narrative angle or theme to emphasize across the portfolio?",
+          "Are there any accessibility requirements for the online display?",
+          "Should the portfolio include testimonials or client feedback from these projects?"
+        ],
+        "reads": [
+          {
+            "id": "goal_79a31ac8c9ca4d4c9561",
+            "kind": "goal"
+          }
+        ],
+        "source": {
+          "actor_id": "ai_planner",
+          "kind": "ai"
+        },
+        "status": "applied",
+        "validated_at": "2026-10-24T16:43:09.065218400Z",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "recurrence_rules": [
+      {
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "estimate_minutes": 30,
+        "frequency": "weekly",
+        "id": "rec_9fe393843e634514b73e",
+        "interval": 1,
+        "priority": 2,
+        "start_date": "2026-10-25",
+        "timezone": "Asia/Shanghai",
+        "title": "每周整理案例素材",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "version": 1,
+        "weekdays": [
+          1
+        ],
+        "workspace_id": "ws_local"
+      }
+    ],
+    "reminders": [
+      {
+        "created_at": "2026-10-24T16:17:32.372660Z",
+        "dedupe_key": "rem_57d1b99f-9a7a-4ab8-8823-0d27854512cc",
+        "delivered_at": "2026-10-24T17:17:04.427820200Z",
+        "fire_at": "2026-10-24T17:17:00Z",
+        "id": "rem_1a17540340974d03b1ec",
+        "message": "提醒：校对案例说明",
+        "status": "delivered",
+        "task_id": "tsk_5871faaf72f04115be9d",
+        "updated_at": "2026-10-24T17:17:04.428511400Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T16:45:07.390630200Z",
+        "dedupe_key": "a3-notify-305e1356-deec-4ea2-a975-4e820eac88fe",
+        "delivered_at": "2026-10-24T16:45:09.144936200Z",
+        "fire_at": "2026-10-24T16:45:07.350992Z",
+        "id": "rem_dc8d330b66e145288122",
+        "message": "A3 真实提醒：本地 Core 已完成通知投递",
+        "status": "delivered",
+        "updated_at": "2026-10-24T16:45:09.145816400Z",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "reviews": [
+      {
+        "created_at": "2026-10-24T16:17:35.464720900Z",
+        "facts": {
+          "active_goals": 1,
+          "activity_records": 2,
+          "actual_minutes": 10,
+          "blocked_open": 1,
+          "focus_minutes": 0,
+          "focus_sessions": 1,
+          "goals_achieved": 0,
+          "habit_completions": 0,
+          "overdue_open": 0,
+          "tasks_completed": 0,
+          "tasks_opened": 8,
+          "unplaced_minutes": 215
+        },
+        "id": "rev_8201f9c70ae7498292f9",
+        "notes": [],
+        "period_end": "2026-10-25",
+        "period_start": "2026-10-25",
+        "recommendations": [
+          "为 215 分钟未排入工作增加容量或减少范围",
+          "安排一段可执行的专注时间，而不是继续增加清单"
+        ],
+        "source": {
+          "actor_id": "user_ui",
+          "kind": "harness_ui"
+        },
+        "workspace_id": "ws_local"
+      }
+    ],
+    "saved_queries": [
+      {
+        "created_at": "2026-10-24T16:58:20.849401600Z",
+        "filter": {
+          "tag": "ai"
+        },
+        "id": "viw_5b512048c05349c39371",
+        "name": "A4 习惯任务",
+        "updated_at": "2026-10-24T16:58:20.849401600Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T18:33:59.449010800Z",
+        "filter": {
+          "tag": "ai"
+        },
+        "id": "viw_6a8da11551144ec0a687",
+        "name": "A4 习惯任务",
+        "updated_at": "2026-10-24T18:33:59.449010800Z",
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T18:32:20.458754400Z",
+        "filter": {
+          "tag": "ai"
+        },
+        "id": "viw_aab8324a37ca444baa42",
+        "name": "A4 习惯任务",
+        "updated_at": "2026-10-24T18:32:20.458754400Z",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "tags": [
+      {
+        "created_at": "2026-10-24T16:43:13.820873600Z",
+        "id": "tag_248c75b366034f2f9e3a",
+        "name": "ai",
+        "workspace_id": "ws_local"
+      },
+      {
+        "created_at": "2026-10-24T16:43:13.820873600Z",
+        "id": "tag_7cb584a02c4247dfa9b2",
+        "name": "goal:goal_79a31ac8c9ca4d4c9561",
+        "workspace_id": "ws_local"
+      }
+    ],
+    "tasks": [
+      {
+        "actual_minutes": 0,
+        "archived": true,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T18:13:48.336845800Z",
+        "estimate_minutes": 30,
+        "id": "tsk_00dad7dde78a464aaa11",
+        "priority": 2,
+        "remaining_minutes": 30,
+        "status": "open",
+        "tags": [],
+        "title": "UI-L04 时间验证 8123",
+        "updated_at": "2026-10-24T18:13:53.328549100Z",
+        "version": 4,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:44:04.945651200Z",
+        "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+        "estimate_minutes": 180,
+        "id": "tsk_0194c66c593b4faa88f8",
+        "priority": 3,
+        "remaining_minutes": 180,
+        "status": "open",
+        "tags": [
+          "ai",
+          "goal:goal_79a31ac8c9ca4d4c9561"
+        ],
+        "target_due": "2026-10-31",
+        "title": "Implement online showcase on chosen platform",
+        "updated_at": "2026-10-24T16:44:04.945651200Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:44:04.945651200Z",
+        "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+        "estimate_minutes": 45,
+        "id": "tsk_04f4a2002f104ce8bd18",
+        "priority": 1,
+        "remaining_minutes": 45,
+        "status": "open",
+        "tags": [
+          "ai",
+          "goal:goal_79a31ac8c9ca4d4c9561"
+        ],
+        "target_due": "2026-10-31",
+        "title": "Select and finalize the 3 projects to include in Portfolio v2",
+        "updated_at": "2026-10-24T16:44:04.945651200Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": true,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T18:18:01.561268400Z",
+        "estimate_minutes": 30,
+        "id": "tsk_0ab5fad5e3a3438e8c0b",
+        "priority": 2,
+        "remaining_minutes": 30,
+        "status": "open",
+        "tags": [],
+        "title": "UI-L04 时间验证 1386",
+        "updated_at": "2026-10-24T18:18:06.224037Z",
+        "version": 4,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:44:04.945651200Z",
+        "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+        "estimate_minutes": 45,
+        "id": "tsk_1117c482cd874cd384c8",
+        "priority": 3,
+        "remaining_minutes": 45,
+        "status": "open",
+        "tags": [
+          "ai",
+          "goal:goal_79a31ac8c9ca4d4c9561"
+        ],
+        "target_due": "2026-10-31",
+        "title": "Test all links, navigation, and functionality",
+        "updated_at": "2026-10-24T16:44:04.945651200Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:10:02.595624200Z",
+        "estimate_minutes": 45,
+        "id": "tsk_14ee523f0a3a4ecabc44",
+        "priority": 2,
+        "remaining_minutes": 45,
+        "status": "open",
+        "tags": [],
+        "title": "筛选 3 个项目素材",
+        "updated_at": "2026-10-24T16:10:02.595624200Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:44:04.945651200Z",
+        "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+        "estimate_minutes": 90,
+        "id": "tsk_1b391927552e451d9a9f",
+        "priority": 2,
+        "remaining_minutes": 90,
+        "status": "open",
+        "tags": [
+          "ai",
+          "goal:goal_79a31ac8c9ca4d4c9561"
+        ],
+        "target_due": "2026-10-31",
+        "title": "Create visual mockups for online display layout",
+        "updated_at": "2026-10-24T16:44:04.945651200Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:43:13.820873600Z",
+        "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+        "estimate_minutes": 90,
+        "id": "tsk_1c3c0f39e86440238cc1",
+        "priority": 1,
+        "remaining_minutes": 90,
+        "status": "open",
+        "tags": [
+          "ai",
+          "goal:goal_79a31ac8c9ca4d4c9561"
+        ],
+        "target_due": "2026-10-29",
+        "title": "Draft case descriptions for all 3 selected projects",
+        "updated_at": "2026-10-24T16:43:13.820873600Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "completed_at": "2026-10-24T17:32:52.462429500Z",
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "estimate_minutes": 30,
+        "id": "tsk_4414fc25b95c4f6f8828",
+        "occurrence_key": "2026-10-26",
+        "priority": 2,
+        "remaining_minutes": 0,
+        "series_id": "rec_9fe393843e634514b73e",
+        "status": "done",
+        "tags": [],
+        "target_due": "2026-10-26",
+        "title": "每周整理案例素材",
+        "updated_at": "2026-10-24T17:32:52.462429500Z",
+        "version": 2,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 10,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:17:28.953669700Z",
+        "estimate_minutes": 15,
+        "id": "tsk_5871faaf72f04115be9d",
+        "priority": 2,
+        "project_id": "prj_f0905244f4ba43e1acfb",
+        "remaining_minutes": 5,
+        "status": "in_progress",
+        "tags": [],
+        "title": "校对案例说明",
+        "updated_at": "2026-10-24T17:44:39.290734200Z",
+        "version": 4,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": true,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T18:18:56.920665300Z",
+        "estimate_minutes": 30,
+        "id": "tsk_69681f884a4944e0991a",
+        "priority": 2,
+        "remaining_minutes": 30,
+        "status": "open",
+        "tags": [],
+        "title": "UI-L04 时间验证 6758",
+        "updated_at": "2026-10-24T18:19:01.665146900Z",
+        "version": 4,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "estimate_minutes": 30,
+        "id": "tsk_71649698333242c0bde0",
+        "occurrence_key": "2026-11-16",
+        "priority": 2,
+        "remaining_minutes": 30,
+        "series_id": "rec_9fe393843e634514b73e",
+        "status": "open",
+        "tags": [],
+        "target_due": "2026-11-16",
+        "title": "每周整理案例素材",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": true,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T18:13:19.651748200Z",
+        "estimate_minutes": 30,
+        "id": "tsk_71c19f977a9b4fc8b520",
+        "priority": 2,
+        "remaining_minutes": 30,
+        "status": "open",
+        "tags": [],
+        "title": "UI-L04 时间验证 9025",
+        "updated_at": "2026-10-24T18:13:24.915388800Z",
+        "version": 4,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "estimate_minutes": 30,
+        "id": "tsk_8769ff20a8f74801a897",
+        "occurrence_key": "2026-11-09",
+        "priority": 2,
+        "remaining_minutes": 30,
+        "series_id": "rec_9fe393843e634514b73e",
+        "status": "open",
+        "tags": [],
+        "target_due": "2026-11-09",
+        "title": "每周整理案例素材",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:44:04.945651200Z",
+        "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+        "estimate_minutes": 60,
+        "id": "tsk_88347b128327426aadcd",
+        "priority": 2,
+        "remaining_minutes": 60,
+        "status": "open",
+        "tags": [
+          "ai",
+          "goal:goal_79a31ac8c9ca4d4c9561"
+        ],
+        "target_due": "2026-10-31",
+        "title": "Review and refine all content and design elements",
+        "updated_at": "2026-10-24T16:44:04.945651200Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T17:42:15.440753600Z",
+        "estimate_minutes": 5,
+        "id": "tsk_88722535a9d34aea9333",
+        "priority": 0,
+        "remaining_minutes": 5,
+        "status": "open",
+        "tags": [],
+        "title": "调度器自动任务 1792863674",
+        "updated_at": "2026-10-24T17:42:15.440753600Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "completed_at": "2026-10-24T16:22:28.805491800Z",
+        "created_at": "2026-10-24T16:22:27.232258500Z",
+        "estimate_minutes": 15,
+        "id": "tsk_a010356971874c1fab9f",
+        "priority": 2,
+        "remaining_minutes": 0,
+        "status": "done",
+        "tags": [],
+        "title": "联系印刷店确认封面",
+        "updated_at": "2026-10-24T16:22:28.805491800Z",
+        "version": 2,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "estimate_minutes": 30,
+        "id": "tsk_b8dfc7931de341c9b033",
+        "occurrence_key": "2026-11-23",
+        "priority": 2,
+        "remaining_minutes": 30,
+        "series_id": "rec_9fe393843e634514b73e",
+        "status": "open",
+        "tags": [],
+        "target_due": "2026-11-23",
+        "title": "每周整理案例素材",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "estimate_minutes": 30,
+        "id": "tsk_b8fe47dc08cb48f59782",
+        "occurrence_key": "2026-11-02",
+        "priority": 2,
+        "remaining_minutes": 30,
+        "series_id": "rec_9fe393843e634514b73e",
+        "status": "open",
+        "tags": [],
+        "target_due": "2026-11-02",
+        "title": "每周整理案例素材",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:43:13.820873600Z",
+        "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+        "estimate_minutes": 45,
+        "id": "tsk_b9cf93001708437b93e1",
+        "priority": 2,
+        "remaining_minutes": 45,
+        "status": "open",
+        "tags": [
+          "ai",
+          "goal:goal_79a31ac8c9ca4d4c9561"
+        ],
+        "target_due": "2026-10-30",
+        "title": "Review and refine all content for clarity and impact",
+        "updated_at": "2026-10-24T16:43:13.820873600Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "completed_at": "2026-10-24T17:32:52.462429500Z",
+        "created_at": "2026-10-24T16:43:13.820873600Z",
+        "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+        "estimate_minutes": 45,
+        "id": "tsk_ba31bfb3a3d94978a1d2",
+        "priority": 1,
+        "remaining_minutes": 0,
+        "status": "done",
+        "tags": [
+          "ai",
+          "goal:goal_79a31ac8c9ca4d4c9561"
+        ],
+        "target_due": "2026-10-28",
+        "title": "Select and finalize the 3 projects to feature in Portfolio v2",
+        "updated_at": "2026-10-24T17:32:52.462429500Z",
+        "version": 2,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:43:13.820873600Z",
+        "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+        "estimate_minutes": 30,
+        "id": "tsk_be15bbcf9ec04c14a11a",
+        "priority": 2,
+        "remaining_minutes": 30,
+        "status": "open",
+        "tags": [
+          "ai",
+          "goal:goal_79a31ac8c9ca4d4c9561"
+        ],
+        "target_due": "2026-10-30",
+        "title": "Upload project materials and verify all links work",
+        "updated_at": "2026-10-24T16:43:13.820873600Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:44:04.945651200Z",
+        "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+        "estimate_minutes": 180,
+        "id": "tsk_bee00b0b7f9d440094a7",
+        "priority": 2,
+        "remaining_minutes": 180,
+        "status": "open",
+        "tags": [
+          "ai",
+          "goal:goal_79a31ac8c9ca4d4c9561"
+        ],
+        "target_due": "2026-10-31",
+        "title": "Write detailed case descriptions for each selected project",
+        "updated_at": "2026-10-24T16:44:04.945651200Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:17:33.042639500Z",
+        "estimate_minutes": 30,
+        "id": "tsk_e12d85ca01124a83aae1",
+        "occurrence_key": "2026-11-30",
+        "priority": 2,
+        "remaining_minutes": 30,
+        "series_id": "rec_9fe393843e634514b73e",
+        "status": "open",
+        "tags": [],
+        "target_due": "2026-11-30",
+        "title": "每周整理案例素材",
+        "updated_at": "2026-10-24T16:17:33.042639500Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T17:41:15.422846500Z",
+        "estimate_minutes": 5,
+        "id": "tsk_f9f193195718408c9471",
+        "priority": 0,
+        "remaining_minutes": 5,
+        "status": "open",
+        "tags": [],
+        "title": "调度器自动任务 1792863674",
+        "updated_at": "2026-10-24T17:41:15.422846500Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      },
+      {
+        "actual_minutes": 0,
+        "archived": false,
+        "blocked_manual": false,
+        "created_at": "2026-10-24T16:43:13.820873600Z",
+        "description": "由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。",
+        "estimate_minutes": 60,
+        "id": "tsk_fcae55111d7443b9aa30",
+        "priority": 2,
+        "remaining_minutes": 60,
+        "status": "open",
+        "tags": [
+          "ai",
+          "goal:goal_79a31ac8c9ca4d4c9561"
+        ],
+        "target_due": "2026-10-29",
+        "title": "Create online display structure (choose platform, set up pages)",
+        "updated_at": "2026-10-24T16:43:13.820873600Z",
+        "version": 1,
+        "workspace_id": "ws_local"
+      }
+    ],
+    "workspace": {
+      "created_at": "2026-10-24T16:09:29.251912900Z",
+      "id": "ws_local",
+      "is_demo": false,
+      "name": "我的事务",
+      "policy": {
+        "allowed_cloud_providers": [],
+        "diagnostic_capture": false,
+        "model_route": "local_only",
+        "private_notes": "device_only"
+      },
+      "policy_revision": 1,
+      "revision": 68,
+      "settings": {
+        "daily_limit_minutes": null,
+        "default_estimate_minutes": 30,
+        "timezone": "Asia/Shanghai",
+        "week_start": 1,
+        "weekend_policy": "ask",
+        "work_windows": [
+          {
+            "end_minute": 720,
+            "hard": false,
+            "start_minute": 540,
+            "weekday": 1
+          },
+          {
+            "end_minute": 1080,
+            "hard": false,
+            "start_minute": 840,
+            "weekday": 1
+          },
+          {
+            "end_minute": 720,
+            "hard": false,
+            "start_minute": 540,
+            "weekday": 2
+          },
+          {
+            "end_minute": 1080,
+            "hard": false,
+            "start_minute": 840,
+            "weekday": 2
+          },
+          {
+            "end_minute": 720,
+            "hard": false,
+            "start_minute": 540,
+            "weekday": 3
+          },
+          {
+            "end_minute": 1080,
+            "hard": false,
+            "start_minute": 840,
+            "weekday": 3
+          },
+          {
+            "end_minute": 720,
+            "hard": false,
+            "start_minute": 540,
+            "weekday": 4
+          },
+          {
+            "end_minute": 1080,
+            "hard": false,
+            "start_minute": 840,
+            "weekday": 4
+          },
+          {
+            "end_minute": 720,
+            "hard": false,
+            "start_minute": 540,
+            "weekday": 5
+          },
+          {
+            "end_minute": 1080,
+            "hard": false,
+            "start_minute": 840,
+            "weekday": 5
+          }
+        ]
+      },
+      "updated_at": "2026-10-24T18:19:01.665146900Z"
+    }
+  },
+  "schema": "zodo.export/1",
+  "source_instance": "rt_0a0078c44893432ea9d7257e8c23d870",
+  "workspace_id": "ws_local"
+}

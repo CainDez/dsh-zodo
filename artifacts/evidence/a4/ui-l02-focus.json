@@ -1,0 +1,10 @@
+{
+  "focusCount": 1,
+  "focus": {
+    "tag": "BUTTON",
+    "text": "新建任务",
+    "cls": "zw-btn zw-btn-primary"
+  },
+  "dialogs": 0,
+  "errs": []
+}

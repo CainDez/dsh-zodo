@@ -1,0 +1,13 @@
+{
+  "stored": "H09 前台退出草稿恢复",
+  "restored": "H09 前台退出草稿恢复",
+  "restoredMatches": true,
+  "warningShowsDraft": true,
+  "inboxPayloadKeys": [
+    "ok",
+    "bridge",
+    "core_instance",
+    "result"
+  ],
+  "errs": []
+}

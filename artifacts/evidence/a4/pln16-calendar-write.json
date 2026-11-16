@@ -1,0 +1,63 @@
+{
+  "first_status": 200,
+  "first": {
+    "schema": "zodo.result/1",
+    "request_id": "pln16-first",
+    "operation_id": "op_96f25e065f614f668c02",
+    "status": "committed",
+    "revision": 1,
+    "data": {
+      "changes": [
+        {
+          "action": "created",
+          "id": "cmt_347f682316644070bb52",
+          "kind": "commitment"
+        }
+      ],
+      "warnings": []
+    },
+    "event_cursor": "ev_1",
+    "replayed": false
+  },
+  "duplicate_status": 422,
+  "duplicate": {
+    "schema": "zodo.error/1",
+    "request_id": "pln16-duplicate",
+    "error": {
+      "code": "VALIDATION_FAILED",
+      "message": "commitment external_id ext-meeting-1 already exists",
+      "retryable": false,
+      "details": null
+    }
+  },
+  "second_status": 200,
+  "captured": [
+    {
+      "external_id": "ext-meeting-1",
+      "body": {
+        "commitment_id": "cmt_347f682316644070bb52",
+        "end": "2026-10-26T02:00:00Z",
+        "external_id": "ext-meeting-1",
+        "start": "2026-10-26T01:00:00Z",
+        "title": "外部日历会议一"
+      },
+      "duplicate": false
+    },
+    {
+      "external_id": "ext-meeting-2",
+      "body": {
+        "commitment_id": "cmt_2c713b47db574010a42a",
+        "end": "2026-10-28T02:00:00Z",
+        "external_id": "ext-meeting-2",
+        "start": "2026-10-28T01:00:00Z",
+        "title": "外部日历会议二"
+      },
+      "duplicate": false
+    }
+  ],
+  "external_writes": 2,
+  "idempotency_keys": [
+    "ext-meeting-1",
+    "ext-meeting-2"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "actor": {
+    "principal_id": "integration_17",
+    "kind": "delegated_agent",
+    "grant_id": "access_92"
+  },
+  "channel": "mcp_stdio",
+  "runtime_instance": "rt_12",
+  "hash_version": 1,
+  "command_hash": "<runtime-computed-sha256>",
+  "received_at": "2026-10-24T01:30:00Z"
+}

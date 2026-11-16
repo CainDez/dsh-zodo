@@ -1,0 +1,152 @@
+{
+  "screens": [
+    {
+      "id": "today",
+      "heading": "今天",
+      "chars": 390,
+      "error": "AI 运行已结束；请检查提案或错误。",
+      "hasLoading": false
+    },
+    {
+      "id": "inbox",
+      "heading": "收集箱",
+      "chars": 445,
+      "error": "AI 运行已结束；请检查提案或错误。",
+      "hasLoading": false
+    },
+    {
+      "id": "goals",
+      "heading": "目标与项目",
+      "chars": 430,
+      "error": "AI 运行已结束；请检查提案或错误。",
+      "hasLoading": false
+    },
+    {
+      "id": "schedule",
+      "heading": "日程",
+      "chars": 2101,
+      "error": "AI 运行已结束；请检查提案或错误。",
+      "hasLoading": false
+    },
+    {
+      "id": "review",
+      "heading": "回顾",
+      "chars": 451,
+      "error": "AI 运行已结束；请检查提案或错误。",
+      "hasLoading": false
+    },
+    {
+      "id": "tasks",
+      "heading": "任务",
+      "chars": 2710,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "projects",
+      "heading": "项目",
+      "chars": 262,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "habits",
+      "heading": "习惯",
+      "chars": 347,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "views",
+      "heading": "保存视图",
+      "chars": 265,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "automation",
+      "heading": "自动化",
+      "chars": 371,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "focus",
+      "heading": "专注",
+      "chars": 1443,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "proposals",
+      "heading": "提案",
+      "chars": 1510,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "runs",
+      "heading": "AI 运行",
+      "chars": 939,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "search",
+      "heading": "搜索",
+      "chars": 149,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "models",
+      "heading": "模型连接",
+      "chars": 739,
+      "error": "local_only 时只调用此本地端点；不可用时返回错误，不静默回退云端。",
+      "hasLoading": false
+    },
+    {
+      "id": "data",
+      "heading": "数据",
+      "chars": 659,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "sync",
+      "heading": "同步",
+      "chars": 275,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "settings",
+      "heading": "设置",
+      "chars": 358,
+      "error": "收集、任务/目标/项目编辑、计划预览与提交、进度和回顾都可在无模型时完成。模型不可用时草稿不会丢失。",
+      "hasLoading": false
+    },
+    {
+      "id": "privacy",
+      "heading": "隐私与模型路由",
+      "chars": 495,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "agents",
+      "heading": "Agent 与授权",
+      "chars": 744,
+      "error": "",
+      "hasLoading": false
+    },
+    {
+      "id": "audit",
+      "heading": "活动与恢复",
+      "chars": 6318,
+      "error": "",
+      "hasLoading": false
+    }
+  ],
+  "errs": []
+}

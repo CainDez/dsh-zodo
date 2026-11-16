@@ -1,0 +1,83 @@
+{
+  "local_only_broken_local": {
+    "create_status": 202,
+    "run_id": "run_d6299d5f1d4a45c2b0d6a0302886282b",
+    "run": {
+      "cancel_requested": false,
+      "checkpoint": null,
+      "created_at": "2026-10-24T16:49:26.676180200+00:00",
+      "ended_at": "2026-10-24T16:49:28.952742600+00:00",
+      "error": {
+        "code": "PROVIDER_UNAVAILABLE",
+        "details": null,
+        "message": "model provider local-ollama is unavailable: http://127.0.0.1:9/v1/chat/completions: Connection Failed: Connect error: 由于目标计算机积极拒绝，无法连接。 (os error 10061)"
+      },
+      "id": "run_d6299d5f1d4a45c2b0d6a0302886282b",
+      "input": {
+        "goal_id": "goal_b3417f3012e6463dbca2",
+        "horizon_end": "2026-11-15T23:59:59Z"
+      },
+      "intent": "goal.decompose",
+      "output": null,
+      "schema": "zodo.run/1",
+      "started_at": "2026-10-24T16:49:26.908677900+00:00",
+      "state": "failed",
+      "updated_at": "2026-10-24T16:49:28.952742600+00:00",
+      "workspace_id": "ws_local"
+    }
+  },
+  "cloud_allowed_private_device_only": {
+    "create_status": 202,
+    "run_id": "run_49aec4ab10e54a15957b631050ef65b5",
+    "run": {
+      "cancel_requested": false,
+      "checkpoint": null,
+      "created_at": "2026-10-24T16:49:29.199281500+00:00",
+      "ended_at": "2026-10-24T16:49:29.354171800+00:00",
+      "error": {
+        "code": "PERMISSION_DENIED",
+        "details": null,
+        "message": "cloud route is not authorized for this data class; set private_notes to cloud_allowed explicitly"
+      },
+      "id": "run_49aec4ab10e54a15957b631050ef65b5",
+      "input": {
+        "goal_id": "goal_b3417f3012e6463dbca2",
+        "horizon_end": "2026-11-15T23:59:59Z"
+      },
+      "intent": "goal.decompose",
+      "output": null,
+      "schema": "zodo.run/1",
+      "started_at": "2026-10-24T16:49:29.353445400+00:00",
+      "state": "failed",
+      "updated_at": "2026-10-24T16:49:29.354171800+00:00",
+      "workspace_id": "ws_local"
+    }
+  },
+  "cloud_allowed_missing_credential": {
+    "create_status": 202,
+    "run_id": "run_a62302ff24a948b6963b09a194da6548",
+    "run": {
+      "cancel_requested": false,
+      "checkpoint": null,
+      "created_at": "2026-10-24T16:49:29.651196800+00:00",
+      "ended_at": "2026-10-24T16:49:29.931131600+00:00",
+      "error": {
+        "code": "PROVIDER_UNAVAILABLE",
+        "details": null,
+        "message": "model provider deepseek-cloud returned HTTP 401: Authentication Fails (governor)"
+      },
+      "id": "run_a62302ff24a948b6963b09a194da6548",
+      "input": {
+        "goal_id": "goal_b3417f3012e6463dbca2",
+        "horizon_end": "2026-11-15T23:59:59Z"
+      },
+      "intent": "goal.decompose",
+      "output": null,
+      "schema": "zodo.run/1",
+      "started_at": "2026-10-24T16:49:29.754644100+00:00",
+      "state": "failed",
+      "updated_at": "2026-10-24T16:49:29.931131600+00:00",
+      "workspace_id": "ws_local"
+    }
+  }
+}

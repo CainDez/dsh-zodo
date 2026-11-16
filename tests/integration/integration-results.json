@@ -1,0 +1,437 @@
+{
+  "binary": "D:\\projects\\zodo_dsh\\target\\release\\zodo.exe",
+  "binary_sha256": "9702ccedaa0511b492bb5e69c8e380f2d12a7df3646e4043b568ab03a0e7af17",
+  "results": [
+    {
+      "case": "test_fnd11_events.py",
+      "status": "passed",
+      "seconds": 1.24,
+      "failures": [],
+      "source_sha256": "73ea3fdb301db9339d5ebaf5036d514bbbb4994e314c4fa07333dbb10563f948",
+      "fixture": "tests\\integration\\runs\\isolated-6wm_92jt\\test_fnd11_events"
+    },
+    {
+      "case": "test_h09_receipt_replay.py",
+      "status": "passed",
+      "seconds": 0.38,
+      "failures": [],
+      "source_sha256": "64407103b124ef7b98590c9b04b3420d4867b23e407b4fe2e0b3dd00aeb3da89",
+      "fixture": "tests\\integration\\runs\\isolated-6wm_92jt\\test_h09_receipt_replay"
+    },
+    {
+      "case": "test_h10_restart_cursor.py",
+      "status": "passed",
+      "seconds": 0.55,
+      "failures": [],
+      "source_sha256": "65a28d5f7e1931b8ca8348799ea0036a7473c6aec135a782aa5f8c6e2149e579",
+      "fixture": "tests\\integration\\runs\\isolated-6wm_92jt\\test_h10_restart_cursor"
+    },
+    {
+      "case": "test_pln11_calendar.py",
+      "status": "passed",
+      "seconds": 0.38,
+      "failures": [],
+      "source_sha256": "b438e1a585211b45fefc343b5ba7b456dafc73c773311445dcec9c258210b9c5",
+      "fixture": "tests\\integration\\runs\\isolated-6wm_92jt\\test_pln11_calendar"
+    },
+    {
+      "case": "test_dat04_import.py",
+      "status": "passed",
+      "seconds": 1.11,
+      "failures": [],
+      "source_sha256": "359e796bf1ea2adec77df96d639f346436c57d61992346477c3f2534e5221671",
+      "fixture": "tests\\integration\\runs\\isolated-6wm_92jt\\test_dat04_import"
+    },
+    {
+      "case": "test_dat04_batch.py",
+      "status": "passed",
+      "seconds": 10.22,
+      "failures": [],
+      "source_sha256": "fb190dfb45c6d6b9281e62a8bd830db1917f4ad043195be0a6f5e2a21f37299f",
+      "fixture": "tests\\integration\\runs\\isolated-6wm_92jt\\test_dat04_batch"
+    },
+    {
+      "case": "test_dat08_encrypted_sync.py",
+      "status": "passed",
+      "seconds": 9.33,
+      "failures": [],
+      "source_sha256": "1fcf462ba91cc20ee5300913d107e0efced597303f08cafe7f9a822890396c1a",
+      "fixture": "tests\\integration\\runs\\isolated-6wm_92jt\\test_dat08_encrypted_sync"
+    },
+    {
+      "case": "test_a6_sync.py",
+      "status": "passed",
+      "seconds": 4.36,
+      "failures": [],
+      "source_sha256": "24e3ceb5ba80c3324cc71f573b28d249942e53592094d63a19b2ba31366b96d9",
+      "fixture": "tests\\integration\\runs\\isolated-6wm_92jt\\test_a6_sync"
+    },
+    {
+      "case": "test_a4_restore.py",
+      "status": "passed",
+      "seconds": 1.89,
+      "failures": [],
+      "source_sha256": "3aa23b56eadedf5354d2bf0238f19b322802407b08c3b5b28baa19aa60ea1b32",
+      "fixture": "tests\\integration\\runs\\isolated-6wm_92jt\\test_a4_restore"
+    },
+    {
+      "case": "test_ai11_cloud_stub.py",
+      "status": "passed",
+      "seconds": 2.8,
+      "failures": [],
+      "source_sha256": "1c7422e68d2e1fa72ae9d68d43651bcfb7a51d556cae315ce3daea0fede15223",
+      "fixture": "tests\\integration\\runs\\isolated-6wm_92jt\\test_ai11_cloud_stub"
+    },
+    {
+      "case": "test_pln16_calendar_write.py",
+      "status": "passed",
+      "seconds": 4.19,
+      "failures": [],
+      "source_sha256": "c9fff852b394d592c06556464ca86963659d5bfb26e525c15ff35411f2156070",
+      "fixture": "tests\\integration\\runs\\isolated-6wm_92jt\\test_pln16_calendar_write"
+    },
+    {
+      "case": "fresh_api_security_planning_automation",
+      "status": "passed",
+      "seconds": 6.89,
+      "checks": [
+        {
+          "name": "no token denied",
+          "passed": true,
+          "actual": 403,
+          "expected": 403
+        },
+        {
+          "name": "forged token denied",
+          "passed": true,
+          "actual": 403,
+          "expected": 403
+        },
+        {
+          "name": "agent admin backup denied",
+          "passed": true,
+          "actual": 403,
+          "expected": 403
+        },
+        {
+          "name": "agent policy update denied",
+          "passed": true,
+          "actual": 403,
+          "expected": 403
+        },
+        {
+          "name": "MCP private snapshot denied",
+          "passed": true,
+          "actual": 403,
+          "expected": 403
+        },
+        {
+          "name": "cross workspace denied",
+          "passed": true,
+          "actual": 403,
+          "expected": 403
+        },
+        {
+          "name": "revoke agent",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "revoked agent denied",
+          "passed": true,
+          "actual": 403,
+          "expected": 403
+        },
+        {
+          "name": "UI unaffected",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "restore agent",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "agent restored",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "MCP may propose",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "snapshot available",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "proposal writes no facts",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "MCP approval denied",
+          "passed": true,
+          "actual": 403,
+          "expected": 403
+        },
+        {
+          "name": "MCP commit denied",
+          "passed": true,
+          "actual": 403,
+          "expected": 403
+        },
+        {
+          "name": "forged UI grant denied",
+          "passed": true,
+          "actual": 409,
+          "expected": 409
+        },
+        {
+          "name": "snapshot available",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "denial writes no facts",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "validate proposal",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "UI approval",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "approved commit",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "snapshot available",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "commit writes exactly one fact",
+          "passed": true,
+          "actual": 1,
+          "expected": 1
+        },
+        {
+          "name": "consumed grant cannot duplicate commit",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        },
+        {
+          "name": "snapshot available",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "replayed approval no duplicated facts",
+          "passed": true,
+          "actual": 1,
+          "expected": 1
+        },
+        {
+          "name": "create planning task",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "create capacity",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "plan proposed",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "snapshot available",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "planning does not commit allocations",
+          "passed": true,
+          "actual": 0,
+          "expected": 0
+        },
+        {
+          "name": "approve plan",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "commit plan",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "snapshot available",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "one allocation committed",
+          "passed": true,
+          "actual": 1,
+          "expected": 1
+        },
+        {
+          "name": "create automation",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "snapshot available",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "automation first run",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "automation second run",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "automation budget denies third",
+          "passed": true,
+          "actual": 422,
+          "expected": 422
+        },
+        {
+          "name": "snapshot available",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "automation writes only budgeted facts",
+          "passed": true,
+          "actual": 4,
+          "expected": 4
+        },
+        {
+          "name": "automation disabled at budget",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "automation run count",
+          "passed": true,
+          "actual": 2,
+          "expected": 2
+        },
+        {
+          "name": "create scheduled automation",
+          "passed": true,
+          "actual": 200,
+          "expected": 200
+        },
+        {
+          "name": "scheduler ran once",
+          "passed": true,
+          "actual": 1,
+          "expected": 1
+        },
+        {
+          "name": "scheduled rule disabled at budget",
+          "passed": true,
+          "actual": false,
+          "expected": false
+        },
+        {
+          "name": "scheduler created exactly one task",
+          "passed": true,
+          "actual": 1,
+          "expected": 1
+        },
+        {
+          "name": "all owned Core processes exited",
+          "passed": true,
+          "actual": true,
+          "expected": true
+        }
+      ]
+    }
+  ],
+  "skipped": {
+    "test_a3_cancel.py": "archive/live runtime dependency, preexisting goal and real model",
+    "test_a3_mcp_authz.py": "archive/live runtime dependency; covered by fresh API suite",
+    "test_a3_revocation.py": "archive/live auth mutation; covered by fresh API suite",
+    "test_a3_notification.py": "archive/live runtime and real Windows toast",
+    "test_a4_scheduler.py": "archive/live runtime; covered by fresh API suite",
+    "test_a4_import.py": "exports archive/live data; replaced by synthetic dat04 tests",
+    "test_h16_admin_forgery.py": "archive/live runtime and existing bridge port 3181",
+    "test_restore_preflight.py": "reads frozen archive backup files",
+    "test_fnd06_reconcile.py": "real Windows toast has no disable/mock flag",
+    "test_pln14_notification_retry.py": "restores real Windows toast script and delivers notification",
+    "test_a3_model_run.py": "real local model on port 11434",
+    "test_a3_recovery.py": "real local model on port 11434",
+    "test_h21_cancel_race.py": "real local model; later coverage needs dedicated deterministic stub",
+    "test_ai01_clarify.py": "real local model; later coverage needs dedicated deterministic stub",
+    "test_a3_privacy.py": "external cloud URL and real credential inheritance risk; do not run unchanged"
+  },
+  "passed": 12,
+  "failed": 0,
+  "command": "python -B tools/run_isolated_integration.py",
+  "exit_code": 0,
+  "execution": "direct bundled Python; post-UI-cleanup; fixed release",
+  "api_checks_passed": 50,
+  "api_checks_total": 50,
+  "legacy_scenarios": 11,
+  "guard_tests": {
+    "passed": 8,
+    "failed": 0,
+    "result": "tests/integration/runner-safety-results.json"
+  },
+  "cleanup": {
+    "stored_fixture_pids_checked": 19,
+    "still_existing": [],
+    "owned_handle_exit_postconditions": "all passed"
+  },
+  "raw_summary": "tests/integration/runs/isolated-6wm_92jt/summary.json"
+}

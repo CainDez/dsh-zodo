@@ -1,0 +1,42 @@
+{
+  "schema": "zodo.ai-eval-result/1",
+  "frozen_set": "evals/ai/cases.json + evals/ai/privacy-case.json",
+  "privacy_passed": true,
+  "model": "aravhawk/qwen3.5-opus-4.6:latest",
+  "provider": "local-ollama",
+  "cases": [
+    {
+      "id": "goal-decompose-portfolio-v2",
+      "must_fail": false,
+      "errors": [],
+      "passed": true
+    },
+    {
+      "id": "goal-decompose-empty",
+      "must_fail": true,
+      "errors": [
+        "task count 0 outside 1..12"
+      ],
+      "passed": true
+    },
+    {
+      "id": "goal-decompose-bad-estimate",
+      "must_fail": true,
+      "errors": [
+        "task[0] estimate 1 outside 15..240",
+        "task[2] duplicate title"
+      ],
+      "passed": true
+    },
+    {
+      "id": "ai-privacy-cloud-context",
+      "must_fail": false,
+      "errors": [],
+      "passed": true,
+      "source": "evals/ai/privacy-case.json"
+    }
+  ],
+  "total": 4,
+  "failed": 0,
+  "passed": true
+}

@@ -1,0 +1,86 @@
+{
+  "revision": 75,
+  "meetings": [
+    {
+      "created_at": "2026-10-24T19:10:24.771656300Z",
+      "end": "2026-10-25T03:00:00Z",
+      "external_id": "meeting-ext_ea35b133-7f80-4808-bd46-340910f34372",
+      "id": "cmt_aa671255453b4ced9f13",
+      "locked": false,
+      "source": {
+        "actor_id": "user_ui",
+        "kind": "harness_ui"
+      },
+      "start": "2026-10-25T02:00:00Z",
+      "title": "外部会议",
+      "updated_at": "2026-10-24T19:10:24.771656300Z",
+      "workspace_id": "ws_local"
+    }
+  ],
+  "proposals": [
+    {
+      "actor_id": "user_ui",
+      "actor_kind": "interactive_ui",
+      "applied_revision": 75,
+      "assumptions": [
+        "外部日历写入尚未完成；批准只创建本地固定预约并保留 external_id"
+      ],
+      "base_revision": 74,
+      "change_set_id": "cs_c6e43278dd414138bad4",
+      "content_hash": "3147ee6a64098cdf16ed3353f66c4276ef7cea8834fa6e6d57067df026ef93bd",
+      "created_at": "2026-10-24T19:10:23.226049900Z",
+      "diagnostics": [],
+      "expires_at": "2026-10-24T20:10:23.226049900Z",
+      "id": "prp_ec6216fef19241f08434",
+      "intent": "外部会议安排提案：外部会议",
+      "operations": [
+        {
+          "operation": "commitment.create",
+          "payload": {
+            "commitment": {
+              "end": "2026-10-25T03:00:00Z",
+              "external_id": "meeting-ext_ea35b133-7f80-4808-bd46-340910f34372",
+              "locked": false,
+              "start": "2026-10-25T02:00:00Z",
+              "title": "外部会议"
+            }
+          }
+        }
+      ],
+      "policy_revision": 1,
+      "preview": {
+        "added": [
+          {
+            "id": "cmt_f80b0ef20dbf4cc2a418",
+            "kind": "commitment",
+            "summary": "外部会议"
+          }
+        ],
+        "changed": [],
+        "changes": [
+          {
+            "action": "created",
+            "id": "cmt_f80b0ef20dbf4cc2a418",
+            "kind": "commitment"
+          }
+        ],
+        "counts": {
+          "added": 1,
+          "total_after": 84,
+          "total_before": 83
+        },
+        "removed": [],
+        "warnings": []
+      },
+      "questions": [],
+      "reads": [],
+      "source": {
+        "actor_id": "user_ui",
+        "kind": "harness_ui"
+      },
+      "status": "applied",
+      "validated_at": "2026-10-24T19:10:23.226049900Z",
+      "workspace_id": "ws_local"
+    }
+  ]
+}

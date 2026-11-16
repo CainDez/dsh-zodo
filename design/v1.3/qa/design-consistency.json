@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-24",
+  "kind": "design_document_validation",
+  "relative_links": 89,
+  "relative_links_status": "passed",
+  "json_files": 13,
+  "screen_matrix_rows": 30,
+  "host_matrix_rows": 25,
+  "host_test_execution": "not_run",
+  "visual_reference_hashes": "passed",
+  "previous_v1_2_manifest_files_unchanged": 49,
+  "product_implemented": false,
+  "product_runtime_tested": false
+}

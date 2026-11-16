@@ -1,0 +1,8 @@
+{
+  "command": "python -B -m unittest discover -s tests/integration -p test_runner_safety.py -v",
+  "exit_code": 0,
+  "passed": 8,
+  "failed": 0,
+  "seconds": 1.025,
+  "execution": "direct bundled Python; no Core process started"
+}

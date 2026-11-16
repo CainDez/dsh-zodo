@@ -1,0 +1,44 @@
+{
+  "reloads": [
+    {
+      "status": 200,
+      "body": {
+        "ok": true,
+        "generation": 3,
+        "previous_generation": 2,
+        "subscriptions_before": 16,
+        "subscriptions_after": 16,
+        "core_alive": true
+      }
+    },
+    {
+      "status": 200,
+      "body": {
+        "ok": true,
+        "generation": 4,
+        "previous_generation": 3,
+        "subscriptions_before": 16,
+        "subscriptions_after": 16,
+        "core_alive": true
+      }
+    },
+    {
+      "status": 200,
+      "body": {
+        "ok": true,
+        "generation": 5,
+        "previous_generation": 4,
+        "subscriptions_before": 16,
+        "subscriptions_after": 16,
+        "core_alive": true
+      }
+    }
+  ],
+  "health": {
+    "status": 200,
+    "ok": true
+  },
+  "snapshotRevision": 172,
+  "tasks": 103,
+  "errs": []
+}

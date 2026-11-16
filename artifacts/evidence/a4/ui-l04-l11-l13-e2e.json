@@ -1,0 +1,110 @@
+{
+  "url": "http://127.0.0.1:3181/?token=<redacted>",
+  "steps": [
+    {
+      "name": "l04-open",
+      "ok": true
+    },
+    {
+      "name": "l04-validation",
+      "ok": true
+    },
+    {
+      "name": "l04-focus-return",
+      "ok": true
+    },
+    {
+      "name": "l04-save",
+      "ok": true
+    },
+    {
+      "name": "l04-reopen-prefill",
+      "ok": true
+    },
+    {
+      "name": "l04-soft-time-warning",
+      "ok": true
+    },
+    {
+      "name": "l04-clear",
+      "ok": true
+    },
+    {
+      "name": "l04-archive-cleanup",
+      "ok": true
+    },
+    {
+      "name": "l11-proposal-preview",
+      "ok": true
+    },
+    {
+      "name": "l11-run-preview",
+      "ok": true
+    },
+    {
+      "name": "l11-clarify-run-preview",
+      "ok": true
+    },
+    {
+      "name": "l13-channel-rows",
+      "ok": true
+    },
+    {
+      "name": "l13-rules-agent",
+      "ok": true
+    },
+    {
+      "name": "l13-rules-ui",
+      "ok": true
+    },
+    {
+      "name": "l13-revoke-restore-mcp",
+      "ok": true
+    }
+  ],
+  "shots": [
+    "ui-l04-dialog.png",
+    "ui-l04-preview-hard.png",
+    "ui-l04-saved-detail.png",
+    "ui-l04-soft-utc-caveat.png",
+    "ui-l04-cleared.png",
+    "ui-l11-proposal-preview.png",
+    "ui-l11-run-preview.png",
+    "ui-l11-run-preview-clarify.png",
+    "ui-l13-agents.png",
+    "ui-l13-rules-agent.png",
+    "ui-l13-rules-ui.png",
+    "ui-l13-rules-mcp.png",
+    "ui-l13-revoked.png",
+    "ui-l13-restored.png"
+  ],
+  "pageErrors": [],
+  "consoleMessages": [],
+  "checks": {
+    "l04Dialog": "时间与时区编辑\n\n日期、当地钟点与绝对时刻分别处理；保存写回完整任务规格。\n\n×\n\n写回任务：Draft case descriptions for all 3 selected projects · v1\n\n日期\n必填；按工作空间时区解释\n钟点（可选）\n留空表示只保存日期，不保存钟点\n截止强度\n期望完成（软约束）\n必须完成（硬约束）\n软约束是期望日期，硬约束是必须满足的截止\n最早开始（可选）\n绝对时刻；按工作空间时区解释\n\n工作空间时区：Asia/Shanghai。跨日只按此 IANA 时区解释，历史时刻以 UTC 保存。\n\n写回预览（保存前）\n工作空间时区\nAsia/Shanghai（IANA）\n当地时间\n2026-10-29 （仅日期，无钟点）\n换算 UTC\n仅日期，Core 不保存钟点\n写回字段\ndue: { date: '2026-10-29', strength: 'soft' } → target_due\n最早开始 not_before\n未设置\n当前期望完成\n2026-10-29\n当前必须完成\n未设置\n当前最早开始\n未设置\n\n浏览器只用工作空间时区换算并显示 UTC；不会修改浏览器或宿主时区。保存后由 Core 校验版本与关系。\n\n取消\n清除时间限制\n保存",
+    "l04Validation": true,
+    "l04FocusReturn": true,
+    "l04PreviewHard": true,
+    "l04Saved": true,
+    "l04Prefill": {
+      "date": "2026-11-02",
+      "time": "09:30",
+      "strength": "hard",
+      "notBefore": "2026-11-02T08:00"
+    },
+    "l04SoftUtcWarning": true,
+    "l04Cleared": true,
+    "l04Archived": true,
+    "l11Proposal": "资料引用与外发预览\n\nAI 拆解目标「完成作品集第二版」为 5 个任务（待审阅，不自动提交）\n\n×\n只读预览，不会向任何模型或宿主发送内容；也不能在这个对话框里修改引用集合。摘要和标题不是自动脱敏：标题、说明、成功标准等原文会按允许字段进入运行上下文。\n来源与目的地\n来源通道\nCore AI 运行提交（外发发生在运行阶段）\n提交主体\nai_planner · delegated_agent\n提案状态\nvalidated · 依据 r24 · 策略 p1\n目的地 / 提供方\nlocal-ollama · aravhawk/qwen3.5-opus-4.6:latest · 路由 device\nCore 路由策略\n仅本地（Core 不静默回退云端）\n允许的云提供方\n未配置\n凭据边界\n模型凭据由 Core 启动环境或凭据服务持有；浏览器与 Host BFF 都不接收 token 或 API key。\n提案候选（尚未提交）\n\n提案 prp_6f4900fd646544e0a072 包含 5 个操作；以下字段是候选内容，只有人工批准并提交后才会写入正式事实。\n\n操作 / 字段\n类别\n截断值\ntask.create · description\n候选\n由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。\ntask.create · estimate_minutes\n候选\n45\ntask.create · priority\n候选\n1\ntask.create · tags\n候选\n[\"ai\",\"goal:goal_79a31ac8c9ca4d4c9561\"]\ntask.create · target_due\n候选\n2026-10-31\ntask.create · title\n候选\nIdentify and select the 3 projects to feature in Portfolio Version 2\ntask.create · description\n候选\n由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。\ntask.create · estimate_minutes\n候选\n60\ntask.create · priority\n候选\n2\ntask.create · tags\n候选\n[\"ai\",\"goal:goal_79a31ac8c9ca4d4c9561\"]\ntask.create · target_due\n候选\n2026-10-31\ntask.create · title\n候选\nDraft case descriptions for Project 1 (background, role, challenges, solutions, …\n（已截断）\ntask.create · description\n候选\n由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。\ntask.create · estimate_minutes\n候选\n60\ntask.create · priority\n候选\n2\ntask.create · tags\n候选\n[\"ai\",\"goal:goal_79a31ac8c9ca4d4c9561\"]\ntask.create · target_due\n候选\n2026-10-31\ntask.create · title\n候选\nDraft case descriptions for Project 2 (background, role, challenges, solutions, …\n（已截断）\ntask.create · description\n候选\n由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。\ntask.create · estimate_minutes\n候选\n60\ntask.create · priority\n候选\n2\ntask.create · tags\n候选\n[\"ai\",\"goal:goal_79a31ac8c9ca4d4c9561\"]\ntask.create · target_due\n候选\n2026-10-31\ntask.create · title\n候选\nDraft case descriptions for Project 3 (background, role, challenges, solutions, …\n（已截断）\ntask.create · description\n候选\n由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。\ntask.create · estimate_minutes\n候选\n45\ntask.create · priority\n候选\n3\ntask.create · tags\n候选\n[\"ai\",\"goal:goal_79a31ac8c9ca4d4c9561\"]\ntask.create · target_due\n候选\n2026-10-31\ntask.create · title\n候选\nReview and refine all case descriptions for consistency and impact\nAI 运行记录\n运行\nrun_efbbd16a5e2c40c6b38856e8704744c6 · succeeded\n创建\n10/25 00:41\n关联提案\nprp_6f4900fd646544e0a072\nrun.input（运行入参）\ngoal_id\n入参\ngoal_79a31ac8c9ca4d4c9561\nhorizon_end\n入参\n2026-10-31T23:59:59Z\nrun.checkpoint（模型已产生的草稿事实）\nmodel\n运行记录\naravhawk/qwen3.5-opus-4.6:latest\nprovider\n运行记录\nlocal-ollama\nroute\n运行记录\ndevice\nelapsed_ms\n运行记录\n12412\ntasks\n运行记录\n5 个候选任务标题（未提交）\nassumptions\n运行记录\n3 条模型假设\nquestions\n运行记录\n5 个模型问题\n模型返回的候选任务标题（已截断）\ntasks[0].title\nIdentify and select the 3 projects to feature in Portfolio Version 2\ntasks[1].title\nDraft case descriptions for Project 1 (background, role, challenges, solutions, …（已截断）\ntasks[2].title\nDraft case descriptions for Project 2 (background, role, challenges, solutions, …（已截断）\ntasks[3].title\nDraft case descriptions for Project 3 (background, role, challenges, solutions, …（已截断）\ntasks[4].title\nReview and refine all case descriptions for consistency and impact\n引用事实（proposal.reads）\n目标 · goal\ngoal_79a31ac8c9ca4d4c9561\n数据类别：工作空间事实（Core 未对目标单独分级；运行按 workspace 敏感度路由）\n完成作品集第二版\n字段\n数据类别\n截断值\n工作空间事实（Core 未对目标单独分级；运行按 workspace 敏感度路由）\n（空）\n工作空间事实（Core 未对目标单独分级；运行按 workspace 敏感度路由）\n（空）\n工作空间事实（Core 未对目标单独分级；运行按 workspace 敏感度路由）\n（空）\n会进入运行上下文的事实\n\n以下是 Core 运行按 goal.decompose 意图读取的目标字段（run.input 只记录 goal_id，桥接不暴露完整 prompt 文本）。\n\n目标\n完成作品集第二版\n成功标准\n精选 3 个项目，完成案例说明与在线展示\n期望完成\n2026-10-31\n计划视界\n2026-10-31T23:59:59Z\n外发边界与警告\n摘要不是自动脱敏：摘要、标题、成功标准等字段会按原文进入模型上下文；需要隐藏的正文不要放进这些字段。\ndevice_only 的笔记/附件不应进入外部模型路径；如果这里出现，请停止并检查隐私策略。\n附件与笔记文本按数据处理，不执行其中的指令。\n运行记录只保存 checkpoint（提供方、模型、任务草稿），不是完整 prompt 副本；这里展示的是桥接已暴露的引用与运行事实。\n撤销通道或切换路由不会追溯收回已进入宿主日志或历史模型调用的内容。\n\n预览数据版本 r57；工作空间时区 Asia/Shanghai。不显示任何 token 或 API key。\n\n关闭",
+    "l11Run": "资料引用与外发预览\n\nAI 拆解目标「完成作品集第二版」为 6 个任务（待审阅，不自动提交）\n\n×\n只读预览，不会向任何模型或宿主发送内容；也不能在这个对话框里修改引用集合。摘要和标题不是自动脱敏：标题、说明、成功标准等原文会按允许字段进入运行上下文。\n来源与目的地\n来源通道\nCore AI 运行提交（外发发生在运行阶段）\n提交主体\nai_planner · delegated_agent\n提案状态\napplied · 依据 r25 · 策略 p1\n目的地 / 提供方\nlocal-ollama · aravhawk/qwen3.5-opus-4.6:latest · 路由 device\nCore 路由策略\n仅本地（Core 不静默回退云端）\n允许的云提供方\n未配置\n凭据边界\n模型凭据由 Core 启动环境或凭据服务持有；浏览器与 Host BFF 都不接收 token 或 API key。\n提案候选（尚未提交）\n\n提案 prp_866a7ed7dba84f0aa696 包含 6 个操作；以下字段是候选内容，只有人工批准并提交后才会写入正式事实。\n\n操作 / 字段\n类别\n截断值\ntask.create · description\n候选\n由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。\ntask.create · estimate_minutes\n候选\n45\ntask.create · priority\n候选\n1\ntask.create · tags\n候选\n[\"ai\",\"goal:goal_79a31ac8c9ca4d4c9561\"]\ntask.create · target_due\n候选\n2026-10-31\ntask.create · title\n候选\nSelect and finalize the 3 projects to include in Portfolio v2\ntask.create · description\n候选\n由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。\ntask.create · estimate_minutes\n候选\n180\ntask.create · priority\n候选\n2\ntask.create · tags\n候选\n[\"ai\",\"goal:goal_79a31ac8c9ca4d4c9561\"]\ntask.create · target_due\n候选\n2026-10-31\ntask.create · title\n候选\nWrite detailed case descriptions for each selected project\ntask.create · description\n候选\n由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。\ntask.create · estimate_minutes\n候选\n90\ntask.create · priority\n候选\n2\ntask.create · tags\n候选\n[\"ai\",\"goal:goal_79a31ac8c9ca4d4c9561\"]\ntask.create · target_due\n候选\n2026-10-31\ntask.create · title\n候选\nCreate visual mockups for online display layout\ntask.create · description\n候选\n由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。\ntask.create · estimate_minutes\n候选\n180\ntask.create · priority\n候选\n3\ntask.create · tags\n候选\n[\"ai\",\"goal:goal_79a31ac8c9ca4d4c9561\"]\ntask.create · target_due\n候选\n2026-10-31\ntask.create · title\n候选\nImplement online showcase on chosen platform\ntask.create · description\n候选\n由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。\ntask.create · estimate_minutes\n候选\n60\ntask.create · priority\n候选\n2\ntask.create · tags\n候选\n[\"ai\",\"goal:goal_79a31ac8c9ca4d4c9561\"]\ntask.create · target_due\n候选\n2026-10-31\ntask.create · title\n候选\nReview and refine all content and design elements\ntask.create · description\n候选\n由本地/授权模型拆解目标《完成作品集第二版》生成，待用户审阅。\ntask.create · estimate_minutes\n候选\n45\ntask.create · priority\n候选\n3\ntask.create · tags\n候选\n[\"ai\",\"goal:goal_79a31ac8c9ca4d4c9561\"]\ntask.create · target_due\n候选\n2026-10-31\ntask.create · title\n候选\nTest all links, navigation, and functionality\nAI 运行记录\n运行\nrun_9588de56c57046e5ac161cfa201b8fcf · succeeded\n创建\n10/25 00:43\n关联提案\nprp_866a7ed7dba84f0aa696\nrun.input（运行入参）\ngoal_id\n入参\ngoal_79a31ac8c9ca4d4c9561\nhorizon_end\n入参\n2026-10-31T23:59:59Z\nrun.checkpoint（模型已产生的草稿事实）\nmodel\n运行记录\naravhawk/qwen3.5-opus-4.6:latest\nprovider\n运行记录\nlocal-ollama\nroute\n运行记录\ndevice\nelapsed_ms\n运行记录\n13856\ntasks\n运行记录\n6 个候选任务标题（未提交）\nassumptions\n运行记录\n4 条模型假设\nquestions\n运行记录\n7 个模型问题\n模型返回的候选任务标题（已截断）\ntasks[0].title\nSelect and finalize the 3 projects to include in Portfolio v2\ntasks[1].title\nWrite detailed case descriptions for each selected project\ntasks[2].title\nCreate visual mockups for online display layout\ntasks[3].title\nImplement online showcase on chosen platform\ntasks[4].title\nReview and refine all content and design elements\ntasks[5].title\nTest all links, navigation, and functionality\n引用事实（proposal.reads）\n目标 · goal\ngoal_79a31ac8c9ca4d4c9561\n数据类别：工作空间事实（Core 未对目标单独分级；运行按 workspace 敏感度路由）\n完成作品集第二版\n字段\n数据类别\n截断值\n工作空间事实（Core 未对目标单独分级；运行按 workspace 敏感度路由）\n（空）\n工作空间事实（Core 未对目标单独分级；运行按 workspace 敏感度路由）\n（空）\n工作空间事实（Core 未对目标单独分级；运行按 workspace 敏感度路由）\n（空）\n会进入运行上下文的事实\n\n以下是 Core 运行按 goal.decompose 意图读取的目标字段（run.input 只记录 goal_id，桥接不暴露完整 prompt 文本）。\n\n目标\n完成作品集第二版\n成功标准\n精选 3 个项目，完成案例说明与在线展示\n期望完成\n2026-10-31\n计划视界\n2026-10-31T23:59:59Z\n外发边界与警告\n摘要不是自动脱敏：摘要、标题、成功标准等字段会按原文进入模型上下文；需要隐藏的正文不要放进这些字段。\ndevice_only 的笔记/附件不应进入外部模型路径；如果这里出现，请停止并检查隐私策略。\n附件与笔记文本按数据处理，不执行其中的指令。\n运行记录只保存 checkpoint（提供方、模型、任务草稿），不是完整 prompt 副本；这里展示的是桥接已暴露的引用与运行事实。\n撤销通道或切换路由不会追溯收回已进入宿主日志或历史模型调用的内容。\n\n预览数据版本 r57；工作空间时区 Asia/Shanghai。不显示任何 token 或 API key。\n\n关闭",
+    "l11ClarifyRun": "资料引用与外发预览\n\nAI 运行 · capture.clarify\n\n×\n只读预览，不会向任何模型或宿主发送内容；也不能在这个对话框里修改引用集合。摘要和标题不是自动脱敏：标题、说明、成功标准等原文会按允许字段进入运行上下文。\n来源与目的地\n来源通道\nCore AI 运行（capture.clarify）\n提交主体\nai_planner · delegated_agent\n目的地 / 提供方\nlocal-ollama · aravhawk/qwen3.5-opus-4.6:latest · 路由 device\nCore 路由策略\n仅本地（Core 不静默回退云端）\n允许的云提供方\n未配置\n凭据边界\n模型凭据由 Core 启动环境或凭据服务持有；浏览器与 Host BFF 都不接收 token 或 API key。\nAI 运行记录\n运行\nrun_b503bcfc409f403e8ce5e1fa9e44a7a7 · succeeded\n创建\n10/25 02:17\nrun.input（运行入参）\ntext\n入参\n明天下午联系印刷店并确认封面 4559\nrun.checkpoint（模型已产生的草稿事实）\nmodel\n运行记录\naravhawk/qwen3.5-opus-4.6:latest\nprovider\n运行记录\nlocal-ollama\nroute\n运行记录\ndevice\nassumptions\n运行记录\n0 条模型假设\nquestions\n运行记录\n4 个模型问题\ncapture.clarify 输出（只读，不写事实）\n字段\n类别\n截断值\nsuggested_kind\n建议\n任务\nfacts_written\n事实写入\nfalse（没有写入任何事实）\nquestions[0]\nWhat does 'cover 4559' refer to - is it an order number, project code, or something else?\nquestions[1]\nWhat specific confirmation do you need from the printing shop (status, pricing, delivery date, quality specs)?\nquestions[2]\nWho should make this call - yourself or someone else?\nquestions[3]\nWhat's the expected outcome of this conversation?\n引用事实（proposal.reads）\n该运行没有声明读取对象。\n会进入运行上下文的事实\n\ncapture.clarify 只把这条原始收集文本作为单次输入发给 Core 模型网关；不读取笔记、附件、任务或目标。原文按数据处理，其中的指令不会被执行。\n\n字段\n数据类别\n截断值\ninput.text\n原始收集文本（workspace 敏感度路由）\n明天下午联系印刷店并确认封面 4559\n\n模型只返回澄清问题与建议类型；facts_written: false，没有自动转换、提案或批准。\n\n外发边界与警告\n摘要不是自动脱敏：摘要、标题、成功标准等字段会按原文进入模型上下文；需要隐藏的正文不要放进这些字段。\ndevice_only 的笔记/附件不应进入外部模型路径；如果这里出现，请停止并检查隐私策略。\n附件与笔记文本按数据处理，不执行其中的指令。\n运行记录只保存 checkpoint（提供方、模型、任务草稿），不是完整 prompt 副本；这里展示的是桥接已暴露的引用与运行事实。\n撤销通道或切换路由不会追溯收回已进入宿主日志或历史模型调用的内容。\n\n预览数据版本 r57；工作空间时区 Asia/Shanghai。不显示任何 token 或 API key。\n\n关闭",
+    "l13Agents": "Z\nZodo\nCore 已连接\nr57\n＋ 收集\n刷新\n今天\n收集箱\n目标\n日程\n回顾\n任务\n项目\n习惯\n视图\n自动化\n专注\n提案\nAI 运行\n搜索\n模型\n数据\n同步\n设置\n隐私\nAgent\n活动\n可信调用\nAgent 与授权\n通道身份\n\n每一行都是 Core 运行时签发的通道主体；点开一行查看读写范围、暂停规则与撤权动作。\n\n通道\n默认能力\n授权状态\n说明\nHarness 人工 UI\n读 / 私密读 / 写 / 收集 / 提议 / 批准 / 执行 / 管理\n未知\n当前浏览器会话的管理面。撤销会切断所有 UI 命令，无法从浏览器自助恢复。\nHarness Agent\n读 / 收集 / 提议 / 执行\n未知\n宿主 Agent 工具通道：读事实、记录收集、提交候选、执行已批准动作，但不能批准自己的建议。\nMCP\n读 / 提议\n未知\n外部 MCP 客户端通道：只读事实与提交候选，不能批准或写入正式事实。\nCLI\n读 / 私密读 / 写 / 收集 / 提议 / 批准 / 执行 / 管理 / 导出\n未知\n本机所有者 CLI：直接持有 owner token；UI 不能声明它的运行边界。\n\n授权状态未知：桥接只提供撤销操作，没有读取授权状态的接口；执行一次撤销/恢复后这里会显示 Core 返回的完整撤销清单。\n\n通道撤权（快速操作）\n\n撤权是 Core 运行时层的强制拒绝，并持久化到 auth.json；恢复后原 token 才能继续使用。撤销 UI 自身会切断当前管理面，需谨慎。\n\n撤销 Agent\n恢复 Agent\n撤销 MCP\n恢复 MCP\n当前连接\nCore 协议\nzodo/1\nCore 实例\nrt_0a0078c44893432ea9d7257e8c23d870\n数据版本\nr57\n\n浏览器从未收到 Core UI/Agent token。Agent 工具执行许可不等于业务批准。",
+    "l13AgentRules": "撤权与暂停规则 · Harness Agent\n\n通道 harness_agent · 主体 agent_harness\n\n×\n撤权是 Core 运行时层的强制拒绝并持久化到 auth.json；它只阻止该通道的未来请求，不会回滚或删除已经提交的事实。\n主体与授权范围\n通道\nharness_agent\n主体\nagent_harness\n主体类型\ndelegated_agent\n当前撤销状态\n未知（桥接没有授权状态查询接口）\nCore 协议 / 实例\nzodo/1 · rt_0a0078c44893432ea9d7257e8c23d870\n数据版本\nr57\n读写范围（Core 运行时签发）\n读取事实（read）\n收集（capture）\n提出候选（propose）\n执行（execute）\n\n范围来自 Core 运行时为该通道签发的能力集；浏览器不能扩大或修改。\n\n未来效应与 Agent 运行\n\n无法确认当前暂停状态：Host 桥接只提供撤销操作，没有读取授权状态的接口；执行一次撤销/恢复后这里会显示 Core 返回的完整撤销清单。\n\n已排队或正在运行的 Core AI 运行由内部主体 ai_planner（内部通道 ai）执行，不受该通道撤销影响；撤销不会自动取消这些运行，也不会阻止它们在 Core 内继续产生候选提案。\n\n由该通道发起、尚未提交的 Agent 动作不会再被接受；已签发的 Core 批准凭据由 Core 独立校验，不随通道撤权自动失效。\n\n已发生事实与恢复\n\n撤销不会删除、回滚或改写已提交的任务、提案、审计记录与执行事实；已经发出的提醒等外部效果不会因撤权自动撤回。\n\n桥接没有暴露待执行 effects 列表；撤权不回滚 Core 已记录的 outbox 外部效果，只停止该通道的新请求。\n\n恢复后原 token 才能再次使用；重新读取、提交与恢复都会重新鉴权。\n\n关闭\n恢复该通道\n撤销 Harness Agent",
+    "l13UiRules": "撤权与暂停规则 · Harness 人工 UI\n\n通道 harness_ui · 主体 user_ui\n\n×\n撤权是 Core 运行时层的强制拒绝并持久化到 auth.json；它只阻止该通道的未来请求，不会回滚或删除已经提交的事实。\n主体与授权范围\n通道\nharness_ui\n主体\nuser_ui\n主体类型\ninteractive_ui\n当前撤销状态\n未知（桥接没有授权状态查询接口）\nCore 协议 / 实例\nzodo/1 · rt_0a0078c44893432ea9d7257e8c23d870\n数据版本\nr57\n读写范围（Core 运行时签发）\n读取事实（read）\n读取私密正文（read_private）\n写入（write）\n收集（capture）\n提出候选（propose）\n批准（approve）\n执行（execute）\n管理（admin）\n\n范围来自 Core 运行时为该通道签发的能力集；浏览器不能扩大或修改。\n\n未来效应与 Agent 运行\n\n无法确认当前暂停状态：Host 桥接只提供撤销操作，没有读取授权状态的接口；执行一次撤销/恢复后这里会显示 Core 返回的完整撤销清单。\n\n当前浏览器会话本身使用这个通道；自助撤销会切断所有 UI 命令，浏览器无法再恢复它。需要撤销时请改用本机 CLI 管理。\n\n由该通道发起、尚未提交的 Agent 动作不会再被接受；已签发的 Core 批准凭据由 Core 独立校验，不随通道撤权自动失效。\n\n已发生事实与恢复\n\n撤销不会删除、回滚或改写已提交的任务、提案、审计记录与执行事实；已经发出的提醒等外部效果不会因撤权自动撤回。\n\n桥接没有暴露待执行 effects 列表；撤权不回滚 Core 已记录的 outbox 外部效果，只停止该通道的新请求。\n\n恢复后原 token 才能再次使用；重新读取、提交与恢复都会重新鉴权。\n\n关闭",
+    "l13Revoked": "撤权与暂停规则 · MCP\n\n通道 mcp_stdio · 主体 agent_mcp\n\n×\n撤权是 Core 运行时层的强制拒绝并持久化到 auth.json；它只阻止该通道的未来请求，不会回滚或删除已经提交的事实。\n主体与授权范围\n通道\nmcp_stdio\n主体\nagent_mcp\n主体类型\nmcp_client\n当前撤销状态\n已撤销：后续请求会被 Core 拒绝\nCore 协议 / 实例\nzodo/1 · rt_0a0078c44893432ea9d7257e8c23d870\n数据版本\nr57\n读写范围（Core 运行时签发）\n读取事实（read）\n提出候选（propose）\n\n范围来自 Core 运行时为该通道签发的能力集；浏览器不能扩大或修改。\n\n未来效应与 Agent 运行\n\n已撤销：该通道后续鉴权会被 Core 拒绝，因此该通道的未来读取、写入、提议与执行（包括它发起的 Agent 运行提交）都会暂停。\n\n已排队或正在运行的 Core AI 运行由内部主体 ai_planner（内部通道 ai）执行，不受该通道撤销影响；撤销不会自动取消这些运行，也不会阻止它们在 Core 内继续产生候选提案。\n\n由该通道发起、尚未提交的 Agent 动作不会再被接受；已签发的 Core 批准凭据由 Core 独立校验，不随通道撤权自动失效。\n\n已发生事实与恢复\n\n撤销不会删除、回滚或改写已提交的任务、提案、审计记录与执行事实；已经发出的提醒等外部效果不会因撤权自动撤回。\n\n桥接没有暴露待执行 effects 列表；撤权不回滚 Core 已记录的 outbox 外部效果，只停止该通道的新请求。\n\n恢复后原 token 才能再次使用；重新读取、提交与恢复都会重新鉴权。\n\nmcp_stdio 已撤销：该通道后续请求会被 Core 拒绝。 Core 返回的撤销通道：mcp_stdio\n关闭\n恢复该通道\n撤销 MCP",
+    "l13Restored": "撤权与暂停规则 · MCP\n\n通道 mcp_stdio · 主体 agent_mcp\n\n×\n撤权是 Core 运行时层的强制拒绝并持久化到 auth.json；它只阻止该通道的未来请求，不会回滚或删除已经提交的事实。\n主体与授权范围\n通道\nmcp_stdio\n主体\nagent_mcp\n主体类型\nmcp_client\n当前撤销状态\n未撤销：后续请求仍会被接受\nCore 协议 / 实例\nzodo/1 · rt_0a0078c44893432ea9d7257e8c23d870\n数据版本\nr57\n读写范围（Core 运行时签发）\n读取事实（read）\n提出候选（propose）\n\n范围来自 Core 运行时为该通道签发的能力集；浏览器不能扩大或修改。\n\n未来效应与 Agent 运行\n\n未撤销：该通道的未来请求仍会被 Core 接受；是否允许某个动作仍由能力集与提案/批准规则决定。\n\n已排队或正在运行的 Core AI 运行由内部主体 ai_planner（内部通道 ai）执行，不受该通道撤销影响；撤销不会自动取消这些运行，也不会阻止它们在 Core 内继续产生候选提案。\n\n由该通道发起、尚未提交的 Agent 动作不会再被接受；已签发的 Core 批准凭据由 Core 独立校验，不随通道撤权自动失效。\n\n已发生事实与恢复\n\n撤销不会删除、回滚或改写已提交的任务、提案、审计记录与执行事实；已经发出的提醒等外部效果不会因撤权自动撤回。\n\n桥接没有暴露待执行 effects 列表；撤权不回滚 Core 已记录的 outbox 外部效果，只停止该通道的新请求。\n\n恢复后原 token 才能再次使用；重新读取、提交与恢复都会重新鉴权。\n\nmcp_stdio 已恢复：原 token 重新通过鉴权。 Core 返回的撤销通道：无\n关闭\n恢复该通道\n撤销 MCP"
+  },
+  "revokeSafetyRestore": true,
+  "finalText": "Z\nZodo\nCore 已连接\nr57\n＋ 收集\n刷新\n今天\n收集箱\n目标\n日程\n回顾\n任务\n项目\n习惯\n视图\n自动化\n专注\n提案\nAI 运行\n搜索\n模型\n数据\n同步\n设置\n隐私\nAgent\n活动\n可信调用\nAgent 与授权\nMCP 通道已恢复；撤销后其后续请求由 Core 拒绝。当前撤销通道：无\n通道身份\n\n每一行都是 Core 运行时签发的通道主体；点开一行查看读写范围、暂停规则与撤权动作。\n\n通道\n默认能力\n授权状态\n说明\nHarness 人工 UI\n读 / 私密读 / 写 / 收集 / 提议 / 批准 / 执行 / 管理\n未撤销\n当前浏览器会话的管理面。撤销会切断所有 UI 命令，无法从浏览器自助恢复。\nHarness Agent\n读 / 收集 / 提议 / 执行\n未撤销\n宿主 Agent 工具通道：读事实、记录收集、提交候选、执行已批准动作，但不能批准自己的建议。\nMCP\n读 / 提议\n未撤销\n外部 MCP 客户端通道：只读事实与提交候选，不能批准或写入正式事实。\nCLI\n读 / 私密读 / 写 / 收集 / 提议 / 批准 / 执行 / 管理 / 导出\n未撤销\n本机所有者 CLI：直接持有 owner token；UI 不能声明它的运行边界。\n通道撤权（快速操作）\n\n撤权是 Core 运行时层的强制拒绝，并持久化到 auth.json；恢复后原 token 才能继续使用。撤销 UI 自身会切断当前管理面，需谨慎。\n\n撤销 Agent\n恢复 Agent\n撤销 MCP\n恢复 MCP\n当前连接\nCore 协议\nzodo/1\nCore 实例\nrt_0a0078c44893432ea9d7257e8c23d870\n数据版本\nr57\n\n浏览器从未收到 Core UI/Agent token。Agent 工具执行许可不等于业务批准。",
+  "consoleErrors": []
+}

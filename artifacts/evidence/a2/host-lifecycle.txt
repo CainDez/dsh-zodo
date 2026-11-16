@@ -1,0 +1,11 @@
+﻿A2 host/Core lifecycle 2026-10-25T00:27:46.5350494+08:00
+core_before=25828 instance=rt_569d909fe1b94d848a843cc0c31d2dee
+host_before=40828
+revision_before=24
+core_alive_after_host_stop=True
+revision_after_host_stop=24
+cli_after_host_stop_exit=0
+host_restart=ok
+host_url=http://127.0.0.1:3181/?token=<redacted>
+bridge_core_instance_after=rt_569d909fe1b94d848a843cc0c31d2dee
+revision_after_restart=24

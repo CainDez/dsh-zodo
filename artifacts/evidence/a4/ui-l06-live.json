@@ -1,0 +1,109 @@
+{
+  "steps": {
+    "open Zodo workbench in live Host": {
+      "status": "ok",
+      "value": {
+        "revision": "r68"
+      }
+    },
+    "open tasks view": {
+      "status": "ok",
+      "value": {
+        "rows": 22
+      }
+    },
+    "select recurring task": {
+      "status": "ok",
+      "value": {
+        "detail_title": "每周整理案例素材"
+      }
+    },
+    "L06 entry button exists": {
+      "status": "ok",
+      "value": {
+        "label": "循环作用范围"
+      }
+    },
+    "screenshot:ui-l06-dialog-single.png": {
+      "status": "ok",
+      "value": "<repo>\\artifacts\\evidence\\a4\\ui-l06-dialog-single.png"
+    },
+    "dialog opens with honest scopes": {
+      "status": "ok",
+      "value": {
+        "pills": [
+          "仅本次",
+          "未来系列"
+        ],
+        "single_is_default": true
+      }
+    },
+    "screenshot:ui-l06-dialog-future.png": {
+      "status": "ok",
+      "value": "<repo>\\artifacts\\evidence\\a4\\ui-l06-dialog-future.png"
+    },
+    "future scope shows range and editable fields": {
+      "status": "ok",
+      "value": {
+        "range_line": "将更新 5 个生成于今天（2026-10-25，Asia/Shanghai）及以后的实例；另有 1 个已开始/锁定/已完成的实例保持不变。",
+        "title_value": "每周整理案例素材"
+      }
+    },
+    "screenshot:ui-l06-validation.png": {
+      "status": "ok",
+      "value": "<repo>\\artifacts\\evidence\\a4\\ui-l06-validation.png"
+    },
+    "client-side validation surfaces inline": {
+      "status": "ok",
+      "value": {
+        "alert": "请填写系列标题"
+      }
+    },
+    "screenshot:ui-l06-closed-focus-return.png": {
+      "status": "ok",
+      "value": "<repo>\\artifacts\\evidence\\a4\\ui-l06-closed-focus-return.png"
+    },
+    "escape closes and focus returns to trigger": {
+      "status": "ok",
+      "value": {
+        "testid": "recurrence-scope",
+        "tag": "BUTTON"
+      }
+    },
+    "screenshot:ui-l06-submit-live-core.png": {
+      "status": "ok",
+      "value": "<repo>\\artifacts\\evidence\\a4\\ui-l06-submit-live-core.png"
+    },
+    "submit surfaces backend result or failure": {
+      "status": "ok",
+      "value": {
+        "revision_before": "r68",
+        "modal_still_open": false,
+        "inline_error": null,
+        "global_error": null,
+        "toast": null
+      }
+    },
+    "reopen and close via header ×": {
+      "status": "ok",
+      "value": {
+        "closed": true
+      }
+    },
+    "no uncaught page errors": {
+      "status": "ok",
+      "value": {
+        "pageErrors": [],
+        "consoleErrors": []
+      }
+    }
+  },
+  "consoleErrors": [],
+  "pageErrors": [],
+  "environment": {
+    "url": "http://127.0.0.1:3181/?token=<redacted>",
+    "browser": "system chrome via playwright-core 1.64.1",
+    "revision": "r68"
+  },
+  "finished_at": "2026-10-24T18:57:19.838Z"
+}

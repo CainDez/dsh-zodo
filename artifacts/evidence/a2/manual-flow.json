@@ -1,0 +1,60 @@
+{
+  "steps": [
+    {
+      "name": "goal-create",
+      "ok": true
+    },
+    {
+      "name": "project-create",
+      "ok": true
+    },
+    {
+      "name": "task-create-second",
+      "ok": true
+    },
+    {
+      "name": "dependency-add",
+      "ok": true
+    },
+    {
+      "name": "progress-record",
+      "ok": true
+    },
+    {
+      "name": "focus-start-finish",
+      "ok": true
+    },
+    {
+      "name": "reminder-create",
+      "ok": true
+    },
+    {
+      "name": "recurrence-create",
+      "ok": true
+    },
+    {
+      "name": "busy-import",
+      "ok": true
+    },
+    {
+      "name": "search",
+      "ok": true
+    },
+    {
+      "name": "review-build",
+      "ok": true
+    },
+    {
+      "name": "audit",
+      "ok": true
+    },
+    {
+      "name": "privacy-settings-view",
+      "ok": true
+    }
+  ],
+  "finalText": "Z\nZodo\nCore 已连接\nr16\n＋ 收集\n刷新\n◐\n今天\n⌄\n收集箱\n◎\n目标\n▤\n日程\n✓\n回顾\n更多\n☷\n任务\n▱\n项目\n◉\n专注\n⚑\n提案\n⌕\n搜索\n⚙\n设置\n◇\n隐私\n⌘\nAgent\n≡\n活动\nAsia/Shanghai\nws_local\n数据流向\n隐私与模型路由\n保存\n浏览器\nUI 只持短期会话，不持有 Core token\n→\nHarness Host\n适配器；同 UID 信任边界\n→\nRust Core\n事实、权限、提案与提交\nCore 模型路由\n默认路由\n仅本地\n允许授权云端\n私密资料等级\n仅此设备\n受信工作空间\n允许云端\n启用原文诊断（默认关闭）\n\nlocal_only 不会静默回退云端。进入 Harness 会话的历史可能被后续模型调用重用，不能假装能追溯收回。\n\n两个授权面\n人工 UI\n\n可读取获准详情、发起业务确认。批准由 Core 签发并绑定当前内容与版本。\n\nAgent 工具\n\n默认只读取必要摘要与提出候选，不能审批或提交自己的建议；工具执行许可不等于业务批准。\n\n同 UID 的高权限宿主/Shell 不能由 RPC token 提供强隔离。需要更强边界时应部署独立 OS 身份或远端 Core。\n\n回顾已生成",
+  "toast": "回顾已生成",
+  "consoleMessages": [],
+  "pageErrors": []
+}

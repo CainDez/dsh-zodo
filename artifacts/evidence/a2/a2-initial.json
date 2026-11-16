@@ -1,0 +1,218 @@
+{
+  "body": "新会话\nCtrl\n+\nAlt\n+\nN\n插件\n自动化任务\n更多\n工作区\n默认工作区\n新会话\n[[ZODO_DEVICE_ONLY]] host history probe\n2分钟\nZodo 任务检查与规划\n12天\nZodo 任务规划\n12天\n请按顺序调用两个 Zodo 原生工\n12天\nZodo Probe Ping\n13天\n展开其余 2 个会话\n更多\n探索未至之境\n预览版\n默认工作区\n标准模式\n描述你想要构建的内容, / 调用指令, @ 文件或对话\nQwen 3.5 local\nZodo · 工作台\nZ\nZodo\nCore 已连接\nr172\n＋ 收集\n刷新\n今天\n收集箱\n目标\n日程\n回顾\n任务\n项目\n习惯\n视图\n自动化\n专注\n提案\nAI 运行\n搜索\n模型\n数据\n同步\n设置\n隐私\nAgent\n活动\n11月7日星期六\n今天\n收集\n生成计划\n重新规划\n承诺与容量\n今天没有固定安排或容量块。增加容量后可以生成计划。\n下一步\n最值得开始的一项\nREC04 全系列 UI2\n30 分钟剩余\n开始专注\n风险与未排入\n还有 1525 分钟工作量未排入。计划会如实报告缺口。\n有提案待你确认\n打开提案中心检查差异与影响。\n\n有逾期任务需要处理。\n\n今天的工作\n今天没有指定任务；可以查看所有任务或生成计划。\n查看全部任务 →\nAI 运行已结束；请检查提案或错误。",
+  "errors": [],
+  "toast": [
+    "AI 运行已结束；请检查提案或错误。"
+  ],
+  "buttons": [
+    {
+      "text": "新会话\nCtrl\n+\nAlt\n+\nN",
+      "testid": null,
+      "aria": "新建会话"
+    },
+    {
+      "text": "插件",
+      "testid": null,
+      "aria": "插件"
+    },
+    {
+      "text": "自动化任务",
+      "testid": null,
+      "aria": "自动化任务"
+    },
+    {
+      "text": "更多",
+      "testid": null,
+      "aria": "更多"
+    },
+    {
+      "text": "展开其余 2 个会话",
+      "testid": null,
+      "aria": null
+    },
+    {
+      "text": "更多",
+      "testid": null,
+      "aria": "账号菜单"
+    },
+    {
+      "text": "默认工作区",
+      "testid": null,
+      "aria": "选择工作区"
+    },
+    {
+      "text": "标准模式",
+      "testid": null,
+      "aria": null
+    },
+    {
+      "text": "Qwen 3.5 local",
+      "testid": null,
+      "aria": "选择模型，当前 Qwen 3.5 local"
+    },
+    {
+      "text": "＋ 收集",
+      "testid": "top-capture",
+      "aria": null
+    },
+    {
+      "text": "刷新",
+      "testid": null,
+      "aria": null
+    },
+    {
+      "text": "今天",
+      "testid": "nav-today",
+      "aria": null
+    },
+    {
+      "text": "收集箱",
+      "testid": "nav-inbox",
+      "aria": null
+    },
+    {
+      "text": "目标",
+      "testid": "nav-goals",
+      "aria": null
+    },
+    {
+      "text": "日程",
+      "testid": "nav-schedule",
+      "aria": null
+    },
+    {
+      "text": "回顾",
+      "testid": "nav-review",
+      "aria": null
+    },
+    {
+      "text": "任务",
+      "testid": "nav-tasks",
+      "aria": null
+    },
+    {
+      "text": "项目",
+      "testid": "nav-projects",
+      "aria": null
+    },
+    {
+      "text": "习惯",
+      "testid": "nav-habits",
+      "aria": null
+    },
+    {
+      "text": "视图",
+      "testid": "nav-views",
+      "aria": null
+    },
+    {
+      "text": "自动化",
+      "testid": "nav-automation",
+      "aria": null
+    },
+    {
+      "text": "专注",
+      "testid": "nav-focus",
+      "aria": null
+    },
+    {
+      "text": "提案",
+      "testid": "nav-proposals",
+      "aria": null
+    },
+    {
+      "text": "AI 运行",
+      "testid": "nav-runs",
+      "aria": null
+    },
+    {
+      "text": "搜索",
+      "testid": "nav-search",
+      "aria": null
+    },
+    {
+      "text": "模型",
+      "testid": "nav-models",
+      "aria": null
+    },
+    {
+      "text": "数据",
+      "testid": "nav-data",
+      "aria": null
+    },
+    {
+      "text": "同步",
+      "testid": "nav-sync",
+      "aria": null
+    },
+    {
+      "text": "设置",
+      "testid": "nav-settings",
+      "aria": null
+    },
+    {
+      "text": "隐私",
+      "testid": "nav-privacy",
+      "aria": null
+    },
+    {
+      "text": "Agent",
+      "testid": "nav-agents",
+      "aria": null
+    },
+    {
+      "text": "活动",
+      "testid": "nav-audit",
+      "aria": null
+    },
+    {
+      "text": "收集",
+      "testid": null,
+      "aria": null
+    },
+    {
+      "text": "生成计划",
+      "testid": null,
+      "aria": null
+    },
+    {
+      "text": "重新规划",
+      "testid": null,
+      "aria": null
+    },
+    {
+      "text": "开始专注",
+      "testid": "today-focus",
+      "aria": null
+    }
+  ],
+  "consoleMessages": [],
+  "pageErrors": [],
+  "bridgeTraffic": [
+    {
+      "url": "http://127.0.0.1:3181/zodo-bridge/v1/session",
+      "status": 200,
+      "request": "{}"
+    },
+    {
+      "url": "http://127.0.0.1:3181/zodo-bridge/v1/health",
+      "status": 200,
+      "request": null
+    },
+    {
+      "url": "http://127.0.0.1:3181/zodo-bridge/v1/runs",
+      "status": 200,
+      "request": null
+    },
+    {
+      "url": "http://127.0.0.1:3181/zodo-bridge/v1/rpc",
+      "status": 200,
+      "request": "{\"kind\":\"query\",\"envelope\":{\"schema\":\"zodo.query/1\",\"request_id\":\"uiq_f3e3256f-d406-4769-a0b3-33255d0b2446\",\"workspace_id\":\"ws_local\",\"query\":\"workspace.snapshot\",\"payload\":{}}}"
+    },
+    {
+      "url": "http://127.0.0.1:3181/zodo-bridge/v1/rpc",
+      "status": 200,
+      "request": "{\"kind\":\"query\",\"envelope\":{\"schema\":\"zodo.query/1\",\"request_id\":\"uiq_9f807bd0-34b7-4884-9c8a-142a50d7df0f\",\"workspace_id\":\"ws_local\",\"query\":\"workspace.snapshot\",\"payload\":{}}}"
+    }
+  ]
+}

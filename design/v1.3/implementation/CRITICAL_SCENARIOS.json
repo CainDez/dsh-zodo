@@ -1,0 +1,93 @@
+{
+  "schema": "zodo.acceptance-design/1.3",
+  "status": "test specifications; not executable tests or passed results",
+  "reference_datetime": "2026-10-24T09:20:00+08:00",
+  "timezone": "Asia/Shanghai",
+  "scenarios": [
+    {
+      "id": "C01",
+      "name": "无模型手工管理",
+      "expected_invariants": "手工创建、编辑、完成、重开与归档恢复，模型失败不丢草稿",
+      "implementation": "pending"
+    },
+    {
+      "id": "C02",
+      "name": "IME与最新请求",
+      "expected_invariants": "组词不推理，输入可编辑，旧结果不覆盖新输入，取消不提交",
+      "implementation": "pending"
+    },
+    {
+      "id": "C03",
+      "name": "提案与批准",
+      "expected_invariants": "预览不写正式状态；内容改变后需当前有效批准",
+      "implementation": "pending"
+    },
+    {
+      "id": "C04",
+      "name": "幂等",
+      "expected_invariants": "同主体同key同规范请求返回原回执；不同内容拒绝，无重复任务或effect",
+      "implementation": "pending"
+    },
+    {
+      "id": "C05",
+      "name": "版本与并发",
+      "expected_invariants": "另一客户端修改后旧计划冲突，重算并重批，不覆盖新事实",
+      "implementation": "pending"
+    },
+    {
+      "id": "C06",
+      "name": "事务与恢复",
+      "expected_invariants": "注入写入失败无半提交；重启后Run、回执与outbox可恢复",
+      "implementation": "pending"
+    },
+    {
+      "id": "C07",
+      "name": "时间与容量",
+      "expected_invariants": "区分目标日/硬截止；容量内分配不重复扣除；无解如实报告",
+      "implementation": "pending"
+    },
+    {
+      "id": "C08",
+      "name": "稳定重排",
+      "expected_invariants": "过去、已开始、锁定安排不自动移动；无关改动不重排整周",
+      "implementation": "pending"
+    },
+    {
+      "id": "C09",
+      "name": "循环例外",
+      "expected_invariants": "仅本次改期/跳过不生成重复实例，历史完成保持，跳过不算完成",
+      "implementation": "pending"
+    },
+    {
+      "id": "C10",
+      "name": "执行与回顾",
+      "expected_invariants": "会话结束不自动完成任务；45已投入+45剩余不再建议90",
+      "implementation": "pending"
+    },
+    {
+      "id": "C11",
+      "name": "隐私与外部agent",
+      "expected_invariants": "local_only不回退云；device_only发送前过滤；撤权后读写恢复均拒绝",
+      "implementation": "pending"
+    },
+    {
+      "id": "C12",
+      "name": "外部副作用",
+      "expected_invariants": "本地提交与送达分开；未知送达先核对，不盲重发",
+      "implementation": "pending"
+    },
+    {
+      "id": "C13",
+      "name": "导入与备份",
+      "expected_invariants": "预检、无效隔离、重复导入不重复写入，恢复不复活旧授权",
+      "implementation": "pending"
+    },
+    {
+      "id": "C14",
+      "name": "真实跨端路径",
+      "expected_invariants": "桌面与手机关键流程实际点击；Web离线草稿不伪装已提交",
+      "implementation": "pending"
+    }
+  ],
+  "host_matrix": "implementation/HARNESS_TEST_MATRIX.csv"
+}

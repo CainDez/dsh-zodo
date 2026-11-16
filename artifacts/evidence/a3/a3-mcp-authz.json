@@ -1,0 +1,127 @@
+{
+  "proposal_id": "prp_6f4900fd646544e0a072",
+  "mcp_snapshot_private": [
+    403,
+    {
+      "schema": "zodo.error/1",
+      "request_id": "a3-4ca5d75a-7f90-41be-975d-b999f79f677a",
+      "error": {
+        "code": "PERMISSION_DENIED",
+        "message": "this connection may read projections but not the full private workspace snapshot",
+        "retryable": false,
+        "details": null
+      }
+    }
+  ],
+  "mcp_approve": [
+    403,
+    {
+      "schema": "zodo.error/1",
+      "request_id": "a3-f96da5bc-ea37-463c-b844-398a36114194",
+      "error": {
+        "code": "PERMISSION_DENIED",
+        "message": "principal agent_mcp lacks capability approve",
+        "retryable": false,
+        "details": null
+      }
+    }
+  ],
+  "mcp_commit": [
+    403,
+    {
+      "schema": "zodo.error/1",
+      "request_id": "a3-94cbfa13-feb1-48d2-819c-58c3cf8e33eb",
+      "error": {
+        "code": "PERMISSION_DENIED",
+        "message": "principal agent_mcp lacks capability write",
+        "retryable": false,
+        "details": null
+      }
+    }
+  ],
+  "mcp_proposal_create": [
+    200,
+    {
+      "schema": "zodo.result/1",
+      "request_id": "a3-90ce97d3-fc70-4987-80ad-4bdd732ecdad",
+      "operation_id": "op_4cabf2d66d534fa69493",
+      "status": "validated",
+      "revision": 28,
+      "data": {
+        "proposal": {
+          "actor_id": "agent_mcp",
+          "actor_kind": "mcp_client",
+          "assumptions": [],
+          "base_revision": 28,
+          "content_hash": "b061ee8ab287f94dc7fad338f6d03ab70b05b7e5ebbd65299f243c1a38c5d20c",
+          "created_at": "2026-10-24T16:48:20.009985100Z",
+          "diagnostics": [],
+          "expires_at": "2026-10-24T17:48:20.009985100Z",
+          "id": "prp_e2e052e941a948db8ff6",
+          "intent": "MCP 权限测试：只允许提案",
+          "operations": [
+            {
+              "operation": "task.create",
+              "payload": {
+                "task": {
+                  "priority": 0,
+                  "tags": [],
+                  "title": "MCP 权限测试任务"
+                }
+              }
+            }
+          ],
+          "policy_revision": 1,
+          "preview": {
+            "added": [
+              {
+                "id": "tsk_3f706348a3744f8bb356",
+                "kind": "task",
+                "summary": "MCP 权限测试任务"
+              }
+            ],
+            "changed": [],
+            "changes": [
+              {
+                "action": "created",
+                "id": "tsk_3f706348a3744f8bb356",
+                "kind": "task"
+              }
+            ],
+            "counts": {
+              "added": 1,
+              "total_after": 58,
+              "total_before": 57
+            },
+            "removed": [],
+            "warnings": []
+          },
+          "questions": [],
+          "reads": [],
+          "source": {
+            "actor_id": "agent_mcp",
+            "kind": "mcp_stdio"
+          },
+          "status": "validated",
+          "validated_at": "2026-10-24T16:48:20.009985100Z",
+          "workspace_id": "ws_local"
+        }
+      },
+      "event_cursor": "ev_40",
+      "replayed": false
+    }
+  ],
+  "cross_workspace": [
+    403,
+    {
+      "schema": "zodo.error/1",
+      "request_id": "a3-a713eaa5-2c5c-4ebb-8ad8-a4e1e8ca78ed",
+      "error": {
+        "code": "PERMISSION_DENIED",
+        "message": "workspace is outside this authenticated connection",
+        "retryable": false,
+        "details": null
+      }
+    }
+  ]
+}

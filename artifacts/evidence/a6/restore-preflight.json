@@ -1,0 +1,66 @@
+{
+  "first_restore": {
+    "args": [
+      "restore",
+      "<repo>\\.runtime\\zodo-a2\\backups\\zodo-20261024-183401-629.sqlite3"
+    ],
+    "exit": 0,
+    "stdout": "{\n  \"auth_reset\": true,\n  \"backup\": \"\\\\\\\\?\\\\D:\\\\projects\\\\zodo_dsh\\\\.runtime\\\\zodo-a2\\\\backups\\\\zodo-20261024-183401-629.sqlite3\",\n  \"pre_restore_snapshot\": null,\n  \"restored_tasks\": 26,\n  \"runtime_restart_required\": true,\n  \"schema\": \"zodo.restore/1\"\n}",
+    "stderr": ""
+  },
+  "first_opt": {
+    "auth_reset": true,
+    "backup": "\\\\?\\<repo>\\.runtime\\zodo-a2\\backups\\zodo-20261024-183401-629.sqlite3",
+    "pre_restore_snapshot": null,
+    "restored_tasks": 26,
+    "runtime_restart_required": true,
+    "schema": "zodo.restore/1"
+  },
+  "second_restore": {
+    "args": [
+      "restore",
+      "<repo>\\.runtime\\zodo-a2\\backups\\zodo-20261024-183222-676.sqlite3"
+    ],
+    "exit": 0,
+    "stdout": "{\n  \"auth_reset\": true,\n  \"backup\": \"\\\\\\\\?\\\\D:\\\\projects\\\\zodo_dsh\\\\.runtime\\\\zodo-a2\\\\backups\\\\zodo-20261024-183222-676.sqlite3\",\n  \"pre_restore_snapshot\": \"D:\\\\projects\\\\zodo_dsh\\\\.runtime\\\\restore-preflight-test\\\\backups\\\\pre-restore-20261024-211518.sqlite3\",\n  \"restored_tasks\": 26,\n  \"runtime_restart_required\": true,\n  \"schema\": \"zodo.restore/1\"\n}",
+    "stderr": ""
+  },
+  "second_opt": {
+    "auth_reset": true,
+    "backup": "\\\\?\\<repo>\\.runtime\\zodo-a2\\backups\\zodo-20261024-183222-676.sqlite3",
+    "pre_restore_snapshot": "<repo>\\.runtime\\restore-preflight-test\\backups\\pre-restore-20261024-211518.sqlite3",
+    "restored_tasks": 26,
+    "runtime_restart_required": true,
+    "schema": "zodo.restore/1"
+  },
+  "pre_restore_snapshot_count": 1,
+  "duplicate_restore": {
+    "args": [
+      "restore",
+      "<repo>\\.runtime\\zodo-a2\\backups\\zodo-20261024-183222-676.sqlite3"
+    ],
+    "exit": 0,
+    "stdout": "{\n  \"auth_reset\": true,\n  \"backup\": \"\\\\\\\\?\\\\D:\\\\projects\\\\zodo_dsh\\\\.runtime\\\\zodo-a2\\\\backups\\\\zodo-20261024-183222-676.sqlite3\",\n  \"pre_restore_snapshot\": \"D:\\\\projects\\\\zodo_dsh\\\\.runtime\\\\restore-preflight-test\\\\backups\\\\pre-restore-20261024-211518-1.sqlite3\",\n  \"restored_tasks\": 26,\n  \"runtime_restart_required\": true,\n  \"schema\": \"zodo.restore/1\"\n}",
+    "stderr": ""
+  },
+  "pre_restore_snapshot_count_after_duplicate": 2,
+  "corrupt_restore": {
+    "args": [
+      "restore",
+      "<repo>\\.runtime\\restore-preflight-test\\corrupt.sqlite3"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "{\"error\":{\"code\":\"VALIDATION_FAILED\",\"details\":null,\"message\":\"backup integrity check failed: file is not a database\",\"retryable\":false},\"schema\":\"zodo.error/1\"}"
+  },
+  "db_unchanged_after_corrupt": true,
+  "missing_restore": {
+    "args": [
+      "restore",
+      "<repo>\\.runtime\\restore-preflight-test\\missing.sqlite3"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "{\"error\":{\"code\":\"VALIDATION_FAILED\",\"details\":null,\"message\":\"backup file does not exist: D:\\\\projects\\\\zodo_dsh\\\\.runtime\\\\restore-preflight-test\\\\missing.sqlite3\",\"retryable\":false},\"schema\":\"zodo.error/1\"}"
+  }
+}

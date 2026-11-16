@@ -1,0 +1,18 @@
+{
+  "goal_id": "goal_5df6af4e9266432997f4",
+  "queued_create": 202,
+  "first_cancel_status": 200,
+  "first_run_state": "cancelled",
+  "first_cancel_requested": true,
+  "proposals_before": 0,
+  "proposals_after_queued_cancel": 0,
+  "second_run_id": "run_fabbc56b08a748eca4795dc961909277",
+  "second_run_reached_proposal": true,
+  "second_cancel_status": 200,
+  "second_cancel_code": null,
+  "second_run_state": "succeeded",
+  "proposals_final": 1,
+  "approve_status": 200,
+  "commit_status": 200,
+  "commit_revision": 2
+}

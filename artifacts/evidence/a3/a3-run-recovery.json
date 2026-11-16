@@ -1,0 +1,245 @@
+{
+  "run_id": "run_9302d19406aa40cfafe6d57df0e666f7",
+  "goal_id": "goal_3422497cae7e41a6a274",
+  "killed_instance": "rt_6eecc921e0234d7f8ff7c6d9fdc34ba8",
+  "restarted_instance": "rt_42593c5feb7f4c778b9078e41fb4471e",
+  "observed_states": [
+    "running",
+    "running",
+    "running",
+    "running",
+    "running",
+    "running",
+    "running",
+    "running",
+    "running",
+    "running",
+    "running",
+    "succeeded"
+  ],
+  "final": {
+    "cancel_requested": false,
+    "checkpoint": {
+      "assumptions": [
+        "The user has access to relevant documentation or backup systems for the test goal",
+        "There exists a recorded version of the test goal that can be restored",
+        "The restoration process follows standard procedures for this system"
+      ],
+      "elapsed_ms": 10961,
+      "model": "aravhawk/qwen3.5-opus-4.6:latest",
+      "provider": "local-ollama",
+      "questions": [
+        "What specific platform or tool contains the test goal that needs restoration?",
+        "Are there any custom configurations or dependencies associated with this test goal?",
+        "What is the current state of the test goal - has it been deleted, corrupted, or simply lost access to?",
+        "Are there any time-sensitive constraints beyond the horizon end date of 2026-11-15?"
+      ],
+      "route": "device",
+      "tasks": [
+        {
+          "estimate_minutes": 45,
+          "priority": 1,
+          "target_due": null,
+          "title": "Identify the specific test goal that requires restoration by reviewing recent project documentation or team communications"
+        },
+        {
+          "estimate_minutes": 60,
+          "priority": 2,
+          "target_due": null,
+          "title": "Locate and retrieve any existing backups, snapshots, or version history related to the test goal configuration"
+        },
+        {
+          "estimate_minutes": 30,
+          "priority": 2,
+          "target_due": null,
+          "title": "Verify system compatibility and prerequisites before attempting restoration of the test goal"
+        }
+      ]
+    },
+    "created_at": "2026-10-24T16:45:32.672489800+00:00",
+    "ended_at": "2026-10-24T16:45:45.133654700+00:00",
+    "error": null,
+    "id": "run_9302d19406aa40cfafe6d57df0e666f7",
+    "input": {
+      "goal_id": "goal_3422497cae7e41a6a274",
+      "horizon_end": "2026-11-15T23:59:59Z"
+    },
+    "intent": "goal.decompose",
+    "output": {
+      "base_revision": 1,
+      "model": "aravhawk/qwen3.5-opus-4.6:latest",
+      "proposal_id": "prp_3e90b113db0748a79017",
+      "provider": "local-ollama",
+      "route": "device",
+      "status": "proposal_created",
+      "task_count": 3
+    },
+    "schema": "zodo.run/1",
+    "started_at": "2026-10-24T16:45:32.997540+00:00",
+    "state": "succeeded",
+    "updated_at": "2026-10-24T16:45:45.133654700+00:00",
+    "workspace_id": "ws_local"
+  },
+  "ai_proposals": [
+    {
+      "actor_id": "ai_planner",
+      "actor_kind": "delegated_agent",
+      "assumptions": [
+        "The user has access to relevant documentation or backup systems for the test goal",
+        "There exists a recorded version of the test goal that can be restored",
+        "The restoration process follows standard procedures for this system"
+      ],
+      "base_revision": 1,
+      "content_hash": "550fb94aafcf9a505acd94eaff905c7d8ef9be31332f90cc5c08a5313da8b14d",
+      "created_at": "2026-10-24T16:45:45.132103700Z",
+      "diagnostics": [],
+      "expires_at": "2026-10-25T16:45:45.132103700Z",
+      "id": "prp_3e90b113db0748a79017",
+      "intent": "AI 拆解目标「恢复测试目标」为 3 个任务（待审阅，不自动提交）",
+      "operations": [
+        {
+          "operation": "task.create",
+          "payload": {
+            "task": {
+              "description": "由本地/授权模型拆解目标《恢复测试目标》生成，待用户审阅。",
+              "estimate_minutes": 45,
+              "priority": 1,
+              "tags": [
+                "ai",
+                "goal:goal_3422497cae7e41a6a274"
+              ],
+              "title": "Identify the specific test goal that requires restoration by reviewing recent project documentation or team communications"
+            }
+          }
+        },
+        {
+          "operation": "task.create",
+          "payload": {
+            "task": {
+              "description": "由本地/授权模型拆解目标《恢复测试目标》生成，待用户审阅。",
+              "estimate_minutes": 60,
+              "priority": 2,
+              "tags": [
+                "ai",
+                "goal:goal_3422497cae7e41a6a274"
+              ],
+              "title": "Locate and retrieve any existing backups, snapshots, or version history related to the test goal configuration"
+            }
+          }
+        },
+        {
+          "operation": "task.create",
+          "payload": {
+            "task": {
+              "description": "由本地/授权模型拆解目标《恢复测试目标》生成，待用户审阅。",
+              "estimate_minutes": 30,
+              "priority": 2,
+              "tags": [
+                "ai",
+                "goal:goal_3422497cae7e41a6a274"
+              ],
+              "title": "Verify system compatibility and prerequisites before attempting restoration of the test goal"
+            }
+          }
+        }
+      ],
+      "policy_revision": 1,
+      "preview": {
+        "added": [
+          {
+            "id": "tag_0a370fa5beec4418ab8a",
+            "kind": "tag",
+            "summary": "tag_0a370fa5beec4418ab8a"
+          },
+          {
+            "id": "tag_c58d226bd2ab438ab7ad",
+            "kind": "tag",
+            "summary": "tag_c58d226bd2ab438ab7ad"
+          },
+          {
+            "id": "tsk_1cec8a6977654e1e9659",
+            "kind": "task",
+            "summary": "Locate and retrieve any existing backups, snapshots, or version history related to the test goal configuration"
+          },
+          {
+            "id": "tsk_85c2177ddfc748bea30b",
+            "kind": "task",
+            "summary": "Identify the specific test goal that requires restoration by reviewing recent project documentation or team communications"
+          },
+          {
+            "id": "tsk_996460cbc56840278980",
+            "kind": "task",
+            "summary": "Verify system compatibility and prerequisites before attempting restoration of the test goal"
+          }
+        ],
+        "changed": [],
+        "changes": [
+          {
+            "action": "created",
+            "id": "tsk_85c2177ddfc748bea30b",
+            "kind": "task"
+          },
+          {
+            "action": "created",
+            "id": "tsk_1cec8a6977654e1e9659",
+            "kind": "task"
+          },
+          {
+            "action": "created",
+            "id": "tsk_996460cbc56840278980",
+            "kind": "task"
+          }
+        ],
+        "counts": {
+          "added": 5,
+          "total_after": 6,
+          "total_before": 1
+        },
+        "removed": [],
+        "warnings": []
+      },
+      "questions": [
+        "What specific platform or tool contains the test goal that needs restoration?",
+        "Are there any custom configurations or dependencies associated with this test goal?",
+        "What is the current state of the test goal - has it been deleted, corrupted, or simply lost access to?",
+        "Are there any time-sensitive constraints beyond the horizon end date of 2026-11-15?"
+      ],
+      "reads": [
+        {
+          "id": "goal_3422497cae7e41a6a274",
+          "kind": "goal"
+        }
+      ],
+      "source": {
+        "actor_id": "ai_planner",
+        "kind": "ai"
+      },
+      "status": "validated",
+      "validated_at": "2026-10-24T16:45:45.132103700Z",
+      "workspace_id": "ws_local"
+    }
+  ],
+  "proposal_count": 1,
+  "steps": [
+    {
+      "seq": 1,
+      "kind": "queued"
+    },
+    {
+      "seq": 2,
+      "kind": "context.loaded"
+    },
+    {
+      "seq": 3,
+      "kind": "context.loaded"
+    },
+    {
+      "seq": 4,
+      "kind": "model.completed"
+    },
+    {
+      "seq": 5,
+      "kind": "proposal.created"
+    }
+  ]
+}

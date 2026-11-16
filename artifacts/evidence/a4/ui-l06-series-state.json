@@ -1,0 +1,45 @@
+{
+  "rule_id": "rec_9fe393843e634514b73e",
+  "rule_title": "每周整理案例素材（系列更新）",
+  "rule_version": 3,
+  "rule_estimate": 45,
+  "revision": 70,
+  "tasks": [
+    {
+      "title": "每周整理案例素材",
+      "status": "done",
+      "estimate": 30,
+      "version": 2
+    },
+    {
+      "title": "每周整理案例素材（系列更新）",
+      "status": "open",
+      "estimate": 45,
+      "version": 3
+    },
+    {
+      "title": "每周整理案例素材（系列更新）",
+      "status": "open",
+      "estimate": 45,
+      "version": 3
+    },
+    {
+      "title": "每周整理案例素材（系列更新）",
+      "status": "open",
+      "estimate": 45,
+      "version": 3
+    },
+    {
+      "title": "每周整理案例素材（系列更新）",
+      "status": "open",
+      "estimate": 45,
+      "version": 3
+    },
+    {
+      "title": "每周整理案例素材（系列更新）",
+      "status": "open",
+      "estimate": 45,
+      "version": 3
+    }
+  ]
+}

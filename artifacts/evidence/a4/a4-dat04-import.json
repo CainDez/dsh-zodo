@@ -1,0 +1,61 @@
+{
+  "preflight_status": 200,
+  "preflight": {
+    "can_import": true,
+    "contains_credentials": false,
+    "counts": {
+      "goals": 0,
+      "habits": 0,
+      "inbox": 0,
+      "notes": 0,
+      "projects": 0,
+      "tasks": 1
+    },
+    "empty_workspace_required": true,
+    "fingerprint": "3824191b6312c7199308647a4146bd835d5474737b4905d5e7dcf062f68b4a41",
+    "imported_workspace_id": "ws_local",
+    "local_revision": 0,
+    "schema": "zodo.import-preflight/1",
+    "workspace_empty": true
+  },
+  "first_status": 200,
+  "first": {
+    "counts": {
+      "goals": 0,
+      "habits": 0,
+      "inbox": 0,
+      "projects": 0,
+      "tasks": 1
+    },
+    "credentials_imported": false,
+    "event_cursor": "ev_1",
+    "fingerprint": "3824191b6312c7199308647a4146bd835d5474737b4905d5e7dcf062f68b4a41",
+    "imported": true,
+    "replayed": false,
+    "revision": 1,
+    "schema": "zodo.import-result/1"
+  },
+  "replay_status": 200,
+  "replay": {
+    "counts": {
+      "goals": 0,
+      "habits": 0,
+      "inbox": 0,
+      "projects": 0,
+      "tasks": 1
+    },
+    "credentials_imported": false,
+    "event_cursor": "ev_1",
+    "fingerprint": "3824191b6312c7199308647a4146bd835d5474737b4905d5e7dcf062f68b4a41",
+    "imported": true,
+    "replayed": true,
+    "revision": 1,
+    "schema": "zodo.import-result/1"
+  },
+  "revision_after_first": 1,
+  "revision_after_replay": 1,
+  "replay_flag": true,
+  "mismatch_status": 409,
+  "mismatch_code": "IDEMPOTENCY_MISMATCH",
+  "tasks_after": 1
+}

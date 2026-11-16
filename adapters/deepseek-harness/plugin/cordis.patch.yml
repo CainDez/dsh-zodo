@@ -1,0 +1,3 @@
+- insert:
+    - id: zodo-harness
+      name: '@zodo/harness-plugin'

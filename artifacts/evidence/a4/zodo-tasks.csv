@@ -1,0 +1,23 @@
+id,title,status,project_id,estimate_minutes,actual_minutes,remaining_minutes,target_due,hard_deadline,priority,tags,updated_at
+tsk_5871faaf72f04115be9d,校对案例说明,in_progress,prj_f0905244f4ba43e1acfb,15,10,5,,,2,,2026-10-24T17:44:39.290734200+00:00
+tsk_88722535a9d34aea9333,调度器自动任务 1792863674,open,,5,0,5,,,0,,2026-10-24T17:42:15.440753600+00:00
+tsk_f9f193195718408c9471,调度器自动任务 1792863674,open,,5,0,5,,,0,,2026-10-24T17:41:15.422846500+00:00
+tsk_4414fc25b95c4f6f8828,每周整理案例素材,done,,30,0,0,2026-10-26,,2,,2026-10-24T17:32:52.462429500+00:00
+tsk_ba31bfb3a3d94978a1d2,Select and finalize the 3 projects to feature in Portfolio v2,done,,45,0,0,2026-10-28,,1,ai;goal:goal_79a31ac8c9ca4d4c9561,2026-10-24T17:32:52.462429500+00:00
+tsk_0194c66c593b4faa88f8,Implement online showcase on chosen platform,open,,180,0,180,2026-10-31,,3,ai;goal:goal_79a31ac8c9ca4d4c9561,2026-10-24T16:44:04.945651200+00:00
+tsk_04f4a2002f104ce8bd18,Select and finalize the 3 projects to include in Portfolio v2,open,,45,0,45,2026-10-31,,1,ai;goal:goal_79a31ac8c9ca4d4c9561,2026-10-24T16:44:04.945651200+00:00
+tsk_1117c482cd874cd384c8,"Test all links, navigation, and functionality",open,,45,0,45,2026-10-31,,3,ai;goal:goal_79a31ac8c9ca4d4c9561,2026-10-24T16:44:04.945651200+00:00
+tsk_1b391927552e451d9a9f,Create visual mockups for online display layout,open,,90,0,90,2026-10-31,,2,ai;goal:goal_79a31ac8c9ca4d4c9561,2026-10-24T16:44:04.945651200+00:00
+tsk_88347b128327426aadcd,Review and refine all content and design elements,open,,60,0,60,2026-10-31,,2,ai;goal:goal_79a31ac8c9ca4d4c9561,2026-10-24T16:44:04.945651200+00:00
+tsk_bee00b0b7f9d440094a7,Write detailed case descriptions for each selected project,open,,180,0,180,2026-10-31,,2,ai;goal:goal_79a31ac8c9ca4d4c9561,2026-10-24T16:44:04.945651200+00:00
+tsk_1c3c0f39e86440238cc1,Draft case descriptions for all 3 selected projects,open,,90,0,90,2026-10-29,,1,ai;goal:goal_79a31ac8c9ca4d4c9561,2026-10-24T16:43:13.820873600+00:00
+tsk_b9cf93001708437b93e1,Review and refine all content for clarity and impact,open,,45,0,45,2026-10-30,,2,ai;goal:goal_79a31ac8c9ca4d4c9561,2026-10-24T16:43:13.820873600+00:00
+tsk_be15bbcf9ec04c14a11a,Upload project materials and verify all links work,open,,30,0,30,2026-10-30,,2,ai;goal:goal_79a31ac8c9ca4d4c9561,2026-10-24T16:43:13.820873600+00:00
+tsk_fcae55111d7443b9aa30,"Create online display structure (choose platform, set up pages)",open,,60,0,60,2026-10-29,,2,ai;goal:goal_79a31ac8c9ca4d4c9561,2026-10-24T16:43:13.820873600+00:00
+tsk_a010356971874c1fab9f,联系印刷店确认封面,done,,15,0,0,,,2,,2026-10-24T16:22:28.805491800+00:00
+tsk_71649698333242c0bde0,每周整理案例素材,open,,30,0,30,2026-11-16,,2,,2026-10-24T16:17:33.042639500+00:00
+tsk_8769ff20a8f74801a897,每周整理案例素材,open,,30,0,30,2026-11-09,,2,,2026-10-24T16:17:33.042639500+00:00
+tsk_b8dfc7931de341c9b033,每周整理案例素材,open,,30,0,30,2026-11-23,,2,,2026-10-24T16:17:33.042639500+00:00
+tsk_b8fe47dc08cb48f59782,每周整理案例素材,open,,30,0,30,2026-11-02,,2,,2026-10-24T16:17:33.042639500+00:00
+tsk_e12d85ca01124a83aae1,每周整理案例素材,open,,30,0,30,2026-11-30,,2,,2026-10-24T16:17:33.042639500+00:00
+tsk_14ee523f0a3a4ecabc44,筛选 3 个项目素材,open,,45,0,45,,,2,,2026-10-24T16:10:02.595624200+00:00

@@ -1,0 +1,13 @@
+{
+  "first_status": 200,
+  "first_replayed": false,
+  "first_revision": 1,
+  "count_after_first": 1,
+  "replay_status": 200,
+  "replay_replayed": true,
+  "replay_revision": 1,
+  "count_after_replay": 1,
+  "mismatch_status": 409,
+  "mismatch_code": "IDEMPOTENCY_MISMATCH",
+  "count_after_mismatch": 1
+}

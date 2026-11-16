@@ -1,0 +1,32 @@
+{
+  "run_body": {
+    "ok": true,
+    "core_status": 202,
+    "result": {
+      "run": {
+        "cancel_requested": false,
+        "checkpoint": null,
+        "created_at": "2026-10-24T19:57:39.071651100+00:00",
+        "ended_at": null,
+        "error": null,
+        "id": "run_3fe3b4de1fba4b599810158ff47962b3",
+        "input": {
+          "goal_id": "goal_5b29bff23e244ef5a4a0"
+        },
+        "intent": "goal.decompose",
+        "output": null,
+        "schema": "zodo.run/1",
+        "started_at": null,
+        "state": "queued",
+        "updated_at": "2026-10-24T19:57:39.071651100+00:00",
+        "workspace_id": "ws_local"
+      },
+      "schema": "zodo.run/1"
+    }
+  },
+  "session_status": 200,
+  "goal_status": 200,
+  "goal_id": "goal_5b29bff23e244ef5a4a0",
+  "run_status": 202,
+  "run_id": "run_3fe3b4de1fba4b599810158ff47962b3"
+}

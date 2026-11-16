@@ -1,0 +1,34 @@
+{
+  "textboxes": 2,
+  "sent": true,
+  "probe": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "blocked": true,
+      "message": "ZODO_HISTORY_RESTRICTED: this session contains device-only history and cannot be sent to a non-local model provider"
+    }
+  },
+  "history": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "sessions": [
+        {
+          "id": "session-9db54f25-efbe-4a90-8b9f-bab5f8888677",
+          "inheritedEventCount": 2,
+          "restricted": true
+        }
+      ]
+    }
+  },
+  "fork": {
+    "status": 409,
+    "body": {
+      "ok": false,
+      "blocked": true,
+      "message": "ZODO_FORK_RESTRICTED: inherited history contains device-only content; fork is refused"
+    }
+  },
+  "errs": []
+}

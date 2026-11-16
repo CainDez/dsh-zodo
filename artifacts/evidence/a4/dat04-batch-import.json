@@ -1,0 +1,52 @@
+{
+  "batch_status": 200,
+  "batch": {
+    "counts": {
+      "goals": 0,
+      "habits": 0,
+      "inbox": 0,
+      "projects": 0,
+      "tasks": 2
+    },
+    "credentials_imported": false,
+    "event_cursor": "ev_1",
+    "fingerprint": "f81774cf057c94013611dadb13e9350cfc2e8f21ceddc0d8cc22757e32d42bcb",
+    "imported": true,
+    "replayed": false,
+    "revision": 1,
+    "schema": "zodo.import-result/1"
+  },
+  "tasks_after_batch": [
+    "批次 A",
+    "批次 B"
+  ],
+  "replay_status": 200,
+  "replay": {
+    "counts": {
+      "goals": 0,
+      "habits": 0,
+      "inbox": 0,
+      "projects": 0,
+      "tasks": 2
+    },
+    "credentials_imported": false,
+    "event_cursor": "ev_1",
+    "fingerprint": "f81774cf057c94013611dadb13e9350cfc2e8f21ceddc0d8cc22757e32d42bcb",
+    "imported": true,
+    "replayed": true,
+    "revision": 1,
+    "schema": "zodo.import-result/1"
+  },
+  "conflict_status": 409,
+  "conflict": {
+    "schema": "zodo.error/1",
+    "request_id": "",
+    "error": {
+      "code": "VALIDATION_FAILED",
+      "message": "batched import bundles contain conflicting entities; no partial import was written",
+      "retryable": false,
+      "details": null
+    }
+  },
+  "target_d_tasks_after_conflict": 0
+}
