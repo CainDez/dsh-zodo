@@ -72,6 +72,7 @@ pub struct RuntimeInner {
     pub revoked_channels: BTreeSet<String>,
     pub revoked_devices: BTreeSet<String>,
     pub data_dir: PathBuf,
+    pub host: crate::host::HostState,
     pub _lock: File,
     pub _lock_path: PathBuf,
     pub _info_path: PathBuf,
@@ -301,6 +302,7 @@ pub async fn serve(config: ServeConfig) -> Result<()> {
             revoked_channels: read_auth_state(&config.data_dir).revoked_channels,
             revoked_devices: read_auth_state(&config.data_dir).revoked_devices,
             data_dir: config.data_dir.clone(),
+            host: crate::host::HostState::default(),
             _lock: lock,
             _lock_path: lock_path,
             _info_path: info_path.clone(),
@@ -318,6 +320,9 @@ pub async fn serve(config: ServeConfig) -> Result<()> {
         .route("/v1/runs/{id}/cancel", post(cancel_run))
         .route("/v1/model", get(model_info).post(update_model))
         .route("/v1/model/catalog", get(model_catalog))
+        .route("/v1/host/bind", post(crate::host::register))
+        .route("/v1/host/unbind", post(crate::host::unregister))
+        .route("/v1/host/authorize", post(crate::host::check))
         .route("/v1/admin/revoke", post(revoke_channel))
         .route("/v1/admin/revocations", get(list_revocations))
         .route("/v1/data/export", get(data_export))
@@ -380,7 +385,7 @@ async fn shutdown_signal() {
     info!("shutdown requested");
 }
 
-fn authenticate(state: &AppState, headers: &HeaderMap) -> Result<AuthPrincipal> {
+pub(crate) fn authenticate(state: &AppState, headers: &HeaderMap) -> Result<AuthPrincipal> {
     let header = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -427,7 +432,7 @@ fn context(principal: &AuthPrincipal, request_id: &str, runtime_instance: &str) 
     }
 }
 
-fn status_for(error: &ZodoError) -> StatusCode {
+pub(crate) fn status_for(error: &ZodoError) -> StatusCode {
     match error.code {
         ErrorCode::ValidationFailed | ErrorCode::UnsupportedOperation => {
             StatusCode::UNPROCESSABLE_ENTITY
@@ -446,7 +451,7 @@ fn status_for(error: &ZodoError) -> StatusCode {
     }
 }
 
-fn error_response(status: StatusCode, request_id: &str, error: &ZodoError) -> Response {
+pub(crate) fn error_response(status: StatusCode, request_id: &str, error: &ZodoError) -> Response {
     (status, Json(ErrorEnvelope::new(request_id, error))).into_response()
 }
 
@@ -684,7 +689,7 @@ async fn events(
     }
 }
 
-fn require_capability(principal: &AuthPrincipal, capability: &str) -> Result<()> {
+pub(crate) fn require_capability(principal: &AuthPrincipal, capability: &str) -> Result<()> {
     if principal
         .capabilities
         .iter()
@@ -935,27 +940,25 @@ async fn model_catalog(State(state): State<AppState>, headers: HeaderMap) -> Res
             );
         }
     };
-    let config = ModelConfig::load(&inner.data_dir);
-    Json(config.catalog()).into_response()
+    match ModelConfig::load(&inner.data_dir) {
+        Ok(config) => Json(config.catalog()).into_response(),
+        Err(error) => error_response(status_for(&error), "", &error),
+    }
 }
 
 fn model_response(state: &AppState, workspace_id: &str) -> Result<Value> {
-    let (data_dir, policy) = {
-        let mut inner = state
-            .inner
-            .lock()
-            .map_err(|_| ZodoError::new(ErrorCode::StorageFailure, "runtime state unavailable"))?;
-        let world = inner
-            .store
-            .load_world(workspace_id)?
-            .ok_or_else(|| ZodoError::not_found("workspace", workspace_id))?;
-        (inner.data_dir.clone(), world.workspace.policy)
-    };
-    let gateway = ModelGateway::load(&data_dir);
-    Ok(json!({
-        "schema": "zodo.model/1", "config": gateway.config.sanitized(),
-        "effective": gateway.effective(&policy),
-    }))
+    let mut inner = state
+        .inner
+        .lock()
+        .map_err(|_| ZodoError::new(ErrorCode::StorageFailure, "runtime state unavailable"))?;
+    let world = inner
+        .store
+        .load_world(workspace_id)?
+        .ok_or_else(|| ZodoError::not_found("workspace", workspace_id))?;
+    let gateway = ModelGateway::load(&inner.data_dir)?;
+    Ok(
+        json!({"schema":"zodo.model/1", "config":gateway.config, "effective":gateway.effective(&world.workspace.policy, &inner.host)}),
+    )
 }
 
 async fn model_info(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -984,22 +987,17 @@ async fn update_model(
     if let Err(error) = require_capability(&principal, "admin") {
         return error_response(status_for(&error), "", &error);
     }
-    let data_dir = match state.inner.lock() {
-        Ok(inner) => inner.data_dir.clone(),
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "",
-                &ZodoError::new(ErrorCode::StorageFailure, "runtime state unavailable"),
-            );
-        }
-    };
-    let mut gateway = ModelGateway::load(&data_dir);
-    match gateway.configure(config) {
-        Ok(()) => match model_response(&state, &principal.workspace_id) {
-            Ok(value) => Json(value).into_response(),
-            Err(error) => error_response(status_for(&error), "", &error),
-        },
+    let saved = (|| -> Result<()> {
+        let mut inner = state
+            .inner
+            .lock()
+            .map_err(|_| ZodoError::new(ErrorCode::StorageFailure, "runtime state unavailable"))?;
+        config.save(&inner.data_dir)?;
+        inner.host.model_revision += 1;
+        Ok(())
+    })();
+    match saved.and_then(|_| model_response(&state, &principal.workspace_id)) {
+        Ok(value) => Json(value).into_response(),
         Err(error) => error_response(status_for(&error), "", &error),
     }
 }
@@ -2109,7 +2107,7 @@ fn sha256_file(path: &Path) -> std::io::Result<String> {
 #[cfg(test)]
 mod model_api_tests {
     use super::*;
-    use zodo_kernel::model::{ModelRoute, PrivacyPolicy, Workspace};
+    use zodo_kernel::model::{ModelAccess, PrivacyPolicy, Workspace};
 
     fn state(dir: &Path, policy: PrivacyPolicy) -> AppState {
         let mut store = SqliteStore::open(dir.join("test.sqlite3")).unwrap();
@@ -2136,6 +2134,7 @@ mod model_api_tests {
                 revoked_channels: BTreeSet::new(),
                 revoked_devices: BTreeSet::new(),
                 data_dir: dir.into(),
+                host: crate::host::HostState::default(),
                 _lock: File::create(dir.join("test.lock")).unwrap(),
                 _lock_path: dir.join("test.lock"),
                 _info_path: dir.join("test-info.json"),
@@ -2164,35 +2163,34 @@ mod model_api_tests {
     async fn model_info_uses_saved_policy_and_reports_preflight_not_connection_success() {
         let dir = tempfile::tempdir().unwrap();
         let policy = PrivacyPolicy {
-            model_route: ModelRoute::CloudAssisted,
-            allowed_cloud_providers: vec!["deepseek-cloud".into()],
-            ..PrivacyPolicy::default()
+            model_access: ModelAccess {
+                goals: true,
+                projects: false,
+                captures: false,
+            },
+            diagnostic_capture: false,
         };
         let state = state(dir.path(), policy.clone());
-        let mut config = ModelConfig::default();
-        config.local.base_url = "http://127.0.0.1:11434/v1".into();
-        config.cloud.as_mut().unwrap().enabled = true;
-        config.cloud.as_mut().unwrap().api_key_env = None;
-        config.roles.insert("decompose".into(), "cloud".into());
+        let config: ModelConfig = serde_json::from_value(json!({"version":2,"source":{"kind":"dsh","provider":"subscription","model":"fixture"}})).unwrap();
         config.save(dir.path()).unwrap();
         let response = body(model_info(State(state.clone()), headers("ui-token")).await).await;
         assert_eq!(response["schema"], "zodo.model/1");
-        assert_eq!(response["effective"]["mode"], "cloud_assisted");
-        assert_eq!(response["effective"]["workspace"]["route"], "device");
+        assert_eq!(response["config"], serde_json::to_value(&config).unwrap());
+        assert_eq!(response["effective"]["selected"]["source"], "dsh");
         assert_eq!(
-            response["effective"]["workspace"]["reason"],
-            "cloud_credentials_missing"
+            response["effective"]["selected"]["reason"],
+            "host_unavailable"
         );
         assert_eq!(
-            response["effective"]["roles"]["decompose"]["reason"],
-            "cloud_credentials_missing"
+            response["effective"]["operations"]["decompose"]["reason"],
+            "host_unavailable"
         );
         assert_eq!(
-            response["effective"]["device_only"]["reason"],
-            "device_only"
+            response["effective"]["operations"]["clarify"]["reason"],
+            "captures_not_allowed"
         );
         assert_eq!(response["effective"]["connection_tested"], false);
-        assert_eq!(response["config"]["cloud"]["credential_ready"], false);
+        assert!(!response.to_string().contains("token"));
         assert_eq!(
             state
                 .inner
@@ -2206,22 +2204,40 @@ mod model_api_tests {
                 .policy,
             policy
         );
-        let denied = update_model(
-            State(state.clone()),
-            headers("agent-token"),
-            Json(config.clone()),
-        )
-        .await;
-        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        assert_eq!(
+            update_model(
+                State(state.clone()),
+                headers("agent-token"),
+                Json(config.clone())
+            )
+            .await
+            .status(),
+            StatusCode::FORBIDDEN
+        );
         let response =
             body(update_model(State(state.clone()), headers("ui-token"), Json(config)).await).await;
         assert_eq!(
-            response["effective"]["workspace"]["reason"],
-            "cloud_credentials_missing"
+            response["effective"]["selected"]["reason"],
+            "host_unavailable"
         );
         assert_eq!(
             model_info(State(state), HeaderMap::new()).await.status(),
             StatusCode::FORBIDDEN
         );
+    }
+
+    #[tokio::test]
+    async fn invalid_model_versions_never_replace_configuration() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = state(dir.path(), PrivacyPolicy::default());
+        let mut config = ModelConfig::default();
+        config.version = 1;
+        assert_eq!(
+            update_model(State(state), headers("ui-token"), Json(config))
+                .await
+                .status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+        assert!(!ModelConfig::path(dir.path()).exists());
     }
 }

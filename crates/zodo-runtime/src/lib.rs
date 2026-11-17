@@ -1,7 +1,9 @@
 pub mod ai;
 pub mod automation;
 pub mod crypto;
+pub mod host;
 pub mod mcp;
+mod model_transport;
 pub mod notify;
 pub mod runs;
 pub mod runtime;

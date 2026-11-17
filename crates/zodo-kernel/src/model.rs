@@ -74,14 +74,6 @@ impl CommandContext {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum ModelRoute {
-    LocalOnly,
-    /// Explicitly authorizes Workspace/Public request context, never DeviceOnly data.
-    CloudAssisted,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
 pub enum DataClass {
     DeviceOnly,
     TrustedWorkspace,
@@ -105,22 +97,21 @@ pub struct WorkWindow {
     pub hard: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-pub struct PrivacyPolicy {
-    pub model_route: ModelRoute,
-    pub allowed_cloud_providers: Vec<String>,
-    pub diagnostic_capture: bool,
+pub struct ModelAccess {
+    pub goals: bool,
+    pub projects: bool,
+    pub captures: bool,
 }
 
-impl Default for PrivacyPolicy {
-    fn default() -> Self {
-        Self {
-            model_route: ModelRoute::LocalOnly,
-            allowed_cloud_providers: Vec::new(),
-            diagnostic_capture: false,
-        }
-    }
+/// Content consent is independent of the selected model connection.
+/// Notes and attachments are not automatically included in any model request.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PrivacyPolicy {
+    pub model_access: ModelAccess,
+    pub diagnostic_capture: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

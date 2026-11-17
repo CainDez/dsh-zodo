@@ -206,8 +206,8 @@ window.__ModuleLoader__.load({
     }
 
     function requireModelResponse(result) {
-      if (result?.schema !== 'zodo.model/1' || !result.config?.editable || !result.effective
-        || !['local_only', 'cloud_assisted'].includes(result.effective.mode)) {
+      if (result?.schema !== 'zodo.model/1' || result.config?.version !== 2 || !result.effective?.selected
+        || !['dsh', 'custom'].includes(result.config.source?.kind)) {
         throw new Error('Core 模型接口无效，请检查插件与 Core 构建是否一致。')
       }
       return result
@@ -1925,12 +1925,11 @@ window.__ModuleLoader__.load({
       const route = run?.output?.route ?? run?.checkpoint?.route ?? null
       const isClarify = run?.intent === 'capture.clarify'
       const clarifyQuestions = isClarify ? (run?.output?.questions ?? run?.checkpoint?.questions ?? []) : []
-      const routeLabel = policy.model_route === 'local_only'
-        ? '仅本地（Core 不静默回退云端）'
-        : policy.model_route === 'cloud_assisted' ? '允许云端辅助' : '未知'
+      const allowedContext = [['goals', '目标内容'], ['projects', '项目背景'], ['captures', '收集原文']]
+        .filter(([key]) => policy.model_access?.[key]).map(([, label]) => label).join('、') || '尚未授权资料'
       const destination = provider || model || route
         ? [provider, model, route ? `路由 ${route}` : null].filter(Boolean).join(' · ')
-        : '没有模型调用记录（本次没有外发）'
+        : '尚无已记录的调用目的地，不能据此断言没有外发'
       const valueCell = (value, limit = 80) => {
         const cell = truncateText(value, limit)
         return h(React.Fragment, null,
@@ -1969,9 +1968,9 @@ window.__ModuleLoader__.load({
           proposal ? h('dt', null, '提案状态') : null,
           proposal ? h('dd', null, `${proposal.status} · 依据 r${proposal.base_revision} · 策略 p${proposal.policy_revision}`) : null,
           h('dt', null, '目的地 / 提供方'), h('dd', null, destination),
-          h('dt', null, 'Core 路由策略'), h('dd', null, routeLabel),
-          h('dt', null, '允许的云提供方'), h('dd', null, (policy.allowed_cloud_providers ?? []).join(', ') || '无；未授权云端'),
-          h('dt', null, '凭据边界'), h('dd', null, '模型凭据由 Core 启动环境或凭据服务持有；浏览器与 Host BFF 都不接收 token 或 API key。'),
+          h('dt', null, '当前资料授权'), h('dd', null, allowedContext),
+          h('dt', null, '历史发送范围'), h('dd', null, '当前权限不等于历史发送记录；以该运行的实际派发记录为准。'),
+          h('dt', null, '凭据边界'), h('dd', null, 'DSH 模型的凭据由 DSH 持有；自定义连接引用 Core 环境变量；浏览器不展示密钥。'),
         ),
       ),
       proposal && candidateRows.length ? h(Section, { title: '提案候选（尚未提交）' },
@@ -2050,29 +2049,22 @@ window.__ModuleLoader__.load({
           ? '该提案没有声明 reads；人工/Agent 提交的候选只经 Core 校验，没有模型外发引用。'
           : '该运行没有声明读取对象。'),
       ),
-      run && isClarify ? h(Section, { title: '会进入运行上下文的事实' },
-        h('p', { className: 'zw-fineprint' }, 'capture.clarify 只把这条原始收集文本作为单次输入发给 Core 模型网关；不读取笔记、附件、任务或目标。原文按数据处理，其中的指令不会被执行。'),
-        h('div', { className: 'zw-ref-table' },
-          h('div', { className: 'zw-ref-row zw-ref-row-head' },
-            h('span', null, '字段'), h('span', null, '数据类别'), h('span', null, '截断值')),
-          h('div', { className: 'zw-ref-row' },
-            h('span', { className: 'zw-mono' }, 'input.text'),
-            h('span', null, '原始收集文本（workspace 敏感度路由）'),
-            valueCell(run.input?.text, 160),
-          ),
-        ),
-        h('p', { className: 'zw-fineprint' }, '模型只返回澄清问题与建议类型；facts_written: false，没有自动转换、提案或批准。'),
-      ) : run && goal ? h(Section, { title: '会进入运行上下文的事实' },
-        h('p', { className: 'zw-fineprint' }, '以下是 Core 运行按 goal.decompose 意图读取的目标字段（run.input 只记录 goal_id，桥接不暴露完整 prompt 文本）。'),
-        h('dl', { className: 'zw-kv' },
+      run && isClarify ? h(Section, { title: '当前授权下的上下文预览' },
+        h('p', { className: 'zw-fineprint' }, '按当前快照与当前权限预览，不是历史请求还原。收集澄清只使用获准原文，不读取笔记、附件、任务或目标。'),
+        policy.model_access?.captures ? h('p', null, valueCell(run.input?.text, 160))
+          : h('p', { className: 'zw-muted' }, '收集原文当前未授权，不会为新的收集澄清请求派发模型。'),
+        h('p', { className: 'zw-fineprint' }, '模型只返回澄清问题与建议类型，不自动转换、批准或提交。'),
+      ) : run && goal ? h(Section, { title: '当前授权下的上下文预览' },
+        h('p', { className: 'zw-fineprint' }, '按当前目标和权限显示可用于新请求的字段；不代表该历史运行实际发送了这些内容。'),
+        policy.model_access?.goals ? h('dl', { className: 'zw-kv' },
           h('dt', null, '目标'), h('dd', null, goal.title),
           h('dt', null, '成功标准'), h('dd', null, goal.success_criteria ?? '未填写'),
           h('dt', null, '期望完成'), h('dd', null, goal.target_due ?? '未设置'),
-          project ? h('dt', null, '项目范围') : null,
-          project ? h('dd', null, `${project.title} · ${project.scope ?? '未填写'}`) : null,
+          project && policy.model_access?.projects ? h('dt', null, '项目范围') : null,
+          project && policy.model_access?.projects ? h('dd', null, project.title + ' · ' + (project.scope ?? '未填写')) : null,
           run.input?.horizon_end ? h('dt', null, '计划视界') : null,
           run.input?.horizon_end ? h('dd', { className: 'zw-mono' }, run.input.horizon_end) : null,
-        ),
+        ) : h('p', { className: 'zw-muted' }, '目标内容当前未授权，不会为新的目标拆解请求派发模型。'),
       ) : null,
       h(Section, { title: '外发边界与警告' },
         h('ul', { className: 'zw-warning-list' },
@@ -2412,378 +2404,149 @@ window.__ModuleLoader__.load({
       )
     }
 
-    // Read-only Harness model catalog. This section never mutates Harness settings and never sees a
-    // credential value; choosing a model only fills the Core draft below, which still needs saving.
-    function harnessEndpointTarget(endpoint) {
-      if (!endpoint) return 'cloud'
-      try {
-        const hostname = new URL(endpoint).hostname.toLowerCase()
-        return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]'
-          ? 'local'
-          : 'cloud'
-      } catch {
-        return 'cloud'
-      }
+    const MODEL_REASONS = {
+      model_not_selected: '尚未选择模型',
+      host_unavailable: 'DSH 宿主调用通道尚未就绪',
+      host_model_unavailable: '选定的 DSH 模型当前不可用，请刷新后重新选择',
+      custom_credentials_missing: 'Core 未检测到指定的密钥环境变量',
+      configured: '配置检查通过；尚未验证实际推理',
+      goals_not_allowed: '请在隐私设置中允许目标内容',
+      captures_not_allowed: '请在隐私设置中允许收集原文',
+      device_only_requires_custom_loopback: '禁止外发的内容只能交给已验证的本机端点',
     }
+    const modelReason = state => MODEL_REASONS[state?.reason] ?? state?.reason ?? '等待读取状态'
 
-    function harnessTestIdPart(value) {
-      return String(value ?? '').replace(/[^A-Za-z0-9]+/g, '-')
-    }
-
-    function harnessSlug(value) {
-      return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'host'
-    }
-
-    function HarnessModelsSection({ draft, setDraft, report }) {
-      const [catalog, setCatalog] = useState(null)
-      const [loading, setLoading] = useState(true)
-      const [error, setError] = useState('')
-      const alive = useRef(true)
-      useEffect(() => {
-        alive.current = true
-        return () => { alive.current = false }
-      }, [])
-      const load = async () => {
-        setLoading(true)
-        setError('')
-        try {
-          const result = await getHarnessModels()
-          if (alive.current) setCatalog(result)
-        } catch (failure) {
-          if (alive.current) setError(failure?.message ?? '无法读取 Harness 模型配置')
-        } finally {
-          if (alive.current) setLoading(false)
-        }
-      }
-      useEffect(() => { void load() }, [])
-      const groups = Array.isArray(catalog?.groups) ? catalog.groups : []
-      const failures = Array.isArray(catalog?.failures) ? catalog.failures : []
-      const groupsWithModels = groups.filter(group => (group.models ?? []).length > 0)
-      const defaultRoute = catalog?.default_route ?? null
-      const credentialHint = group => {
-        if (!group.credential_env) return '凭据：宿主未声明环境变量'
-        return '凭据环境变量：' + group.credential_env + (group.credential_present ? '（已设置）' : '（Core 未设置）')
-      }
-      const fill = (group, model) => {
-        if (!draft) {
-          report('模型配置尚未读取，暂时无法填入。')
-          return
-        }
-        const target = harnessEndpointTarget(group.endpoint)
-        const provider = {
-          id: 'harness-' + harnessSlug(group.provider),
-          label: 'Harness · ' + (group.name || group.provider),
-          base_url: group.endpoint,
-          model: model.id,
-          api_key_env: group.credential_env ?? null,
-          location: target === 'local' ? 'device' : 'cloud',
-          enabled: true,
-        }
-        setDraft(target === 'local'
-          ? { ...draft, local: { ...(draft.local ?? {}), ...provider } }
-          : { ...draft, cloud: { ...(draft.cloud ?? {}), ...provider } })
-        const message = '已将 ' + (group.name || group.provider) + ' / ' + model.id + ' 填入'
-          + (target === 'local' ? '本地' : '云端') + '模型连接，请确认端点后保存。'
-        report(group.credential_env && !group.credential_present
-          ? message + ' 提示：Core 的启动环境需要设置 ' + group.credential_env + '，浏览器不会复制或显示密钥。'
-          : message)
-      }
-      return h(Section, {
-        title: 'Harness 模型（宿主管理）',
-        testid: 'harness-models',
-        action: h(Button, {
-          onClick: () => { void load() },
-          disabled: loading,
-          testid: 'harness-models-refresh',
-        }, COPY.refresh),
-      },
-      h('p', { className: 'zw-fineprint' }, '只读 Harness 模型配置，不修改 Harness 全局设置、不复制密钥；选中后只填入下方 Zodo Core 模型连接，需要手动保存。'),
-      error ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert' },
-        h('div', null, '读取 Harness 模型失败：' + error),
-        h('div', { className: 'zw-action-row' },
-          h(Button, { onClick: () => { void load() }, disabled: loading, testid: 'harness-models-retry' }, '重试'),
-        ),
-      ) : null,
-      loading && !catalog ? h('p', { className: 'zw-muted' }, '读取 Harness 模型…') : null,
-      defaultRoute ? h('p', { className: 'zw-mono', 'data-testid': 'harness-default-route' },
-        'Harness 当前模型：' + defaultRoute.provider + ' / ' + defaultRoute.model) : null,
-      catalog
-        ? (groupsWithModels.length
-          ? h('div', { className: 'zw-model-grid' },
-            groupsWithModels.map(group => h('article', {
-              className: 'zw-card',
-              key: group.provider + ':' + (group.name ?? ''),
-              'data-testid': 'harness-group-' + harnessTestIdPart(group.provider),
-            },
-            h('header', { className: 'zw-card-head' },
-              h('div', null,
-                h('h3', null, group.name || group.provider),
-                h('span', { className: 'zw-mono zw-muted' }, group.provider),
-              ),
-              group.protocol ? h('span', { className: 'zw-mono zw-muted' }, group.protocol) : null,
-            ),
-            h('dl', { className: 'zw-kv' },
-              h('dt', null, '端点'), h('dd', { className: 'zw-mono' }, group.endpoint || '端点未知'),
-              h('dt', null, '凭据'), h('dd', null, credentialHint(group)),
-            ),
-            group.zodo_compatible === false
-              ? h('p', { className: 'zw-fineprint' }, group.zodo_reason || '该提供方不能直接作为 Zodo Core 模型连接。')
-              : null,
-            h('div', { className: 'zw-list', style: { marginTop: '10px' } },
-              (group.models ?? []).length > 0
-                ? group.models.map(model => {
-                  const isCurrent = Boolean(defaultRoute
-                    && defaultRoute.provider === group.provider
-                    && defaultRoute.model === model.id)
-                  const disabled = group.zodo_compatible === false || !group.endpoint || !draft
-                  const title = group.zodo_compatible === false
-                    ? (group.zodo_reason ?? undefined)
-                    : !group.endpoint ? '端点未知，无法填入'
-                      : !draft ? '模型配置尚未读取'
-                        : undefined
-                  return h('div', { className: 'zw-list-row', key: model.id, style: { alignItems: 'flex-start' } },
-                    h('div', { style: { display: 'grid', gap: '2px', minWidth: 0 } },
-                      h('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' } },
-                        h('strong', null, model.name || model.id),
-                        isCurrent ? h(Badge, { tone: 'accent' }, '当前') : null,
-                      ),
-                      h('span', { className: 'zw-mono zw-muted' }, model.id),
-                      model.description ? h('span', { className: 'zw-fineprint', style: { marginTop: 0 } }, model.description) : null,
-                      model.reasoning?.efforts?.length
-                        ? h('span', { className: 'zw-fineprint', style: { marginTop: 0 } },
-                          '推理强度：' + model.reasoning.efforts.map(effort => effort.id === model.reasoning.default_effort
-                            ? (effort.name || effort.id) + '（默认）'
-                            : (effort.name || effort.id)).join(' / '))
-                        : null,
-                    ),
-                    h(Button, {
-                      onClick: () => fill(group, model),
-                      disabled,
-                      title,
-                      testid: 'harness-model-use-' + harnessTestIdPart(group.provider) + '-' + harnessTestIdPart(model.id),
-                    }, '填入 Core 模型'),
-                  )
-                })
-                : h('p', { className: 'zw-fineprint' }, '该提供方没有可读取的模型'),
-            ),
-          )))
-          : h(Empty, null, 'Harness 没有可读取的模型配置'))
-        : null,
-      failures.length ? h('div', { className: 'zw-alert zw-alert-warn' },
-        h('strong', null, '部分 Harness 提供方读取失败'),
-        h('ul', { className: 'zw-warning-list' }, failures.map((failure, index) => h('li', { key: (failure.provider ?? '') + ':' + index },
-          (failure.name || failure.provider || '未知提供方') + '：' + (failure.message ?? '未知错误')))),
-      ) : null)
-    }
-
-    // Both navigation entries share one settings surface; mode/policy and connection saves stay
-    // explicit and separate because they are different Core transactions.
-    function ModelsView({ snapshot, send, busy, report }) {
-      const policy = snapshot.workspace.policy
+    function ModelsView({ snapshot, busy, report, onPrivacy }) {
       const [config, setConfig] = useState(null)
-      const [effective, setEffective] = useState(null)
       const [draft, setDraft] = useState(null)
-      const [mode, setMode] = useState(policy.model_route)
-      const [diagnostics, setDiagnostics] = useState(policy.diagnostic_capture)
-      const [consent, setConsent] = useState(false)
+      const [effective, setEffective] = useState(null)
+      const [catalog, setCatalog] = useState(null)
       const [error, setError] = useState('')
+      const [catalogError, setCatalogError] = useState('')
       const [loading, setLoading] = useState(true)
+      const [catalogLoading, setCatalogLoading] = useState(false)
       const [saving, setSaving] = useState(false)
-      const [advanced, setAdvanced] = useState(false)
-      const [connectionDirty, setConnectionDirty] = useState(false)
-      const [connectionStale, setConnectionStale] = useState(false)
+      const [dirty, setDirty] = useState(false)
+      const [stale, setStale] = useState(false)
       const dirtyRef = useRef(false)
-      const connectionBaseline = useRef(null)
+      const baseline = useRef(null)
       const alive = useRef(true)
+      const sourceDrafts = useRef({ dsh: { kind: 'dsh', provider: null, model: null },
+        custom: { kind: 'custom', base_url: '', model: '', api_key_env: null } })
       useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
-      useEffect(() => {
-        setMode(policy.model_route)
-        setDiagnostics(policy.diagnostic_capture)
-        setConsent(false)
-      }, [policy.model_route, policy.diagnostic_capture, (policy.allowed_cloud_providers ?? []).join(',')])
-      const load = async (resetDraft = false) => {
-        setLoading(true)
-        setError('')
-        try {
-          const result = await getModelConfig()
-          if (!alive.current) return
-          setConfig(result.config)
-          setEffective(result.effective ?? null)
-          const incoming = result.config.editable
-          if (resetDraft || !dirtyRef.current) {
-            setDraft(incoming)
-            connectionBaseline.current = JSON.stringify(incoming)
-            dirtyRef.current = false
-            setConnectionDirty(false)
-            setConnectionStale(false)
-          } else {
-            setConnectionStale(JSON.stringify(incoming) !== connectionBaseline.current)
-          }
-        } catch (failure) {
-          if (alive.current) setError(failure.message)
-        } finally {
-          if (alive.current) setLoading(false)
-        }
+      const apply = (result, discard = false) => {
+        setConfig(result.config)
+        setEffective(result.effective)
+        if (discard || !dirtyRef.current) {
+          setDraft(result.config)
+          baseline.current = JSON.stringify(result.config)
+          sourceDrafts.current[result.config.source.kind] = result.config.source
+          dirtyRef.current = false; setDirty(false); setStale(false)
+        } else setStale(JSON.stringify(result.config) !== baseline.current)
       }
-      useEffect(() => { void load() }, [snapshot.workspace.policy_revision])
-      const editDraft = next => { dirtyRef.current = true; setDraft(next); setConnectionDirty(true); setConsent(false) }
-      const saveConnections = async () => {
-        if (!draft) return
-        setSaving(true)
-        setError('')
+      const loadModel = async (discard = false) => {
+        setLoading(true); setError('')
+        try { const result = await getModelConfig(); if (alive.current) apply(result, discard) }
+        catch (failure) { if (alive.current) { setError(failure.message); setEffective(null) } }
+        finally { if (alive.current) setLoading(false) }
+      }
+      const loadCatalog = async () => {
+        setCatalogLoading(true); setCatalogError('')
+        try { const result = await getHarnessModels(); if (alive.current) setCatalog(result) }
+        catch (failure) { if (alive.current) setCatalogError(failure.message) }
+        finally { if (alive.current) setCatalogLoading(false) }
+      }
+      useEffect(() => { void loadModel() }, [snapshot.workspace.policy_revision])
+      useEffect(() => { void loadCatalog() }, [])
+      const change = source => {
+        sourceDrafts.current[source.kind] = source
+        dirtyRef.current = true; setDirty(true); setDraft({ version: 2, source }); setError('')
+      }
+      const save = async () => {
+        if (!draft || stale) return
+        setSaving(true); setError('')
         try {
-          // Do not let a stale whole-object form overwrite another window's edits.
           const current = await getModelConfig()
           if (!alive.current) return
-          if (JSON.stringify(current.config.editable ?? null) !== connectionBaseline.current) {
-            setConfig(current.config)
-            setEffective(current.effective ?? null)
-            setConnectionStale(true)
-            setError('连接已在其他界面更新。你的草稿已保留，尚未覆盖服务器；请放弃草稿并重新加载后再编辑。')
+          if (JSON.stringify(current.config) !== baseline.current) {
+            setConfig(current.config); setEffective(current.effective); setStale(true)
+            setError('模型配置已在其他界面更新；草稿已保留，未覆盖服务器。请放弃草稿并重新载入。')
             return
           }
           const result = await updateModel(draft)
           if (!alive.current) return
-          setConfig(result.config)
-          setDraft(result.config.editable ?? null)
-          connectionBaseline.current = JSON.stringify(result.config.editable ?? null)
-          dirtyRef.current = false
-          setConnectionDirty(false)
-          setConnectionStale(false)
-          setConsent(false)
-          await load(false)
-          report('连接已保存；使用模式未改变。连接尚未经过推理测试。')
+          apply(result, true)
+          report('模型已保存；隐私授权未改变。')
         } catch (failure) { if (alive.current) setError(failure.message) }
         finally { if (alive.current) setSaving(false) }
       }
-      const cloudId = config?.cloud?.id
-      const needsConsent = mode === 'cloud_assisted' && (policy.model_route !== 'cloud_assisted'
-        || !(policy.allowed_cloud_providers ?? []).includes(cloudId))
-      const saveMode = async () => {
-        if (needsConsent && !consent) return setError('请先确认云端辅助的数据范围。')
-        if (mode === 'cloud_assisted' && connectionDirty) return setError('请先保存连接，再确认云端辅助。')
-        if (mode === 'cloud_assisted' && !cloudId) return setError('请先配置并保存一个云端连接，或选择仅本地。')
-        setSaving(true)
-        setError('')
-        try {
-          await send('workspace.update', { settings: null, policy: {
-            ...policy,
-            model_route: mode,
-            // Content classifications are independent of the AI mode and are never rewritten here.
-            allowed_cloud_providers: mode === 'cloud_assisted' ? [cloudId] : policy.allowed_cloud_providers,
-            diagnostic_capture: diagnostics,
-          } })
-          if (!alive.current) return
-          setConsent(false)
-          await load(false)
-          report('使用模式已保存；现有笔记与附件的保护等级保持不变。')
-        } catch (failure) { if (alive.current) setError(failure.message) }
-        finally { if (alive.current) setSaving(false) }
-      }
-      const reasons = {
-        local_only: '仅本地模式，不会回退云端',
-        role_local: '此功能固定使用本地模型',
-        device_only: '禁止外发的内容只在本地处理',
-        cloud_credentials_missing: '云端缺少凭据，安全使用本地',
-        cloud_provider_not_allowed: '云端提供方尚未授权，使用本地',
-        cloud_provider_missing: '尚未配置云端，使用本地',
-        cloud_provider_disabled: '云端连接未启用，使用本地',
-        cloud_provider_invalid: '云端连接配置无效，使用本地',
-        cloud_authorized: '云端已通过配置检查',
-        local_provider_disabled: '本地连接未启用，无法处理',
-        local_endpoint_invalid: '本地端点必须在本机，请检查高级设置',
-      }
-      const routeStatus = state => {
-        if (!state) return '等待 Core 返回实际路由状态'
-        const destination = state.route === 'cloud' ? '云端' : state.route === 'device' ? '本地' : '不可用'
-        return destination + ' · ' + (reasons[state.reason] ?? state.reason ?? state.error_code ?? '尚未就绪')
-      }
+      const groups = catalog?.groups ?? []
+      const options = groups.flatMap(group => (group.models ?? []).map(model => ({ group, model,
+        value: JSON.stringify({ provider: group.provider, model: model.id }) })))
+      const source = draft?.source
+      const choice = source?.kind === 'dsh' && source.provider && source.model
+        ? JSON.stringify({ provider: source.provider, model: source.model }) : ''
+      const matching = options.find(row => row.value === choice)
+      const chosenName = state => !state?.source?.model ? '尚未选择' : state.source.kind === 'dsh'
+        ? 'DSH · ' + state.source.provider + ' / ' + state.source.model : '自定义 · ' + state.source.model
       const disabled = busy || loading || saving || !effective
-      const connectionField = (target, field, label, hint) => h(Field, { label, hint }, h('input', {
-        value: draft?.[target]?.[field] ?? '', disabled,
-        onChange: event => editDraft({ ...draft, [target]: { ...draft[target], [field]: event.target.value || (field === 'api_key_env' ? null : '') } }),
+      const canSave = dirty && !stale && source && (source.kind === 'dsh'
+        ? Boolean(matching?.group.supported && matching?.model.supported)
+        : Boolean(source.base_url.trim() && source.model.trim()))
+      const customField = (key, label, placeholder) => h(Field, { label }, h('input', {
+        value: source[key] ?? '', placeholder, disabled, autoComplete: 'off',
+        onChange: event => change({ ...source, [key]: key === 'api_key_env' ? event.target.value || null : event.target.value }),
       }))
       return h('div', { className: 'zw-page zw-ai-settings' },
         h('header', { className: 'zw-page-head' },
-          h('div', null, h('div', { className: 'zw-kicker' }, 'Zodo 内部 AI'), h('h1', null, '模型与隐私')),
+          h('div', null, h('div', { className: 'zw-kicker' }, '选择 Zodo 内置 AI 使用的模型'), h('h1', null, '模型')),
           h('div', { className: 'zw-head-actions' },
-            connectionDirty ? h(Button, { onClick: () => { void load(true) }, disabled: loading || saving, testid: 'ai-discard-connection' }, '放弃连接草稿并重新加载') : null,
-            h(Button, { onClick: () => { void load() }, disabled: loading || saving, testid: 'ai-settings-refresh' }, COPY.refresh))),
-        h('p', { className: 'zw-fineprint' }, '选择处理方式即可。这里不会改变 DSH 对话使用的模型，也不会赋予 AI 审批或提交权限。'),
+            dirty ? h(Button, { onClick: () => { void loadModel(true) }, disabled: loading || saving, testid: 'model-discard' }, '放弃草稿并重新载入') : null,
+            h(Button, { onClick: () => { void loadModel(); void loadCatalog() }, disabled: loading || saving || catalogLoading, testid: 'model-refresh' }, '刷新'))),
+        h('p', { className: 'zw-fineprint' }, '只选一个模型来源，不改变 DSH 当前聊天模型。哪些内容可交给模型，由独立的隐私设置控制。'),
         error ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert' }, error) : null,
-        h(Section, { title: '使用模式', testid: 'ai-mode-settings' },
-          h('fieldset', { className: 'zw-mode-options', disabled },
-            h('legend', { className: 'zw-mode-legend' }, '选择 Zodo AI 的处理方式'),
-            [
-              ['local_only', '仅本地', '只使用本机模型；不可用时停止，绝不转云端。'],
-              ['cloud_assisted', '允许云端辅助', '仅将获准的上下文发往选定云端；禁止外发的内容留在本地。'],
-            ].map(([value, title, description]) => h('label', { key: value, className: 'zw-mode-option' + (mode === value ? ' zw-mode-selected' : '') },
-              h('input', { type: 'radio', name: 'zodo-ai-mode', value, checked: mode === value, 'data-testid': 'ai-mode-' + value,
-                onChange: () => { setMode(value); setConsent(false); setError('') } }),
-              h('span', null, h('strong', null, title), h('span', null, description))))),
-
-          mode === 'cloud_assisted' ? h('div', { className: 'zw-mode-consent' },
-            h('p', null, '云端范围：目标标题、成功标准、截止日期、项目范围，以及你主动提交的收集澄清原文。笔记正文与附件不会自动加入这些请求；请勿把禁止外发内容复制进这些字段。'),
-            h('p', { className: 'zw-fineprint' }, '授权连接：' + (config?.cloud ? config.cloud.label + ' · ' + config.cloud.base_url : '尚未配置')),
-            needsConsent ? h('label', { className: 'zw-check-line' }, h('input', { type: 'checkbox', checked: consent,
-              'data-testid': 'ai-cloud-consent', disabled, onChange: event => setConsent(event.target.checked) }),
-              '我允许上述上下文发往这个云端连接，现有禁止外发内容仍受保护。') : null) : null,
-          h('div', { className: 'zw-action-row' }, h(Button, { tone: 'primary', onClick: saveMode,
-            disabled: disabled || !effective || (needsConsent && !consent), testid: 'ai-mode-save' }, '保存模式'),
-            h('span', { className: 'zw-fineprint', 'data-testid': 'ai-saved-mode' }, '已保存：' + (policy.model_route === 'local_only' ? '仅本地' : '允许云端辅助')))),
-        loading && !config ? h('p', { className: 'zw-muted' }, '读取模型状态…') : null,
-        config ? h(React.Fragment, null,
-          h(Section, { title: '实际状态（已保存配置）', testid: 'ai-effective-status' },
-            effective ? h('dl', { className: 'zw-kv' },
-              h('dt', null, '普通 AI 请求'), h('dd', null, routeStatus(effective.workspace)),
-              h('dt', null, '禁止外发内容'), h('dd', null, routeStatus(effective.device_only)),
-              h('dt', null, '目标拆解'), h('dd', null, routeStatus(effective.roles?.decompose)),
-              h('dt', null, '收集澄清'), h('dd', null, routeStatus(effective.roles?.clarify)))
-              : h('div', { className: 'zw-alert zw-alert-warn' }, 'Core 模型接口无效，请检查插件与 Core 构建是否一致。'),
-            h('p', { className: 'zw-fineprint' }, '以上是配置与权限检查结果，不代表服务可达或推理成功；尚未发起连接测试。云端未就绪时安全使用本地，禁止外发的内容不会尝试云端。')),
-          h(Section, { title: '模型连接', action: h(Button, { tone: 'primary', onClick: saveConnections, disabled: disabled || !draft || !connectionDirty || connectionStale, testid: 'model-save' }, '保存连接') },
-            h('div', { className: 'zw-model-grid' }, ['local', 'cloud'].filter(target => target === 'local' || mode === 'cloud_assisted').map(target => {
-              const provider = config[target]
-              return h('article', { className: 'zw-card', key: target },
-                h('h3', null, target === 'local' ? '本地模型' : '云端模型'),
-                h('p', { className: 'zw-fineprint' }, provider ? provider.label + ' · ' + (provider.enabled ? '连接已启用' : '连接未启用') : '尚未配置'),
-                provider ? h('p', { className: 'zw-fineprint', 'data-testid': 'ai-credential-' + target }, target === 'local'
-                  ? '本地服务可不使用密钥。端点必须在本机。'
-                  : provider.credential_present ? 'Core 已检测到凭据；有效性尚未测试。' : 'Core 未检测到凭据：' + (provider.credential_env || '未指定凭据变量') + '。云端不会发出请求。') : null,
-                draft?.[target] ? connectionField(target, 'model', target === 'local' ? '本地模型 ID' : '云端模型 ID')
-                  : h(Button, { disabled, onClick: () => editDraft({ ...draft, cloud: { id: 'deepseek-cloud', label: 'DeepSeek 云端', model: 'deepseek-chat', base_url: 'https://api.deepseek.com/v1', api_key_env: 'DEEPSEEK_API_KEY', location: 'cloud', enabled: true } }), testid: 'ai-add-cloud' }, '配置 DeepSeek 连接'),
-                provider && !provider.enabled ? h(Button, { disabled, onClick: () => editDraft({ ...draft, [target]: { ...draft[target], enabled: true } }) }, '启用此连接（待保存）') : null)
-            })),
-            connectionStale ? h('div', { className: 'zw-alert zw-alert-warn', role: 'alert', 'data-testid': 'ai-connection-stale' }, '服务器连接已变化，草稿已保留且禁止覆盖。请使用“放弃连接草稿并重新加载”。')
-              : connectionDirty ? h('p', { className: 'zw-fineprint', role: 'status' }, '连接有未保存修改；请保存连接后再确认云端辅助。') : null,
-            h('p', { className: 'zw-fineprint' }, '密钥由 Core 启动环境提供，这里不会读取或显示密钥。')),
-          h('details', { className: 'zw-ai-advanced', open: advanced, onToggle: event => setAdvanced(event.currentTarget.open), 'data-testid': 'ai-advanced' },
-            h('summary', null, '高级设置'),
-            h('p', { className: 'zw-fineprint' }, '通常无需修改。角色偏好不能绕过使用模式、提供方授权和禁止外发检查。'),
-            advanced ? h(HarnessModelsSection, { draft, setDraft: editDraft, report }) : null,
-            draft ? h(Section, { title: '端点与凭据引用（保存连接）' },
-              h('div', { className: 'zw-grid2' },
-                connectionField('local', 'base_url', '本地 OpenAI 兼容端点'),
-                connectionField('local', 'api_key_env', '本地凭据环境变量名'),
-                draft.cloud ? connectionField('cloud', 'base_url', '云端端点') : null,
-                draft.cloud ? connectionField('cloud', 'api_key_env', '云端凭据环境变量名') : null),
-              ['local', 'cloud'].filter(target => draft[target]).map(target => h('label', { className: 'zw-check-line', key: target },
-                h('input', { type: 'checkbox', checked: draft[target].enabled, disabled, onChange: event => editDraft({ ...draft, [target]: { ...draft[target], enabled: event.target.checked } }) }),
-                target === 'local' ? '启用本地连接' : '启用云端连接（不等于外发授权）')),
-              h('div', { className: 'zw-grid2' }, [['decompose', '目标拆解路由'], ['clarify', '收集澄清路由']].map(([role, label]) => h(Field, { label, key: role },
-                h('select', { value: draft.roles?.[role] ?? '', disabled, 'aria-label': label, onChange: event => {
-                  const roles = { ...draft.roles }
-                  if (event.target.value) roles[role] = event.target.value; else delete roles[role]
-                  editDraft({ ...draft, roles })
-                } }, h('option', { value: '' }, '跟随使用模式'), h('option', { value: 'local' }, '固定本地'), h('option', { value: 'cloud' }, '优先云端（仍受安全检查）'))))),
-              h(Button, { onClick: saveConnections, disabled: disabled || !connectionDirty || connectionStale }, '保存连接与角色')) : null,
-            h(Section, { title: '诊断与授权信息（随模式保存）' },
-              h('label', { className: 'zw-check-line' }, h('input', { type: 'checkbox', checked: diagnostics, disabled, onChange: event => setDiagnostics(event.target.checked), 'data-testid': 'ai-diagnostics' }), '启用原文诊断（默认关闭）'),
-              h('p', { className: 'zw-fineprint' }, '诊断开关不是所有日志的统一清除开关；运行记录与导出仍可能包含原文，应按敏感资料保管。'),
-              h('p', { className: 'zw-fineprint' }, '已授权提供方：' + (policy.allowed_cloud_providers.join(', ') || '无；未授权云端'))),
-            h(Section, { title: '安全边界' },
-              h('p', { className: 'zw-fineprint' }, 'AI 只能生成候选，人工批准与提交仍由 Core 校验。设备私密数据不能导入 Host 聊天；进入历史的内容无法追溯收回。同用户身份的高权限 Shell 不是强隔离边界。'))),
-        ) : null,
+        h(Section, { title: '模型来源' },
+          loading && !config ? h('p', { className: 'zw-muted', role: 'status' }, '正在读取已保存的模型配置…') : null,
+          h('fieldset', { className: 'zw-source-options', disabled },
+            h('legend', { className: 'zw-source-legend' }, '使用已有配置，或连接自己的模型'),
+            [['dsh', '使用 DSH 中的模型', '直接复用 DSH 的模型与登录认证，不用再填写地址或密钥。'],
+              ['custom', '自定义模型', '填写 OpenAI 兼容 API 地址与模型 ID。本机服务也使用这一配置。']]
+              .map(([kind, title, description]) => h('label', { key: kind, className: 'zw-source-option' + (source?.kind === kind ? ' zw-source-selected' : '') },
+                h('input', { type: 'radio', name: 'zodo-model-source', checked: source?.kind === kind,
+                  'data-testid': 'model-source-' + kind, onChange: () => change(sourceDrafts.current[kind]) }),
+                h('span', null, h('strong', null, title), h('span', null, description))))),
+          source?.kind === 'dsh' ? h(React.Fragment, null,
+            catalogError ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert', 'data-testid': 'model-catalog-error' },
+              '无法读取 DSH 模型：' + catalogError + '。可点击刷新重试；这不会影响自定义连接。') : null,
+            h(Field, { label: 'DSH 模型' }, h('select', { 'aria-label': 'DSH 模型', 'data-testid': 'model-dsh-select', value: choice,
+              disabled: disabled || catalogLoading || Boolean(catalogError), onChange: event => {
+                const selected = event.target.value ? JSON.parse(event.target.value) : { provider: null, model: null }
+                change({ kind: 'dsh', ...selected })
+              } }, h('option', { value: '' }, catalogLoading ? '读取 DSH 模型…' : '请选择一个 DSH 模型'),
+              choice && !matching ? h('option', { value: choice, disabled: true }, source.provider + ' / ' + source.model + '（目录中不可用）') : null,
+              groups.map(group => h('optgroup', { key: group.provider, label: group.name || group.provider },
+                (group.models ?? []).map(model => h('option', { key: model.id, value: JSON.stringify({ provider: group.provider, model: model.id }),
+                  disabled: !group.supported || !model.supported }, model.name || model.id)))))),
+            !catalogLoading && !catalogError && !options.length ? h('p', { className: 'zw-fineprint' }, 'DSH 暂无可选模型，请先在 DSH 中配置，或选择自定义模型。') : null,
+            (catalog?.failures ?? []).length ? h('p', { className: 'zw-fineprint' }, '部分提供商目录读取失败，请刷新重试；未成功读取的模型不会被自动替代。') : null,
+            h('p', { className: 'zw-fineprint' }, 'DSH 负责实际调用及其认证，包括由 DSH 支持的订阅登录模型；Zodo 只保存你的明确选择，不复制凭据、不附带聊天历史。')) : null,
+          source?.kind === 'custom' ? h(React.Fragment, null,
+            h('div', { className: 'zw-grid2' }, customField('base_url', 'API 地址', 'https://api.example.com/v1 或 http://127.0.0.1:11434/v1'),
+              customField('model', '模型 ID', '填写服务支持的模型 ID')),
+            h('details', { className: 'zw-ai-advanced', 'data-testid': 'model-advanced' }, h('summary', null, '认证设置（需要密钥时）'),
+              customField('api_key_env', '密钥环境变量名（可选）', '例如 MY_MODEL_API_KEY'),
+              h('p', { className: 'zw-fineprint' }, '这里只填变量名，不填 API Key。密钥从 Core 启动环境读取；本机无鉴权服务可留空。修改环境变量后需重启 Core。')),
+            h('p', { className: 'zw-fineprint' }, '模型请求将发往这个 API 地址；本机地址也不会自动获得额外资料权限。不使用其他连接作为失败回退。')) : null,
+          h('div', { className: 'zw-action-row' }, h(Button, { tone: 'primary', onClick: save, disabled: disabled || !canSave, testid: 'model-save' }, '保存模型'),
+            dirty ? h('span', { className: 'zw-fineprint' }, '更改尚未保存') : null),
+          stale ? h('div', { className: 'zw-alert zw-alert-warn', role: 'alert', 'data-testid': 'model-stale' }, '检测到服务器配置变化，草稿已保留；本次不发送保存请求。请放弃草稿并重新载入。') : null),
+        h(Section, { title: '当前已保存', testid: 'model-effective-status' },
+          h('p', { className: 'zw-model-selected-name' }, chosenName(config)),
+          h('p', null, modelReason(effective?.selected)),
+          h('dl', { className: 'zw-kv' }, h('dt', null, '目标拆解'), h('dd', null, modelReason(effective?.operations?.decompose)),
+            h('dt', null, '收集澄清'), h('dd', null, modelReason(effective?.operations?.clarify))),
+          h('p', { className: 'zw-fineprint' }, '状态来自配置和授权检查，不代表服务可达或实际推理成功。模型选择不会自动放宽隐私权限。'),
+          h(Button, { onClick: onPrivacy }, '设置可发送的内容')),
       )
     }
 
@@ -3569,8 +3332,76 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function PrivacyView(props) {
-      return h(ModelsView, props)
+    function PrivacyView({ snapshot, send, busy, report, onModels }) {
+      const policy = snapshot.workspace.policy
+      const valid = policy.model_access && ['goals', 'projects', 'captures'].every(key => typeof policy.model_access[key] === 'boolean')
+      const [access, setAccess] = useState({ ...policy.model_access })
+      const [diagnostics, setDiagnostics] = useState(policy.diagnostic_capture)
+      const [dirty, setDirty] = useState(false)
+      const [stale, setStale] = useState(false)
+      const [saving, setSaving] = useState(false)
+      const [error, setError] = useState('')
+      const [message, setMessage] = useState('')
+      const dirtyRef = useRef(false)
+      const baseline = useRef(JSON.stringify(policy))
+      const reset = (clearFeedback = true) => {
+        setAccess({ ...policy.model_access }); setDiagnostics(policy.diagnostic_capture)
+        baseline.current = JSON.stringify(policy); dirtyRef.current = false
+        setDirty(false); setStale(false)
+        if (clearFeedback) { setError(''); setMessage('') }
+      }
+      useEffect(() => {
+        if (!dirtyRef.current) reset(false)
+        else if (JSON.stringify(policy) !== baseline.current) setStale(true)
+      }, [JSON.stringify(policy)])
+      const changed = () => { dirtyRef.current = true; setDirty(true); setMessage(''); setError('') }
+      const save = async () => {
+        if (!valid || stale) return
+        if (JSON.stringify(policy) !== baseline.current) { setStale(true); return }
+        setSaving(true); setError(''); setMessage('')
+        const next = { model_access: access, diagnostic_capture: diagnostics }
+        try {
+          await send('workspace.update', { settings: null, policy: next })
+          baseline.current = JSON.stringify(next); dirtyRef.current = false; setDirty(false)
+          setMessage('隐私设置已保存；模型选择未改变。'); report('隐私设置已保存；模型选择未改变。')
+        } catch (failure) { setError(failure.message) }
+        finally { setSaving(false) }
+      }
+      const disabled = busy || saving || !valid
+      const labels = [
+        ['goals', '目标内容', '允许目标拆解使用目标标题、成功标准、截止日期和计划视界。关闭后，不会为目标拆解调用模型。'],
+        ['projects', '项目背景', '允许附带关联项目的名称和范围。关闭后仍可拆解目标，但请求中会省略项目背景。'],
+        ['captures', '收集原文', '允许澄清功能使用你主动收集的原文。关闭后，不会为收集澄清调用模型。'],
+      ]
+      return h('div', { className: 'zw-page zw-ai-settings' },
+        h('header', { className: 'zw-page-head' },
+          h('div', null, h('div', { className: 'zw-kicker' }, '控制 Zodo 内置 AI 的资料范围'), h('h1', null, '隐私')),
+          h(Button, { tone: 'primary', onClick: save, disabled: disabled || !dirty || stale, testid: 'privacy-save' }, '保存隐私设置')),
+        h('p', { className: 'zw-fineprint' }, '这些开关控制 Zodo 的目标拆解与收集澄清，同时适用于 DSH 模型和自定义模型。远端模型会把获准内容发送给其提供商；本机地址也不自动获得额外权限。'),
+        !valid ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert' }, 'Core 隐私接口无效，请检查插件与 Core 构建是否一致。') : null,
+        error ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert' }, error) : null,
+        h('div', { 'data-testid': 'privacy-status', role: 'status' },
+          stale ? h('div', { className: 'zw-alert zw-alert-warn' }, '隐私设置已在其他界面变化；未覆盖服务器。请重新载入后再修改。')
+            : message ? h('p', { className: 'zw-fineprint' }, message)
+            : dirty ? h('p', { className: 'zw-fineprint' }, '更改尚未保存，当前请求仍使用已保存的权限。') : null),
+        h(Section, { title: '允许模型使用的资料' },
+          h('div', { className: 'zw-privacy-options' }, labels.map(([key, title, description]) => h('label', { className: 'zw-source-option', key },
+            h('input', { type: 'checkbox', checked: access[key] === true, disabled, 'data-testid': 'privacy-' + key,
+              onChange: event => { setAccess({ ...access, [key]: event.target.checked }); changed() } }),
+            h('span', null, h('strong', null, title), h('span', null, description))))),
+          h('p', { className: 'zw-fineprint' }, '默认全部关闭。请只开启你愿意交给所选模型的内容；这些开关不是自动脱敏，不要把禁止外发的内容复制进已授权字段。')),
+        h(Section, { title: '始终保留的边界' },
+          h('p', null, '不会自动附加笔记正文、附件或 DSH 聊天历史。笔记与附件自身的数据等级不会因为模型选择或这些开关而改写。'),
+          h('p', { className: 'zw-fineprint' }, '明确标记为禁止外发的内容，不交给无法验证目的地的模型。模型只能提出候选，不能自行审批或提交。')),
+        h(Section, { title: '其他资料通道' },
+          h('p', { className: 'zw-fineprint' }, '这三个开关不控制 DSH 聊天中主动请求的工具读取、文件读取、导出或手动粘贴。那些通道由 DSH 权限、内容等级与各自的确认流程控制，不应视为已被这些开关阻止。')),
+        h('details', { className: 'zw-ai-advanced', 'data-testid': 'privacy-advanced' }, h('summary', null, '高级诊断'),
+          h('label', { className: 'zw-check-line' }, h('input', { type: 'checkbox', checked: diagnostics, disabled, 'data-testid': 'privacy-diagnostics',
+            onChange: event => { setDiagnostics(event.target.checked); changed() } }), '启用原文诊断'),
+          h('p', { className: 'zw-fineprint' }, '诊断开关不是历史日志清除开关。运行记录、导出和备份仍应按敏感资料保管。')),
+        h('div', { className: 'zw-action-row' }, dirty || stale ? h(Button, { onClick: reset, disabled: busy || saving, testid: 'privacy-reset' }, '放弃更改并重新载入') : null,
+          h(Button, { onClick: onModels }, '选择模型')),
+      )
     }
 
     function AgentsView({ bridge, snapshot }) {
@@ -4669,14 +4500,14 @@ window.__ModuleLoader__.load({
             snapshot,
             setModal,
           })
-          case 'models': return h(ModelsView, { snapshot, send, busy, report: setNotice })
+          case 'models': return h(ModelsView, { snapshot, busy, report: setNotice, onPrivacy: () => setView('privacy') })
           case 'data': return h(DataView, { snapshot, report: setNotice, refresh, send })
           case 'sync': return h(SyncView, { snapshot, report: setNotice, refresh })
           case 'review': return renderReview()
           case 'focus': return renderFocus()
           case 'search': return renderSearch()
           case 'settings': return h(SettingsView, { snapshot, send, busy, report: setNotice })
-          case 'privacy': return h(PrivacyView, { snapshot, send, busy, report: setNotice })
+          case 'privacy': return h(PrivacyView, { snapshot, send, busy, report: setNotice, onModels: () => setView('models') })
           case 'agents': return h(AgentsView, { bridge, snapshot })
           case 'audit': return renderAudit()
           default: return renderToday()
@@ -4998,7 +4829,7 @@ window.__ModuleLoader__.load({
       .zw-connection { display:flex; align-items:center; gap:7px; color:var(--zw-muted); font-size:12px; }
       .zw-dot { width:7px; height:7px; border-radius:99px; background:#B9C2C1; }
       .zw-dot-on { background:var(--zw-accent); }
-      .zw-revision { padding:1px 6px; border-radius:999px; border:1px solid var(--zw-divider); font-family:ui-monospace,Consolas,monospace; font-size:11px; }
+      .zw-revision { padding:1px 6px; border-radius:999px; border:1px solid var(--zw-divider); font-family:ui-monospace,Consolas,monospace; font-size:12px; }
       .zw-top-actions { margin-left:auto; display:flex; gap:8px; }
       .zw-shell { display:flex; flex:1; min-height:0; }
       .zw-nav { width:184px; flex:none; padding:14px 8px; border-right:1px solid var(--zw-divider); background:var(--zw-surface); overflow:auto; }
@@ -5015,7 +4846,7 @@ window.__ModuleLoader__.load({
       .zw-page { max-width:1120px; margin:0 auto; padding:26px 28px 54px; }
       .zw-page-head { display:flex; align-items:flex-start; gap:16px; justify-content:space-between; margin-bottom:22px; }
       .zw-page-head h1 { margin:4px 0 0; font-size:28px; line-height:1.2; letter-spacing:-.02em; font-weight:650; }
-      .zw-kicker { color:var(--zw-muted); font-size:11px; letter-spacing:.06em; text-transform:uppercase; }
+      .zw-kicker { color:var(--zw-muted); font-size:12px; letter-spacing:.06em; text-transform:uppercase; }
       .zw-head-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
       .zw-badge { display:inline-flex; align-items:center; min-height:20px; padding:0 7px; border-radius:999px; border:1px solid var(--zw-divider); color:var(--zw-muted); font-size:11px; white-space:nowrap; }
       .zw-badge-accent { background:var(--zw-accent-soft); border-color:transparent; color:var(--zw-accent); }
@@ -5195,27 +5026,27 @@ window.__ModuleLoader__.load({
       .zw-run-list { display:grid; gap:12px; }
       .zw-ai-progress { display:flex; align-items:center; gap:9px; margin-top:10px; padding:8px 10px; border-radius:8px; background:#F4F8F7; color:var(--zw-muted); font-size:12px; }
       .zw-ai-progress .zw-btn { margin-left:auto; }
-      .zw-model-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
-      .zw-ai-settings .zw-model-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); }
       .zw-ai-settings .zw-grid2 { grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); }
       .zw-ai-settings .zw-field input, .zw-ai-settings .zw-field select { min-height:44px; font-size:14px; }
       .zw-ai-settings .zw-check-line { min-height:44px; align-items:flex-start; padding:10px 0; line-height:1.6; }
-      .zw-ai-settings .zw-check-line input { flex:none; margin-top:4px; }
-      .zw-mode-options { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:12px; border:0; margin:0 0 16px; padding:0; min-width:0; }
-      .zw-mode-legend { font-size:14px; color:var(--zw-muted); margin-bottom:12px; }
-      .zw-mode-option { display:flex; align-items:flex-start; gap:12px; min-height:110px; padding:16px; border:1px solid var(--zw-divider); border-radius:12px; background:var(--zw-surface); cursor:pointer; }
-      .zw-mode-option input { flex:none; margin:5px 0 0; accent-color:var(--zw-accent); }
-      .zw-mode-option > span { display:grid; gap:8px; min-width:0; }
-      .zw-mode-option strong { font-size:16px; }
-      .zw-mode-option span span { font-size:14px; line-height:1.6; color:var(--zw-muted); }
-      .zw-mode-selected { border-color:var(--zw-accent); background:var(--zw-accent-soft); }
-      .zw-mode-option:focus-within { outline:2px solid var(--zw-accent); outline-offset:2px; }
-      .zw-mode-consent { padding:0 0 16px; font-size:14px; line-height:1.7; overflow-wrap:anywhere; }
-      .zw-ai-advanced { border-top:1px solid var(--zw-divider); margin-top:24px; }
+      .zw-ai-settings .zw-check-line input { flex:none; width:24px; height:24px; margin:0; accent-color:var(--zw-accent); }
+      .zw-source-options { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:12px; border:0; margin:0 0 16px; padding:0; min-width:0; }
+      .zw-source-legend { font-size:14px; color:var(--zw-muted); margin-bottom:12px; }
+      .zw-source-option { display:flex; align-items:flex-start; gap:12px; min-height:110px; padding:16px; border:1px solid var(--zw-divider); border-radius:12px; background:var(--zw-surface); cursor:pointer; }
+      .zw-source-option input { flex:none; width:24px; height:24px; margin:0; accent-color:var(--zw-accent); }
+      .zw-source-option > span { display:grid; gap:8px; min-width:0; }
+      .zw-source-option strong { font-size:16px; }
+      .zw-source-option span span { font-size:14px; line-height:1.6; color:var(--zw-muted); }
+      .zw-source-selected { border-color:var(--zw-accent); background:var(--zw-accent-soft); }
+      .zw-source-option:focus-within { outline:2px solid var(--zw-accent); outline-offset:2px; }
+      .zw-privacy-options { display:grid; gap:12px; margin-bottom:16px; }
+      .zw-model-selected-name { font-size:16px; font-weight:600; overflow-wrap:anywhere; }
+      .zw-ai-advanced { border-top:1px solid var(--zw-divider); margin-top:24px; margin-bottom:16px; }
+      .zw-ai-advanced:not([open]) > :not(summary) { display:none; }
       .zw-ai-advanced > summary { min-height:48px; padding:14px 0; font-size:14px; font-weight:600; cursor:pointer; }
-      .zw-ai-settings .zw-kv { grid-template-columns:minmax(0,110px) minmax(0,1fr); }
+      .zw-ai-settings .zw-kv { grid-template-columns:minmax(0,110px) minmax(0,1fr); font-size:13px; }
       .zw-ai-settings .zw-action-row { flex-wrap:wrap; }
-      .zw-ai-settings .zw-fineprint { line-height:1.7; }
+      .zw-ai-settings .zw-fineprint { font-size:12px; line-height:1.7; }
       .zw-inline-field { display:flex; align-items:center; gap:4px; }
       .zw-inline-field input { flex:1; min-width:0; }
       .zw-time-preview { display:grid; gap:6px; padding:10px 12px; background:#F7FAF9; border-radius:9px; margin:12px 0; }

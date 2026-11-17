@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 use zodo_kernel::commands::{CommandEnvelope, ErrorEnvelope, QueryEnvelope};
 use zodo_kernel::error::ErrorCode;
-use zodo_kernel::model::{DataClass, ModelRoute, PrivacyPolicy};
+use zodo_kernel::model::{DataClass, ModelAccess, PrivacyPolicy};
 
 const COMMAND: &str = include_str!("../../../contracts/fixtures/command.json");
 const QUERY: &str = include_str!("../../../contracts/fixtures/query.json");
@@ -170,34 +170,136 @@ fn canonical_command_hash_ignores_transport_ids_but_binds_revision_and_payload()
 }
 
 #[test]
-fn privacy_policy_accepts_only_current_modes_and_fields() {
-    for (mode, route) in [
-        ("local_only", ModelRoute::LocalOnly),
-        ("cloud_assisted", ModelRoute::CloudAssisted),
-    ] {
-        let current = json!({"model_route": mode, "allowed_cloud_providers": ["deepseek-cloud"], "diagnostic_capture": false});
-        let policy: PrivacyPolicy = serde_json::from_value(current.clone()).unwrap();
-        assert_eq!(policy.model_route, route);
-        assert_eq!(serde_json::to_value(policy).unwrap(), current);
-        for field in ["private_notes", "unknown_policy_option"] {
-            let mut old = current.clone();
-            old[field] = json!("device_only");
-            let error = serde_json::from_value::<PrivacyPolicy>(old).unwrap_err();
-            assert!(error.to_string().contains("unknown field"), "{error}");
+fn privacy_policy_defaults_deny_all_model_access_and_diagnostic_capture() {
+    let denied = ModelAccess {
+        goals: false,
+        projects: false,
+        captures: false,
+    };
+    assert_eq!(ModelAccess::default(), denied);
+    assert_eq!(
+        PrivacyPolicy::default(),
+        PrivacyPolicy {
+            model_access: denied,
+            diagnostic_capture: false,
         }
-    }
-    let old = json!({"model_route": "cloud_allowed", "allowed_cloud_providers": [], "diagnostic_capture": false});
-    let error = serde_json::from_value::<PrivacyPolicy>(old).unwrap_err();
-    assert!(error.to_string().contains("unknown variant"), "{error}");
+    );
     assert_eq!(
         serde_json::to_value(PrivacyPolicy::default()).unwrap(),
         json!({
-            "model_route": "local_only", "allowed_cloud_providers": [], "diagnostic_capture": false
+            "model_access": {"goals": false, "projects": false, "captures": false},
+            "diagnostic_capture": false
         })
     );
-    // Content classification is independent from the removed model-routing variant.
-    assert_eq!(
-        serde_json::from_value::<DataClass>(json!("cloud_allowed")).unwrap(),
-        DataClass::CloudAllowed
-    );
+}
+
+#[test]
+fn privacy_policy_round_trips_independent_explicit_permissions() {
+    for goals in [false, true] {
+        for projects in [false, true] {
+            for captures in [false, true] {
+                for diagnostic_capture in [false, true] {
+                    let current = json!({
+                        "model_access": {"goals": goals, "projects": projects, "captures": captures},
+                        "diagnostic_capture": diagnostic_capture
+                    });
+                    let policy: PrivacyPolicy = serde_json::from_value(current.clone()).unwrap();
+                    assert_eq!(
+                        policy,
+                        PrivacyPolicy {
+                            model_access: ModelAccess {
+                                goals,
+                                projects,
+                                captures,
+                            },
+                            diagnostic_capture,
+                        }
+                    );
+                    assert_eq!(serde_json::to_value(policy).unwrap(), current);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn privacy_policy_rejects_obsolete_unknown_missing_and_non_boolean_fields() {
+    let current = json!({
+        "model_access": {"goals": false, "projects": false, "captures": false},
+        "diagnostic_capture": false
+    });
+    for old in [
+        json!({"model_route": "local_only", "allowed_cloud_providers": [], "diagnostic_capture": false}),
+        json!({"model_route": "cloud_assisted", "allowed_cloud_providers": ["deepseek-cloud"], "diagnostic_capture": false}),
+        json!({"model_route": "cloud_allowed", "allowed_cloud_providers": [], "diagnostic_capture": false}),
+    ] {
+        assert!(serde_json::from_value::<PrivacyPolicy>(old).is_err());
+    }
+    for (field, value) in [
+        ("model_route", json!("local_only")),
+        ("allowed_cloud_providers", json!([])),
+        ("private_notes", json!("device_only")),
+        ("unknown_policy_option", json!(true)),
+    ] {
+        let mut invalid = current.clone();
+        invalid[field] = value;
+        let error = serde_json::from_value::<PrivacyPolicy>(invalid).unwrap_err();
+        assert!(error.to_string().contains("unknown field"), "{error}");
+    }
+    for field in ["model_access", "diagnostic_capture"] {
+        let mut missing = current.clone();
+        missing.as_object_mut().unwrap().remove(field);
+        let error = serde_json::from_value::<PrivacyPolicy>(missing).unwrap_err();
+        assert!(error.to_string().contains("missing field"), "{error}");
+    }
+    for field in ["goals", "projects", "captures"] {
+        let mut missing = current.clone();
+        missing["model_access"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        let error = serde_json::from_value::<PrivacyPolicy>(missing).unwrap_err();
+        assert!(error.to_string().contains("missing field"), "{error}");
+        for invalid_value in [Value::Null, json!(0), json!("false"), json!([]), json!({})] {
+            let mut invalid = current.clone();
+            invalid["model_access"][field] = invalid_value;
+            assert!(serde_json::from_value::<PrivacyPolicy>(invalid).is_err());
+        }
+    }
+    for invalid_value in [Value::Null, json!(0), json!("false"), json!([]), json!({})] {
+        let mut invalid = current.clone();
+        invalid["diagnostic_capture"] = invalid_value;
+        assert!(serde_json::from_value::<PrivacyPolicy>(invalid).is_err());
+    }
+    for field in ["notes", "tasks", "unknown_access_option"] {
+        let mut invalid = current.clone();
+        invalid["model_access"][field] = json!(true);
+        let error = serde_json::from_value::<PrivacyPolicy>(invalid).unwrap_err();
+        assert!(error.to_string().contains("unknown field"), "{error}");
+    }
+    for invalid_access in [
+        Value::Null,
+        json!(false),
+        json!("false"),
+        json!([]),
+        json!({}),
+    ] {
+        let mut invalid = current.clone();
+        invalid["model_access"] = invalid_access;
+        assert!(serde_json::from_value::<PrivacyPolicy>(invalid).is_err());
+    }
+    assert!(serde_json::from_value::<PrivacyPolicy>(json!({})).is_err());
+}
+
+#[test]
+fn data_class_keeps_all_existing_classifications() {
+    for (value, expected) in [
+        ("device_only", DataClass::DeviceOnly),
+        ("trusted_workspace", DataClass::TrustedWorkspace),
+        ("cloud_allowed", DataClass::CloudAllowed),
+    ] {
+        let parsed: DataClass = serde_json::from_value(json!(value)).unwrap();
+        assert_eq!(parsed, expected);
+        assert_eq!(serde_json::to_value(parsed).unwrap(), json!(value));
+    }
 }

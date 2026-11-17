@@ -1,8 +1,8 @@
 {
   "name": "@zodo/harness-plugin",
-  "version": "0.2.0-dev.1",
+  "version": "0.3.0-dev.1",
   "private": true,
-  "description": "Zodo task workbench for DeepSeek Harness with local-only and cloud-assisted AI modes.",
+  "description": "Zodo task workbench for DeepSeek Harness with DSH or custom model selection and independent data permissions.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -17,6 +17,7 @@
   "files": [
     "index.js",
     "privacy.js",
+    "host-gateway.js",
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",

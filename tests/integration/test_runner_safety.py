@@ -23,7 +23,7 @@ class SafetyTests(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.binary = (REPO / "target" / "release" / "zodo.exe").resolve()
 
-    def test_all_executable_legacy_sources_match_review(self):
+    def test_all_admitted_sources_match_review(self):
         self.assertEqual(set(runner.CASES), set(runner.REVIEWED_SHA256))
         for name, expected in runner.REVIEWED_SHA256.items():
             source = (REPO / "tools" / name).read_text(encoding="utf-8")

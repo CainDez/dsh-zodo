@@ -630,7 +630,7 @@ fn cross_period_dependency_planning_reports_diagnostics() {
 }
 
 #[test]
-fn content_retrieval_requires_consent_and_is_local_only() {
+fn content_retrieval_requires_consent_and_stays_in_workspace() {
     let mut f = Fixture::new();
     f.execute(
         "note.create",
@@ -3068,70 +3068,109 @@ fn habit_skip_and_undo_are_reconstructible_and_not_completions() {
 }
 
 #[test]
-fn model_mode_switch_preserves_existing_note_classifications() {
-    use zodo_kernel::model::ModelRoute;
+fn model_access_updates_preserve_existing_note_classifications() {
+    use zodo_kernel::model::{ModelAccess, PrivacyPolicy};
+
     let mut f = Fixture::new();
     for data_class in ["device_only", "trusted_workspace", "cloud_allowed"] {
         f.execute("note.create", json!({"note": {
             "title": "Synthetic classified note", "body": "fixture only", "data_class": data_class
         }})).unwrap();
     }
-    f.execute(
-        "workspace.update",
-        json!({"policy": {
-            "model_route": "local_only",
-            "allowed_cloud_providers": [], "diagnostic_capture": true
-        }}),
-    )
-    .unwrap();
     let before = f.world();
     let before_notes = serde_json::to_value(&before.notes).unwrap();
-    let mut policy = before.workspace.policy.clone();
-    policy.model_route = ModelRoute::CloudAssisted;
-    policy.allowed_cloud_providers = vec!["deepseek-cloud".into()];
-    f.execute("workspace.update", json!({"policy": policy}))
-        .unwrap();
-    let after = f.world();
     assert_eq!(
-        after.workspace.policy.model_route,
-        ModelRoute::CloudAssisted
+        serde_json::to_value(&before.workspace.policy).unwrap(),
+        json!({
+            "model_access": {"goals": false, "projects": false, "captures": false},
+            "diagnostic_capture": false
+        })
     );
-    assert!(after.workspace.policy.diagnostic_capture);
-    assert_eq!(serde_json::to_value(&after.notes).unwrap(), before_notes);
-    assert_eq!(
-        after.workspace.policy_revision,
-        before.workspace.policy_revision + 1
-    );
-    let mut local_policy = after.workspace.policy.clone();
-    local_policy.model_route = ModelRoute::LocalOnly;
-    f.execute("workspace.update", json!({"policy": local_policy}))
-        .unwrap();
-    let local = f.world();
-    assert_eq!(local.workspace.policy.model_route, ModelRoute::LocalOnly);
-    assert_eq!(
-        local.workspace.policy_revision,
-        after.workspace.policy_revision + 1
-    );
-    assert_eq!(serde_json::to_value(&local.notes).unwrap(), before_notes);
+    let mut policy_revision = before.workspace.policy_revision;
+    for (goals, projects, captures, diagnostic_capture) in [
+        (true, false, false, true),
+        (false, true, false, false),
+        (false, false, true, false),
+        (true, true, true, true),
+        (false, false, false, false),
+    ] {
+        let policy = PrivacyPolicy {
+            model_access: ModelAccess {
+                goals,
+                projects,
+                captures,
+            },
+            diagnostic_capture,
+        };
+        f.execute("workspace.update", json!({"policy": policy}))
+            .unwrap();
+        let after = f.world();
+        assert_eq!(after.workspace.policy, policy);
+        assert_eq!(serde_json::to_value(&after.notes).unwrap(), before_notes);
+        assert_eq!(after.workspace.policy_revision, policy_revision + 1);
+        policy_revision = after.workspace.policy_revision;
+    }
+    assert_eq!(f.world().workspace.policy, PrivacyPolicy::default());
 }
 
 #[test]
-fn obsolete_policy_inputs_are_rejected_without_mutating_workspace_or_notes() {
+fn invalid_policy_inputs_are_rejected_without_mutating_workspace_or_notes() {
     let mut f = Fixture::new();
-    f.execute(
-        "note.create",
-        json!({"note": {
-            "title": "Synthetic private note", "body": "fixture only", "data_class": "device_only"
-        }}),
-    )
-    .unwrap();
+    for data_class in ["device_only", "trusted_workspace", "cloud_allowed"] {
+        f.execute("note.create", json!({"note": {
+            "title": "Synthetic classified note", "body": "fixture only", "data_class": data_class
+        }})).unwrap();
+    }
     let before = serde_json::to_value(f.world()).unwrap();
-    for policy in [
+    let current = json!({
+        "model_access": {"goals": false, "projects": false, "captures": false},
+        "diagnostic_capture": false
+    });
+    let mut invalid_policies = vec![
+        json!({"model_route": "local_only", "allowed_cloud_providers": [], "diagnostic_capture": false}),
+        json!({"model_route": "cloud_assisted", "allowed_cloud_providers": ["deepseek-cloud"], "diagnostic_capture": false}),
         json!({"model_route": "cloud_allowed", "allowed_cloud_providers": [], "diagnostic_capture": false}),
-        json!({"model_route": "local_only", "private_notes": "device_only", "allowed_cloud_providers": [], "diagnostic_capture": false}),
-        json!({"model_route": "cloud_assisted", "private_notes": "cloud_allowed", "allowed_cloud_providers": ["deepseek-cloud"], "diagnostic_capture": false}),
-        json!({"model_route": "local_only", "unknown_policy_option": true, "allowed_cloud_providers": [], "diagnostic_capture": false}),
+        json!({}),
+    ];
+    for (field, value) in [
+        ("model_route", json!("local_only")),
+        ("allowed_cloud_providers", json!([])),
+        ("private_notes", json!("device_only")),
+        ("unknown_policy_option", json!(true)),
     ] {
+        let mut invalid = current.clone();
+        invalid[field] = value;
+        invalid_policies.push(invalid);
+    }
+    for field in ["model_access", "diagnostic_capture"] {
+        let mut missing = current.clone();
+        missing.as_object_mut().unwrap().remove(field);
+        invalid_policies.push(missing);
+    }
+    for field in ["goals", "projects", "captures"] {
+        let mut missing = current.clone();
+        missing["model_access"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        invalid_policies.push(missing);
+        for invalid_value in [Value::Null, json!(0), json!("false")] {
+            let mut invalid = current.clone();
+            invalid["model_access"][field] = invalid_value;
+            invalid_policies.push(invalid);
+        }
+    }
+    for field in ["notes", "tasks", "unknown_access_option"] {
+        let mut invalid = current.clone();
+        invalid["model_access"][field] = json!(true);
+        invalid_policies.push(invalid);
+    }
+    for invalid_value in [Value::Null, json!(0), json!("false")] {
+        let mut invalid = current.clone();
+        invalid["diagnostic_capture"] = invalid_value;
+        invalid_policies.push(invalid);
+    }
+    for policy in invalid_policies {
         let error = f
             .execute("workspace.update", json!({"policy": policy}))
             .unwrap_err();
@@ -3141,35 +3180,89 @@ fn obsolete_policy_inputs_are_rejected_without_mutating_workspace_or_notes() {
 }
 
 #[test]
-fn cloud_assisted_mode_does_not_grant_agents_admin_or_approval_authority() {
-    let mut f = Fixture::new();
-    let before = serde_json::to_value(f.world()).unwrap();
-    f.context.principal_kind = PrincipalKind::DelegatedAgent;
-    f.context.capabilities = ["read", "capture", "propose", "execute"]
-        .into_iter()
-        .map(str::to_string)
-        .collect();
-    let error = f
-        .execute(
+fn model_access_does_not_grant_agents_policy_approval_or_commit_authority() {
+    for allowed in [false, true] {
+        let mut f = Fixture::new();
+        f.execute(
             "workspace.update",
             json!({"policy": {
-                "model_route": "cloud_assisted",
-                "allowed_cloud_providers": ["deepseek-cloud"], "diagnostic_capture": false
+                "model_access": {"goals": allowed, "projects": allowed, "captures": allowed},
+                "diagnostic_capture": false
             }}),
         )
-        .unwrap_err();
-    assert_eq!(error.code, ErrorCode::PermissionDenied);
-    assert_eq!(serde_json::to_value(f.world()).unwrap(), before);
-    let proposal = f.execute("proposal.create", json!({
-        "intent": "Synthetic proposal", "operations": [{"operation":"task.create", "payload":{"task":{"title":"Synthetic task"}}}],
-        "assumptions": [], "questions": [], "ttl_seconds": 86400
-    })).unwrap();
-    let id = proposal.data["proposal"]["id"].as_str().unwrap();
-    let error = f
-        .execute("proposal.approve", json!({"proposal_id": id}))
-        .unwrap_err();
-    assert_eq!(error.code, ErrorCode::PermissionDenied);
-    assert!(f.world().tasks.is_empty());
+        .unwrap();
+        let interactive = f.context.clone();
+        let before = serde_json::to_value(f.world()).unwrap();
+        f.context.principal_kind = PrincipalKind::DelegatedAgent;
+        f.context.capabilities = ["read", "capture", "propose", "execute"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let error = f
+            .execute(
+                "workspace.update",
+                json!({"policy": {
+                    "model_access": {"goals": !allowed, "projects": !allowed, "captures": !allowed},
+                    "diagnostic_capture": false
+                }}),
+            )
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::PermissionDenied);
+        assert_eq!(serde_json::to_value(f.world()).unwrap(), before);
+        let proposal = f.execute("proposal.create", json!({
+            "intent": "Synthetic proposal", "operations": [{"operation":"task.create", "payload":{"task":{"title":"Synthetic task"}}}],
+            "assumptions": [], "questions": [], "ttl_seconds": 86400
+        })).unwrap();
+        let id = proposal.data["proposal"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let proposed = serde_json::to_value(f.world()).unwrap();
+        let error = f
+            .execute("proposal.approve", json!({"proposal_id": id}))
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::PermissionDenied);
+        assert_eq!(serde_json::to_value(f.world()).unwrap(), proposed);
+
+        // Even explicit capabilities cannot turn a delegated agent into a human approver.
+        f.context
+            .capabilities
+            .extend(["approve", "write"].map(str::to_string));
+        let error = f
+            .execute("proposal.approve", json!({"proposal_id": id}))
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::PermissionDenied);
+        assert_eq!(serde_json::to_value(f.world()).unwrap(), proposed);
+        let delegated = f.context.clone();
+        f.context = interactive.clone();
+        let approved = f
+            .execute("proposal.approve", json!({"proposal_id": id}))
+            .unwrap();
+        let grant = approved.data["approval"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let before_commit = serde_json::to_value(f.world()).unwrap();
+        f.context = delegated;
+        let error = f
+            .execute(
+                "changes.commit",
+                json!({"proposal_id": id, "approval_grant": grant}),
+            )
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::PermissionDenied);
+        assert_eq!(serde_json::to_value(f.world()).unwrap(), before_commit);
+        assert!(f.world().tasks.is_empty());
+
+        // The denied agent attempt must not consume the user's genuine approval grant.
+        f.context = interactive;
+        f.execute(
+            "changes.commit",
+            json!({"proposal_id": id, "approval_grant": grant}),
+        )
+        .unwrap();
+        assert_eq!(f.world().tasks.len(), 1);
+    }
 }
 
 #[test]

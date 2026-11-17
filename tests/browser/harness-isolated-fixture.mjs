@@ -28,9 +28,7 @@ export async function startFixture({ binary = path.join(root, 'target/release/zo
   delete process.env.ZODO_CORE_URL
   delete process.env.ZODO_CORE_TOKEN
   await writeFile(path.join(dir, 'model.json'), JSON.stringify({
-    version: 1, local: { id: 'fixture-local', label: 'Fixture disabled network route',
-      base_url: 'http://127.0.0.1:9/v1', model: 'fixture-initial-model', api_key_env: 'ZODO_FIXTURE_NO_KEY',
-      location: 'device', enabled: true }, cloud: null,
+    version: 2, source: { kind: 'dsh', provider: null, model: null },
   }))
   const childEnv = Object.fromEntries(['SystemRoot', 'WINDIR', 'PATH'].flatMap(key =>
     process.env[key] ? [[key, process.env[key]]] : []))
@@ -43,11 +41,12 @@ export async function startFixture({ binary = path.join(root, 'target/release/zo
   // Consume logs without publishing any credentials or runtime.json contents.
   core.stdout.resume(); core.stderr.resume()
   const routes = [], effects = [], tools = new Map()
+  const llmCalls = { streams: [], defaultSelections: 0 }
   let origin, server, stopped = false
   const stop = async () => {
     if (stopped) return
     stopped = true
-    for (const dispose of effects.reverse()) { try { dispose?.() } catch {} }
+    for (const dispose of effects.reverse()) { try { await dispose?.() } catch {} }
     if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
     if (core.exitCode === null && core.signalCode === null && !coreFailure) {
       const exited = once(core, 'exit')
@@ -88,15 +87,33 @@ export async function startFixture({ binary = path.join(root, 'target/release/zo
       sessions: { list: () => [], get: () => undefined }, agents: { currentInitiator: () => undefined },
       on() {}, effect(fn) { effects.push(fn()) },
       llm: {
-        listProviders: () => [{ id: 'fixture-local', name: 'Fixture local (no dispatch)' }],
+        listProviders: () => [
+          { id: 'fixture-local', name: 'Fixture local (mock only)' },
+          { id: 'fixture-subscription', name: 'Fixture subscription (mock only)' },
+        ],
         listConfigurableProviders: () => [{ provider: 'fixture-local', settingsNs: 'fixture-local' }],
-        listModels: async () => [{ id: 'fixture-model', name: 'Fixture deterministic model' }],
-        resolveModelInfo: async () => ({ baseURL: 'http://127.0.0.1:9/v1' }),
+        listModels: async provider => provider === 'fixture-subscription'
+          ? [{ id: 'fixture-subscribed-model', name: 'Fixture subscription model' }]
+          : [{ id: 'fixture-model', name: 'Fixture deterministic model' }],
+        // Subscription routes deliberately expose no reusable HTTP endpoint or key.
+        resolveModelInfo: async (provider, model) => ({ provider, id: model, name: model }),
+        async *stream(options) {
+          // Host callback transport remains production code; only the LLM service is mocked.
+          llmCalls.streams.push(options)
+          if (options.signal?.aborted) throw new Error('Fixture model stream aborted')
+          const result = String(options.system).includes('clarify')
+            ? { questions: ['Fixture clarification question'], suggested_kind: 'task', assumptions: [] }
+            : { tasks: [{ title: 'Fixture Host mock task', estimate_minutes: 30 }], assumptions: [], questions: [] }
+          yield { type: 'text-delta', index: 0, text: JSON.stringify(result) }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        },
       },
       settings: { describe: async () => [{ ns: 'fixture-local', value: { baseURL: 'http://127.0.0.1:9/v1', api: 'openai-completions' } }] },
-      agentDefaultModel: { currentSelection: () => ({ provider: 'fixture-local', model: 'fixture-model' }) },
+      agentDefaultModel: { currentSelection: () => {
+        llmCalls.defaultSelections++
+        throw new Error('Fixture forbids inheriting the chat default model')
+      } },
     }
-    await (await import(pathToFileURL(path.join(plugin, 'index.js')))).apply(ctx)
     server = createServer(async (req, res) => {
       try {
         const pathname = new URL(req.url, 'http://fixture.invalid').pathname
@@ -114,7 +131,9 @@ export async function startFixture({ binary = path.join(root, 'target/release/zo
     server.listen(0, '127.0.0.1')
     await once(server, 'listening')
     origin = 'http://127.0.0.1:' + server.address().port
-    return { url: origin, stop, tools, dataDirectory: dir, corePid: core.pid }
+    // Real Host registration may bind callbacks immediately and must see this exact origin.
+    await (await import(pathToFileURL(path.join(plugin, 'index.js')))).apply(ctx)
+    return { url: origin, stop, tools, llmCalls, dataDirectory: dir, corePid: core.pid }
   } catch (error) { await stop(); throw error }
 }
 

@@ -34,7 +34,7 @@ try {
   $pluginName = "zodo-harness-plugin-$($manifest.version).zip"
   $stage = Join-Path $release '.plugin-stage'
   New-Item -ItemType Directory -Force -Path (Join-Path $stage 'bin/win32-x64') | Out-Null
-  foreach ($file in @('package.json', 'cordis.patch.yml', 'client.js', 'index.js', 'privacy.js', 'icon.svg', 'README.md')) {
+  foreach ($file in @('package.json', 'cordis.patch.yml', 'client.js', 'index.js', 'privacy.js', 'host-gateway.js', 'icon.svg', 'README.md')) {
     Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination (Join-Path $stage $file)
   }
   Copy-Item -LiteralPath (Join-Path $plugin 'locale') -Destination (Join-Path $stage 'locale') -Recurse

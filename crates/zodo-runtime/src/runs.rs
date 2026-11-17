@@ -7,11 +7,12 @@ use tracing::{info, warn};
 use zodo_kernel::app::Application;
 use zodo_kernel::commands::CommandEnvelope;
 use zodo_kernel::error::{ErrorCode, Result, ZodoError};
-use zodo_kernel::model::{CommandContext, PrincipalKind};
+use zodo_kernel::model::{CommandContext, DataClass, PrincipalKind};
 use zodo_kernel::ops::{ChangeOp, TaskSpec};
 use zodo_kernel::ports::{Store, SystemClock, UuidIds};
 
-use crate::ai::{ChatMessage, DataSensitivity, ModelGateway, parse_json_object};
+use crate::ai::{ChatMessage, authorize_scope, parse_json_object};
+use crate::host::complete_run;
 use crate::runtime::{AppState, WORKSPACE_ID};
 use rusqlite::OptionalExtension;
 
@@ -290,20 +291,53 @@ fn storage(error: impl std::fmt::Display) -> ZodoError {
     ZodoError::new(ErrorCode::StorageFailure, error.to_string())
 }
 
+fn canonical_horizon(value: &Value) -> Result<String> {
+    let text = value
+        .as_str()
+        .filter(|text| text.len() <= 40)
+        .ok_or_else(|| {
+            ZodoError::validation("horizon_end must be an ISO date or RFC3339 timestamp")
+        })?;
+    if let Ok(date) = text.parse::<chrono::NaiveDate>() {
+        return Ok(date.to_string());
+    }
+    chrono::DateTime::parse_from_rfc3339(text)
+        .map(|date| date.to_rfc3339())
+        .map_err(|_| ZodoError::validation("horizon_end must be an ISO date or RFC3339 timestamp"))
+}
+
 pub fn validate_run_intent(intent: &str, input: &Value) -> Result<()> {
+    let object = input
+        .as_object()
+        .ok_or_else(|| ZodoError::validation("run input must be an object"))?;
+    let allowed: &[&str] = match intent {
+        "goal.decompose" => &["goal_id", "project_id", "horizon_end", "data_class"],
+        "capture.clarify" => &["text", "data_class"],
+        _ => &[],
+    };
+    if object.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err(ZodoError::validation("unknown run input field"));
+    }
+    if let Some(value) = input.get("horizon_end") {
+        canonical_horizon(value)?;
+    }
+    if let Some(class) = input.get("data_class") {
+        serde_json::from_value::<DataClass>(class.clone())
+            .map_err(|_| ZodoError::validation("invalid run data_class"))?;
+    }
     match intent {
         "goal.decompose" => {
             let goal_id = input
                 .get("goal_id")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            if goal_id.trim().is_empty() {
+            if goal_id.trim().is_empty() || goal_id.len() > 200 {
                 return Err(ZodoError::validation("goal.decompose requires goal_id"));
             }
             if input
                 .get("project_id")
                 .and_then(Value::as_str)
-                .is_some_and(|value| value.trim().is_empty())
+                .is_some_and(|value| value.trim().is_empty() || value.len() > 200)
             {
                 return Err(ZodoError::validation("project_id cannot be empty"));
             }
@@ -379,6 +413,18 @@ fn run_loop(state: AppState, data_dir: PathBuf) {
                 "details": error.details,
             });
             if let Ok(inner) = state.inner.lock() {
+                if inner
+                    .store
+                    .get_run(&run.id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|run| run.cancel_requested)
+                {
+                    let _ = inner
+                        .store
+                        .update_run_state(&run.id, "cancelled", None, None);
+                    continue;
+                }
                 let _ = inner.store.append_run_step(&run.id, "failed", &error_json);
                 let _ = inner
                     .store
@@ -388,8 +434,18 @@ fn run_loop(state: AppState, data_dir: PathBuf) {
     }
 }
 
-fn process_clarify(state: &AppState, data_dir: &std::path::Path, run: &RunRecord) -> Result<()> {
-    let (policy, text) = {
+fn run_data_class(run: &RunRecord) -> Result<DataClass> {
+    run.input
+        .get("data_class")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map(|class| class.unwrap_or(DataClass::TrustedWorkspace))
+        .map_err(|_| ZodoError::validation("invalid run data_class"))
+}
+
+fn process_clarify(state: &AppState, _data_dir: &std::path::Path, run: &RunRecord) -> Result<()> {
+    let (policy, policy_revision, text) = {
         let mut inner = state
             .inner
             .lock()
@@ -416,17 +472,24 @@ fn process_clarify(state: &AppState, data_dir: &std::path::Path, run: &RunRecord
             "context.loaded",
             &json!({"chars": text.chars().count(), "revision": world.workspace.revision}),
         )?;
-        (world.workspace.policy.clone(), text)
+        (
+            world.workspace.policy.clone(),
+            world.workspace.policy_revision,
+            text,
+        )
     };
-    let gateway = ModelGateway::load(data_dir);
+    authorize_scope(&policy, &run.intent)?;
+    let class = run_data_class(run)?;
     let system = "You clarify a raw personal capture for Zodo. Return ONLY JSON: {\"questions\":[string],\"suggested_kind\":\"task\"|\"note\"|\"goal\"|\"keep\",\"assumptions\":[string]}. Ask at most 4 concise questions that resolve ambiguity; do not invent facts and do not execute anything.";
     let user = format!(
         "Raw capture:\n{text}\n\nWhat must be clarified before it can become a task, note, or goal?"
     );
-    let mut completion = gateway.complete(
+    let mut completion = complete_run(
+        state,
+        run,
         &policy,
-        DataSensitivity::Workspace,
-        Some("clarify"),
+        policy_revision,
+        &class,
         &[ChatMessage::system(system), ChatMessage::user(user.clone())],
     )?;
     let mut parsed = parse_json_object(&completion.content);
@@ -438,13 +501,15 @@ fn process_clarify(state: &AppState, data_dir: &std::path::Path, run: &RunRecord
             inner.store.append_run_step(
                 &run.id,
                 "model.invalid_json",
-                &json!({"content": completion.content.chars().take(4000).collect::<String>()}),
+                &json!({"reason": "invalid_model_json", "content_withheld": true}),
             )?;
         }
-        let retry = gateway.complete(
+        let retry = complete_run(
+            state,
+            run,
             &policy,
-            DataSensitivity::Workspace,
-            Some("clarify"),
+            policy_revision,
+            &class,
             &[
                 ChatMessage::system("Return ONLY one valid compact JSON object."),
                 ChatMessage::user(user),
@@ -457,7 +522,7 @@ fn process_clarify(state: &AppState, data_dir: &std::path::Path, run: &RunRecord
     let checkpoint = json!({
         "model": completion.model,
         "provider": completion.provider_id,
-        "route": completion.route,
+        "source": completion.source,
         "questions": parsed.get("questions").cloned().unwrap_or_else(|| json!([])),
         "assumptions": parsed.get("assumptions").cloned().unwrap_or_else(|| json!([])),
         "suggested_kind": parsed.get("suggested_kind").cloned().unwrap_or_else(|| json!("keep")),
@@ -488,7 +553,7 @@ fn process_clarify(state: &AppState, data_dir: &std::path::Path, run: &RunRecord
             "suggested_kind": checkpoint.get("suggested_kind").cloned().unwrap_or_else(|| json!("keep")),
             "model": checkpoint.get("model"),
             "provider": checkpoint.get("provider"),
-            "route": checkpoint.get("route"),
+            "source": checkpoint.get("source"),
             "facts_written": false,
         });
         inner
@@ -502,10 +567,11 @@ fn process_clarify(state: &AppState, data_dir: &std::path::Path, run: &RunRecord
 }
 
 fn process_run(state: &AppState, data_dir: &std::path::Path, run: &RunRecord) -> Result<()> {
+    validate_run_intent(&run.intent, &run.input)?;
     if run.intent == "capture.clarify" {
         return process_clarify(state, data_dir, run);
     }
-    let (goal, project, policy) = {
+    let (goal, project, policy, policy_revision) = {
         let mut inner = state
             .inner
             .lock()
@@ -536,7 +602,12 @@ fn process_run(state: &AppState, data_dir: &std::path::Path, run: &RunRecord) ->
             "context.loaded",
             &json!({"goal_id": goal.id, "project_id": project_id, "revision": world.workspace.revision}),
         )?;
-        (goal, project, world.workspace.policy.clone())
+        (
+            goal,
+            project,
+            world.workspace.policy.clone(),
+            world.workspace.policy_revision,
+        )
     };
 
     if run.cancel_requested {
@@ -548,8 +619,8 @@ fn process_run(state: &AppState, data_dir: &std::path::Path, run: &RunRecord) ->
     let plan_payload = if let Some(checkpoint) = &run.checkpoint {
         checkpoint.clone()
     } else {
-        let gateway = ModelGateway::load(data_dir);
-        let _route = gateway.route_for(&policy, DataSensitivity::Workspace, Some("decompose"))?;
+        authorize_scope(&policy, &run.intent)?;
+        let class = run_data_class(run)?;
         let system = "You are the planning component of Zodo, a personal operations system. \
 Return ONLY a JSON object. Do not include prose. The object must have this shape: \
 {\"tasks\":[{\"title\":\"...\",\"estimate_minutes\":30,\"priority\":2,\"target_due\":\"YYYY-MM-DD or null\",\"depends_on\":[0]}],\"assumptions\":[\"...\"],\"questions\":[\"...\"]}. \
@@ -564,20 +635,23 @@ Do not invent facts about the user. Put uncertainty into questions.";
                 .map(|date| date.to_string())
                 .unwrap_or_else(|| "(none)".to_string())
         );
-        if let Some(project) = &project {
+        if let Some(project) = project.as_ref().filter(|_| policy.model_access.projects) {
             user.push_str(&format!(
                 "Existing project: {}\nProject scope: {}\n",
                 project.title,
                 project.scope.as_deref().unwrap_or("(none)")
             ));
         }
-        if let Some(horizon) = run_input.get("horizon_end").and_then(Value::as_str) {
+        if let Some(value) = run_input.get("horizon_end") {
+            let horizon = canonical_horizon(value)?;
             user.push_str(&format!("Horizon end: {horizon}\n"));
         }
-        let completion = gateway.complete(
+        let completion = complete_run(
+            state,
+            run,
             &policy,
-            DataSensitivity::Workspace,
-            Some("decompose"),
+            policy_revision,
+            &class,
             &[ChatMessage::system(system), ChatMessage::user(user.clone())],
         )?;
         let parsed = match parse_json_object(&completion.content) {
@@ -592,15 +666,17 @@ Do not invent facts about the user. Put uncertainty into questions.";
                         "model.invalid_json",
                         &json!({
                             "error": first_error.message,
-                            "content": completion.content.chars().take(4000).collect::<String>(),
+                            "content_withheld": true,
                         }),
                     )?;
                 }
                 let retry_system = "Return ONLY one compact valid JSON object. No markdown, no prose, no code fence. Escape all quotes and newlines inside strings. The schema is: {\"tasks\":[{\"title\":string,\"estimate_minutes\":integer,\"priority\":integer,\"target_due\":string|null,\"depends_on\":[integer]}],\"assumptions\":[string],\"questions\":[string]}";
-                let retry = gateway.complete(
+                let retry = complete_run(
+                    state,
+                    run,
                     &policy,
-                    DataSensitivity::Workspace,
-                    Some("decompose"),
+                    policy_revision,
+                    &class,
                     &[ChatMessage::system(retry_system), ChatMessage::user(user)],
                 )?;
                 parse_json_object(&retry.content).map_err(|second| {
@@ -621,7 +697,7 @@ Do not invent facts about the user. Put uncertainty into questions.";
         let checkpoint = json!({
             "model": completion.model,
             "provider": completion.provider_id,
-            "route": completion.route,
+            "source": completion.source,
             "elapsed_ms": completion.elapsed_ms,
             "tasks": tasks,
             "assumptions": parsed.get("assumptions").cloned().unwrap_or_else(|| json!([])),
@@ -699,7 +775,7 @@ Do not invent facts about the user. Put uncertainty into questions.";
                 client_ref: Some(client_ref),
                 title,
                 description: Some(format!(
-                    "由本地/授权模型拆解目标《{}》生成，待用户审阅。",
+                    "由所选模型拆解目标《{}》生成，待用户审阅。",
                     goal.title
                 )),
                 project_id: project.as_ref().map(|project| project.id.clone()),
@@ -825,7 +901,7 @@ Do not invent facts about the user. Put uncertainty into questions.";
         "task_count": task_count,
         "model": plan_payload.get("model"),
         "provider": plan_payload.get("provider"),
-        "route": plan_payload.get("route"),
+        "source": plan_payload.get("source"),
         "base_revision": revision,
         "status": "proposal_created",
     });
@@ -895,6 +971,7 @@ mod tests {
                 revoked_channels: BTreeSet::new(),
                 revoked_devices: BTreeSet::new(),
                 data_dir: dir.path().to_path_buf(),
+                host: crate::host::HostState::default(),
                 _lock: std::fs::File::create(dir.path().join("test.lock")).unwrap(),
                 _lock_path: dir.path().join("test.lock"),
                 _info_path: dir.path().join("runtime.json"),
@@ -914,6 +991,34 @@ mod tests {
         let proposal = world.proposals.into_iter().next().unwrap();
         assert_eq!(output["proposal_id"], proposal.id);
         (output, proposal)
+    }
+
+    #[test]
+    fn run_inputs_reject_extra_context_and_noncanonical_horizons() {
+        for input in [
+            json!({"goal_id":"g", "horizon_end":"secret text"}),
+            json!({"goal_id":"g", "notes":"private"}),
+            json!({"goal_id":"g", "data_class":"unknown"}),
+        ] {
+            assert!(validate_run_intent("goal.decompose", &input).is_err());
+        }
+        assert!(
+            validate_run_intent("capture.clarify", &json!({"text":"capture", "history":[]}))
+                .is_err()
+        );
+        validate_run_intent(
+            "goal.decompose",
+            &json!({"goal_id":"g", "horizon_end":"2035-01-01T00:00:00Z"}),
+        )
+        .unwrap();
+        assert_eq!(
+            canonical_horizon(&json!("2035-01-01T00:00:00Z")).unwrap(),
+            "2035-01-01T00:00:00+00:00"
+        );
+        assert_eq!(
+            canonical_horizon(&json!("2035-01-01")).unwrap(),
+            "2035-01-01"
+        );
     }
 
     #[test]

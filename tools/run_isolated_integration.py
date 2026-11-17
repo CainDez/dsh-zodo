@@ -33,7 +33,7 @@ CASES = {
     "test_dat08_encrypted_sync.py": ("dat08-encrypted-sync.json", {"export_status": 200, "plaintext_absent": True, "import_status": 200, "target_tasks": 1, "wrong_status": 403, "wrong_code": "PERMISSION_DENIED", "wrong_tasks": 0}),
     "test_a6_sync.py": ("a6-swap.json", {"import_b_status": 200, "import_a_status": 200, "a_tasks_after_roundtrip": 2, "b_tasks_after_first_sync": 2, "conflict_status": 409, "retry_status": 200, "b_retry_shared_title": "A 修改后的标题", "revoked_import_status": 403}),
     "test_a4_restore.py": ("a4-restore.json", {"before_count": 2, "restore_exit": 0, "after_count": 1, "query_status": 200}),
-    "test_ai11_cloud_stub.py": ("ai11-cloud-stub.json", {"goal_status": 200, "model_status": 200, "cloud_requests": 1, "private_note_in_cloud_request": False, "stub_received_goal": True, "task_count": 3, "approved_status": 200, "committed_status": 200}),
+    "test_ai11_custom_stub.py": ("ai11-custom-stub.json", {"goal_status": 200, "model_status": 200, "custom_requests": 1, "model_source": "custom", "model_provider": "custom", "private_note_in_model_request": False, "stub_received_goal": True, "task_count": 3, "approved_status": 200, "committed_status": 200}),
     "test_pln16_calendar_write.py": ("pln16-calendar-write.json", {"first_status": 200, "duplicate_status": 422, "second_status": 200, "external_writes": 2}),
 }
 REVIEWED_SHA256 = {
@@ -46,9 +46,9 @@ REVIEWED_SHA256 = {
     "test_dat08_encrypted_sync.py": "1fcf462ba91cc20ee5300913d107e0efced597303f08cafe7f9a822890396c1a",
     "test_a6_sync.py": "24e3ceb5ba80c3324cc71f573b28d249942e53592094d63a19b2ba31366b96d9",
     "test_a4_restore.py": "3aa23b56eadedf5354d2bf0238f19b322802407b08c3b5b28baa19aa60ea1b32",
-    # Re-reviewed: current cloud_assisted policy; synthetic loopback stub/dummy keys only;
+    # Re-reviewed: custom v2 source and explicit goal-only access; loopback stub/dummy keys only;
     # ROOT/PORT/local endpoint are relocated and owned_processes retains its guards.
-    "test_ai11_cloud_stub.py": "d425a71511dd4e0c5bb5fde2cc6128d8835e95039ca6d991503e9e3fd37c7e8d",
+    "test_ai11_custom_stub.py": "851a032e88d48ea953dc72b259ddc3cf4bd9cc00fdef5554370068deb222afec",
     "test_pln16_calendar_write.py": "c9fff852b394d592c06556464ca86963659d5bfb26e525c15ff35411f2156070"
 }
 
@@ -146,7 +146,6 @@ def owned_processes(root, binary, reject_url):
                     if requested[key] not in ("ollama", "stub-cloud-key"):
                         raise RuntimeError("only dummy test credentials allowed")
                     env[key] = requested[key]
-            env["ZODO_LOCAL_MODEL_URL"] = reject_url
             calendar = requested.get("ZODO_CALENDAR_WRITE_URL")
             if calendar:
                 parsed = urllib.parse.urlparse(calendar)
@@ -229,7 +228,7 @@ def run_case(name, root, binary, reject_url):
         for key, expected in expectations.items():
             if result.get(key) != expected:
                 failures.append(f"{key}: expected {expected!r}, got {result.get(key)!r}")
-        if name == "test_ai11_cloud_stub.py":
+        if name == "test_ai11_custom_stub.py":
             if result.get("run", {}).get("state") != "succeeded" or len(result["dependencies"]) != 2:
                 failures.append("AI run must succeed and commit two dependencies")
         if name == "test_dat04_batch.py":

@@ -1,4 +1,4 @@
-"""Admitted synthetic cloud case; execute only through run_isolated_integration.py.
+"""Admitted synthetic custom-model case; execute only through run_isolated_integration.py.
 
 The runner relocates ROOT/PORT, removes inherited secrets and enforces owned services.
 Do not execute or import this source directly.
@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = pathlib.Path(r"D:\projects\zodo_dsh")
 Z = ROOT / "target" / "release" / "zodo.exe"
-DATA = ROOT / ".runtime" / "ai11-cloud-stub"
+DATA = ROOT / ".runtime" / "ai11-custom-stub"
 EVID = ROOT / "artifacts" / "evidence" / "a3"
 EVID.mkdir(parents=True, exist_ok=True)
 captured = []
@@ -91,7 +91,7 @@ try:
     goal_status, goal_body = call(info, "POST", "/v1/commands", {
         "schema": "zodo.command/1", "request_id": "ai11", "idempotency_key": "ai11-goal",
         "workspace_id": "ws_local", "operation": "goal.create", "operation_version": 1,
-        "payload": {"goal": {"title": "云路由目标", "success_criteria": "产出三个任务"}},
+        "payload": {"goal": {"title": "自定义模型目标", "success_criteria": "产出三个任务"}},
     })
     goal_id = goal_body["data"]["changes"][0]["id"]
     call(info, "POST", "/v1/commands", {
@@ -103,23 +103,15 @@ try:
         "schema": "zodo.command/1", "request_id": "ai11-policy", "idempotency_key": "ai11-policy",
         "workspace_id": "ws_local", "operation": "workspace.update", "operation_version": 1,
         "payload": {"settings": None, "policy": {
-            "model_route": "cloud_assisted",
-            "allowed_cloud_providers": ["cloud-stub"], "diagnostic_capture": False,
+            "model_access": {"goals": True, "projects": False, "captures": False},
+            "diagnostic_capture": False,
         }},
     })
     model_status, model_body = call(info, "POST", "/v1/model", {
-        "version": 1,
-        "local": {
-            "id": "local-ollama", "label": "Local", "base_url": "http://127.0.0.1:11434/v1",
-            "model": "aravhawk/qwen3.5-opus-4.6:latest", "api_key_env": "OLLAMA_API_KEY",
-            "location": "device", "enabled": True,
+        "version": 2, "source": {
+            "kind": "custom", "base_url": f"http://127.0.0.1:{PORT}/v1",
+            "model": "stub-custom-model", "api_key_env": "DEEPSEEK_API_KEY",
         },
-        "cloud": {
-            "id": "cloud-stub", "label": "Stub cloud", "base_url": f"http://127.0.0.1:{PORT}/v1",
-            "model": "stub-cloud-model", "api_key_env": "DEEPSEEK_API_KEY",
-            "location": "cloud", "enabled": True,
-        },
-        "roles": {"decompose": "cloud"},
     })
     run_status, run_body = call(info, "POST", "/v1/runs", {
         "intent": "goal.decompose", "input": {"goal_id": goal_id}, "idempotency_key": "ai11-run",
@@ -165,28 +157,27 @@ try:
     result = {
         "goal_status": goal_status,
         "model_status": model_status,
-        "model_body": model_body.get("config", {}).get("cloud"),
-        "model_roles": (model_body.get("config", {}).get("editable", {}) or {}).get("roles"),
+        "model_body": model_body.get("config", {}).get("source"),
         "run_status": run_status,
         "run": run,
-        "cloud_requests": len(captured),
-        "cloud_route": run.get("output", {}).get("route") if run else None,
-        "cloud_provider": run.get("output", {}).get("provider") if run else None,
-        "private_note_in_cloud_request": "device-only secret body" in request_text,
-        "stub_received_goal": "云路由目标" in request_text,
+        "custom_requests": len(captured),
+        "model_source": run.get("output", {}).get("source") if run else None,
+        "model_provider": run.get("output", {}).get("provider") if run else None,
+        "private_note_in_model_request": "device-only secret body" in request_text,
+        "stub_received_goal": "自定义模型目标" in request_text,
         "task_count": run.get("output", {}).get("task_count") if run else None,
         "approved_status": approved_status,
         "committed_status": committed_status,
         "dependencies": dependencies,
         "evidence_request": captured[:1],
     }
-    (EVID / "ai11-cloud-stub.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    (EVID / "ai11-custom-stub.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({
         "run_state": run.get("state") if run else None,
-        "route": result["cloud_route"],
-        "provider": result["cloud_provider"],
-        "cloud_requests": result["cloud_requests"],
-        "private_note_in_cloud_request": result["private_note_in_cloud_request"],
+        "route": result["model_source"],
+        "provider": result["model_provider"],
+        "custom_requests": result["custom_requests"],
+        "private_note_in_model_request": result["private_note_in_model_request"],
         "stub_received_goal": result["stub_received_goal"],
         "task_count": result["task_count"],
         "dependencies": result["dependencies"],

@@ -29,10 +29,10 @@ Do not run legacy evidence scripts directly: some reference an archived workspac
 
 ## Model and permission boundaries
 
-- The UI and Core accept only `local_only` and `cloud_assisted`; see [model modes](<MODEL_MODES.md>) for consent, effective status and strict development schemas. Old modes and policy fields are rejected; no runtime migration is maintained. `local_only` must not fall back to cloud; device-only content remains local in either mode. Cloud assistance requires an explicitly allowed provider and a credential preflight; unavailable cloud routes choose local before dispatch.
+- [Model and privacy settings](<MODEL_SETTINGS.md>) are independent: one explicit DSH/custom source, with deny-by-default goal/project/capture context permissions. DSH models execute through the authenticated Host llm service without copied credentials or chat history; custom sources call the selected endpoint. No cross-model fallback or legacy migration is maintained.
 - An AI run produces proposals, not approval. Host tool permission is not business approval.
 - Agent/MCP channels cannot approve or commit. Revocation is checked at runtime.
-- The DSH model catalog is read-only; filling a Core model draft does not change Host model settings or save automatically.
+- Reading the DSH catalog or editing the model draft does not dispatch inference. Saving a Zodo choice does not change DSH chat selection or privacy. Host invocation credentials remain in memory and must never be copied to model configuration, browser responses, logs or release assets.
 - Same-UID Host/Shell is not a strong OS sandbox. Use another OS identity or remote Core when stronger isolation is needed.
 
 ## Verification not covered by a fixture

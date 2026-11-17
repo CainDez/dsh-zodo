@@ -9,6 +9,7 @@
 import { spawn } from 'node:child_process'
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import { createHostGateway, readModelCatalog } from './host-gateway.js'
 import { closeSync, existsSync, openSync } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -692,232 +693,13 @@ function createTools(core) {
   ]
 }
 
-// --- DeepSeek Harness model configuration (read-only projection) -------------------------------
-//
-// Zodo keeps its own model gateway. The Models page may show the Host's model routes so a user can
-// fill a Core connection from a route the Host already knows. Only route names, endpoints and
-// credential *reference* names cross the bridge: no secret is read, and the Harness configuration
-// is never mutated. Core can only call OpenAI-compatible /chat/completions endpoints, so a route
-// is advertised as fillable only when its protocol is known to be openai-completions.
-
-const HARNESS_CATALOG_SCHEMA = 'zodo.harness-model-catalog/1'
-
-function harnessHostname(value) {
-  try {
-    return new URL(String(value)).hostname
-  } catch {
-    return ''
-  }
-}
-
-function harnessIsLocalEndpoint(value) {
-  const hostname = harnessHostname(value)
-  return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1'
-}
-
-function harnessReadPath(value, segments) {
-  let node = value
-  for (const segment of Array.isArray(segments) ? segments : []) {
-    if (node === null || typeof node !== 'object' || Array.isArray(node)) return undefined
-    node = node[segment]
-  }
-  return node
-}
-
-function harnessEndpoint(entry, profile) {
-  const configured = profile?.baseURL ?? profile?.baseUrl ?? profile?.protocol?.baseURL
-  if (typeof configured === 'string' && configured.length > 0) {
-    return { endpoint: configured, source: 'configured' }
-  }
-  for (const name of Array.isArray(entry?.baseURLEnv) ? entry.baseURLEnv : []) {
-    const value = process.env[name]
-    if (typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'))) {
-      return { endpoint: value, source: 'env' }
-    }
-  }
-  if (typeof entry?.defaultBaseURL === 'string' && entry.defaultBaseURL.length > 0) {
-    return { endpoint: entry.defaultBaseURL, source: 'default' }
-  }
-  return { endpoint: null, source: 'unknown' }
-}
-
-function harnessProtocol(profile) {
-  const value = profile?.api
-  return typeof value === 'string' && value.length > 0 ? value : null
-}
-
-function harnessCompatibility(endpoint, protocol) {
-  if (!endpoint) {
-    return {
-      compatible: false,
-      reason: '未能读取该路由的端点；请先在 Harness 模型设置中配置 baseURL，或在 Zodo 中手动填写端点。',
-    }
-  }
-  if (!(endpoint.startsWith('http://') || endpoint.startsWith('https://'))) {
-    return { compatible: false, reason: '该路由的端点不是 HTTP(S) 地址。' }
-  }
-  if (protocol === 'openai-completions') return { compatible: true, reason: null }
-  if (protocol === null) {
-    return {
-      compatible: false,
-      reason: '无法确认该路由的协议；Zodo Core 网关只支持 OpenAI 兼容的 /chat/completions 端点。',
-    }
-  }
-  return {
-    compatible: false,
-    reason: '该路由使用 ' + protocol + ' 协议；Zodo Core 网关只支持 OpenAI 兼容的 /chat/completions 端点。',
-  }
-}
-
-async function harnessSettingsRows(ctx) {
-  const settings = typeof ctx.get === 'function' ? ctx.get('settings') : ctx.settings
-  if (!settings || typeof settings.describe !== 'function') return new Map()
-  try {
-    const rows = await settings.describe({ redactSecrets: true })
-    return new Map((Array.isArray(rows) ? rows : [])
-      .filter(row => row && typeof row.ns === 'string')
-      .map(row => [row.ns, row]))
-  } catch {
-    return new Map()
-  }
-}
-
-function harnessDefaultRoute(ctx) {
-  try {
-    const service = typeof ctx.get === 'function' ? ctx.get('agentDefaultModel') : ctx.agentDefaultModel
-    const selection = service?.currentSelection?.()
-    if (!selection || typeof selection.provider !== 'string' || typeof selection.model !== 'string') return null
-    return {
-      provider: selection.provider,
-      model: selection.model,
-      reasoning_effort: typeof selection.reasoningEffort === 'string' ? selection.reasoningEffort : null,
-    }
-  } catch {
-    return null
-  }
-}
-
-async function readHarnessModelCatalog(ctx, log) {
-  const llm = ctx.llm
-  if (!llm || typeof llm.listProviders !== 'function') {
-    const error = new Error('Harness LLM service is unavailable; the Host has no model registry to read')
-    error.code = 'LLM_UNAVAILABLE'
-    throw error
-  }
-  const settingsRows = await harnessSettingsRows(ctx)
-  let directory = []
-  try {
-    directory = typeof llm.listConfigurableProviders === 'function' ? llm.listConfigurableProviders() : []
-  } catch (failure) {
-    log?.('harness catalog: configurable provider directory unavailable: ' + (failure?.message ?? String(failure)))
-  }
-  const directoryByProvider = new Map()
-  for (const entry of Array.isArray(directory) ? directory : []) {
-    if (entry && typeof entry.provider === 'string') directoryByProvider.set(entry.provider, entry)
-  }
-  const defaultRoute = harnessDefaultRoute(ctx)
-  const groups = []
-  const failures = []
-  const providers = Array.isArray(llm.listProviders()) ? llm.listProviders() : []
-  for (const provider of providers) {
-    const providerId = typeof provider?.id === 'string' ? provider.id : ''
-    if (!providerId) continue
-    try {
-      const advertised = await llm.listModels(providerId)
-      const models = []
-      for (const model of Array.isArray(advertised) ? advertised : []) {
-        const modelId = typeof model?.id === 'string' ? model.id : ''
-        if (!modelId) continue
-        let info = null
-        try {
-          info = await llm.resolveModelInfo(providerId, modelId)
-        } catch {
-          info = null
-        }
-        const efforts = Array.isArray(info?.reasoning?.efforts)
-          ? info.reasoning.efforts.flatMap(effort => {
-            const effortId = typeof effort?.id === 'string' ? effort.id : ''
-            if (!effortId) return []
-            return [{
-              id: effortId,
-              name: typeof effort?.name === 'string' ? effort.name : effortId,
-              description: typeof effort?.description === 'string' ? effort.description : null,
-            }]
-          })
-          : []
-        models.push({
-          id: modelId,
-          name: typeof model?.name === 'string' && model.name.length > 0 ? model.name : modelId,
-          description: typeof model?.description === 'string' ? model.description : null,
-          reasoning: info?.reasoning
-            ? {
-              efforts,
-              default_effort: typeof info.reasoning.defaultEffort === 'string' ? info.reasoning.defaultEffort : null,
-            }
-            : null,
-          is_default: defaultRoute !== null && defaultRoute.provider === providerId && defaultRoute.model === modelId,
-        })
-      }
-      const entry = directoryByProvider.get(providerId)
-      const settingsRow = entry?.settingsNs ? settingsRows.get(entry.settingsNs) : undefined
-      const profileValue = settingsRow ? harnessReadPath(settingsRow.value, entry?.settingsPath ?? []) : undefined
-      const profile = profileValue && typeof profileValue === 'object' && !Array.isArray(profileValue)
-        ? profileValue
-        : undefined
-      const resolved = harnessEndpoint(entry, profile)
-      const protocol = harnessProtocol(profile)
-      const credentialEnv = typeof profile?.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0
-        ? profile.apiKeyEnv
-        : (Array.isArray(entry?.nativeAuth?.env)
-          ? entry.nativeAuth.env.find(name => typeof name === 'string' && name.length > 0)
-          : undefined) ?? null
-      const compatibility = harnessCompatibility(resolved.endpoint, protocol)
-      const displayName = typeof provider?.name === 'string' && provider.name.length > 0
-        ? provider.name
-        : (typeof profile?.displayName === 'string' && profile.displayName.length > 0
-          ? profile.displayName
-          : (typeof entry?.displayName === 'string' && entry.displayName.length > 0 ? entry.displayName : providerId))
-      groups.push({
-        provider: providerId,
-        name: displayName,
-        settings_ns: typeof entry?.settingsNs === 'string' ? entry.settingsNs : null,
-        endpoint: resolved.endpoint,
-        endpoint_source: resolved.source,
-        endpoint_local: resolved.endpoint !== null && harnessIsLocalEndpoint(resolved.endpoint),
-        protocol,
-        zodo_compatible: compatibility.compatible,
-        zodo_reason: compatibility.reason,
-        credential_env: credentialEnv,
-        credential_present: credentialEnv !== null
-          && typeof process.env[credentialEnv] === 'string'
-          && process.env[credentialEnv].length > 0,
-        models,
-      })
-    } catch (failure) {
-      failures.push({
-        provider: providerId,
-        name: typeof provider?.name === 'string' ? provider.name : providerId,
-        message: failure?.message ?? String(failure),
-      })
-    }
-  }
-  return {
-    ok: true,
-    schema: HARNESS_CATALOG_SCHEMA,
-    fetched_at: new Date().toISOString(),
-    host: {
-      adapter: ADAPTER_VERSION,
-      host_requirement: HOST_REQUIREMENT,
-      privacy_guard: PRIVACY_GUARD_VERSION,
-    },
-    default_route: defaultRoute,
-    groups,
-    failures,
-    notes: [
-      '只读 Harness 模型配置；Zodo 不复制密钥，也不修改 Harness 的全局模型或凭据。',
-      'Core 只能调用 OpenAI 兼容（/chat/completions）端点；不兼容的路由仅展示，不能填入。',
-    ],
-  }
+// Only provider/model catalog facts cross the browser bridge. The Host owns every credential
+// and protocol (including subscription/OAuth); selecting a route invokes llm, never copies settings.
+async function readHarnessModelCatalog(ctx) {
+  const catalog = await readModelCatalog(ctx.llm)
+  return { ok: true, schema: 'zodo.harness-model-catalog/1', fetched_at: new Date().toISOString(),
+    host: { adapter: ADAPTER_VERSION, host_requirement: HOST_REQUIREMENT, privacy_guard: PRIVACY_GUARD_VERSION },
+    ...catalog, notes: ['所选 DSH 模型通过 Host llm 调用；凭据和订阅登录留在 Host。', '目录和配置状态仅为预检，不代表推理已成功。'] }
 }
 
 export async function apply(ctx) {
@@ -929,7 +711,13 @@ export async function apply(ctx) {
       // Logging must not affect availability.
     }
   }
-  const core = createCoreManager({ log })
+  const manager = createCoreManager({ log })
+  const hostGateway = createHostGateway({ llm: ctx.llm })
+  const core = { ...manager, async ensure() {
+    const result = await manager.ensure()
+    try { await hostGateway.ensureBound(result.info) } catch { log('Zodo Host model binding unavailable; no model fallback was selected.') }
+    return result
+  } }
   const sessions = createUiSessions()
   const disposers = []
 
@@ -1345,7 +1133,13 @@ export async function apply(ctx) {
           return
         }
         const raw = await readBody(req)
-        const result = await coreHttp(info, info.tokens.ui, 'POST', '/v1/model', JSON.parse(raw))
+        let result = await coreHttp(info, info.tokens.ui, 'POST', '/v1/model', JSON.parse(raw))
+        if (result.status < 300 && result.body.config?.source?.kind === 'dsh') {
+          // A newly added DSH model must be usable now, not after the old binding expires.
+          // Only a successful model save rotates the binding; catalog reads never interrupt runs.
+          try { await hostGateway.ensureBound(info, { force: true }) } catch { log('Zodo Host model refresh unavailable; no fallback was selected.') }
+          result = await coreHttp(info, info.tokens.ui, 'GET', '/v1/model')
+        }
         json(res, result.status, { ok: result.status < 300, core_status: result.status, result: result.body })
       } catch (error) {
         log(`model bridge error: ${error?.message ?? String(error)}`)
@@ -1354,8 +1148,8 @@ export async function apply(ctx) {
     },
   }))
 
-  // Read-only projection of the Host's model configuration. Zodo never receives a credential: the
-  // response carries route names, endpoints and credential *reference* names only, and nothing here
+  // Read-only projection of callable Host routes. No endpoints or credential references leave the
+  // Host; the response contains only provider/model identities and display names. Nothing here
   // mutates the Harness configuration.
   disposers.push(ctx.webServer.register({
     kind: 'exact',
@@ -1379,12 +1173,12 @@ export async function apply(ctx) {
         const catalog = await readHarnessModelCatalog(ctx, log)
         json(res, 200, catalog)
       } catch (error) {
-        log('harness model catalog error: ' + (error?.message ?? String(error)))
+        log('harness model catalog unavailable; provider error withheld')
         json(res, error?.code === 'LLM_UNAVAILABLE' ? 503 : 502, {
           ok: false,
           error: {
             code: error?.code ?? 'HARNESS_MODEL_CATALOG_FAILED',
-            message: error?.message ?? 'harness model catalog failure',
+            message: 'Harness model catalog unavailable; provider error withheld.',
           },
         })
       }
@@ -1457,7 +1251,7 @@ export async function apply(ctx) {
   // For protected exports, use host-owned session records and tool provenance, not
   // words in messages. Scan the full log, including compressed/shadowed prefixes.
   ctx.on('llm/stream', (options, next) => {
-    const sessionId = options?.sessionId ?? ctx.agents.currentInitiator()?.session?.id
+    const sessionId = options?.sessionId ?? (hostGateway.owns(options) ? undefined : ctx.agents.currentInitiator()?.session?.id)
     if (sessionId && sessionHasRestrictedExport(privacy, ctx.sessions.get(sessionId))) {
       // No destination-bound private export contract is available in this Host.
       // Do not trust a provider name (or user-maintained allowlist) as proof of
@@ -1467,6 +1261,7 @@ export async function apply(ctx) {
     }
     return next()
   })
+  ctx.on('llm/adapters-updated', () => hostGateway.invalidate())
   ctx.on('session/created', session => {
     if (session?.inheritedEventCount > 0 && sessionHasRestrictedExport(privacy, session)) {
       throw privacyError('ZODO_FORK_RESTRICTED',
@@ -1597,7 +1392,8 @@ export async function apply(ctx) {
     },
   })
 
-  ctx.effect(() => () => {
+  ctx.effect(() => async () => {
+    await hostGateway.close()
     for (const dispose of [guardProbeDisposer, sessionProbeDisposer, forkGuardDisposer, reloadDisposer]) {
       try {
         dispose()

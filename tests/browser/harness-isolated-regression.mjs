@@ -13,7 +13,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const output = path.join(here, 'harness-fixture-runtime/results', new Date().toISOString().replace(/[:.]/g, '-'))
 await mkdir(output, { recursive: true })
 const report = { fixture: 'real Core + real index.js bridge + real client.js + React 18', fullHost: false,
-  exclusions: ['DSH authentication/login', 'DSH router and sidebar composition', 'live model/cloud dispatch', 'native desktop shell'],
+  exclusions: ['DSH authentication/login', 'DSH router and sidebar composition', 'live model dispatch', 'native desktop shell'],
   cases: [], navigation: [], pageErrors: [], unexpectedNetwork: [] }
 let browser, fixture, page
 const check = async (name, run) => {
@@ -58,19 +58,29 @@ const postModel = config => page.evaluate(async config => {
   if (!response.ok || !body.ok) throw new Error(body.error?.message ?? 'model update failed')
   return body.result
 }, config)
-// Acts as a second settings surface: read current editable config, mutate, save through the real API.
+// A second isolated settings surface saves direct v2 config, never a copied endpoint/role wrapper.
 const saveModelFromOutside = async mutate => {
-  const editable = structuredClone((await getModel()).config.editable)
-  mutate(editable)
-  return postModel(editable)
+  const config = structuredClone((await getModel()).config)
+  mutate(config)
+  return postModel(config)
 }
-const setAdvanced = async open => {
-  const details = page.getByTestId('ai-advanced')
+const setAdvanced = async (testId, open) => {
+  const details = page.getByTestId(testId)
   if (((await details.getAttribute('open')) !== null) !== open) await details.locator('summary').click()
 }
 const fieldInputValueEventually = (label, value) => page.waitForFunction(({ label, value }) =>
   [...document.querySelectorAll('label')].some(element =>
     element.textContent.includes(label) && element.querySelector('input')?.value === value), { label, value })
+const dshSelection = (provider, model) => JSON.stringify({ provider, model })
+const saveModelInUI = async () => {
+  const pending = page.waitForResponse(response => response.url().endsWith('/zodo-bridge/v1/model') && response.request().method() === 'POST')
+  await page.getByTestId('model-save').click()
+  const response = await pending
+  assert.equal(response.status(), 200)
+  const body = await response.json()
+  assert.equal(body.ok, true)
+  return body.result
+}
 const nav = async id => { await page.getByTestId('nav-' + id).click(); await page.locator('main h1').first().waitFor() }
 const screenshot = name => page.screenshot({ path: path.join(output, name + '.png'), fullPage: true })
 
@@ -173,7 +183,7 @@ try {
     await screenshot('converted-goal-project')
   })
 
-  let taskId, notesBaseline
+  let taskId
   await check('Task create validation, keyboard Escape and focus restore', async () => {
     await nav('tasks')
     const open = page.getByRole('button', { name: '新建任务', exact: true })
@@ -376,248 +386,215 @@ try {
     await screenshot('data-backup')
   })
 
-  await check('Harness catalog compatible fill is draft-only', async () => {
+  await check('Harness subscription catalog selection is draft-only without endpoint or key copying', async () => {
     await nav('models')
-    // The host catalog section and endpoint fields live behind the collapsed advanced details now;
-    // the plain page keeps only the mode radios and the local model id field.
-    await setAdvanced(true)
-    const section = page.getByTestId('harness-models')
-    await section.getByText('Fixture deterministic model', { exact: false }).first().waitFor()
-    const fills = page.locator('[data-testid^="harness-model-use-"]')
-    assert.equal(await fills.first().isEnabled(), true)
-    const beforeConfig = (await getModel()).config
-    assert.equal(beforeConfig.local.model, 'fixture-initial-model')
-    await fills.first().click()
-    assert.equal(await page.getByLabel('本地 OpenAI 兼容端点', { exact: true }).inputValue(), 'http://127.0.0.1:9/v1')
-    assert.equal(await page.getByLabel('本地模型 ID', { exact: true }).inputValue(), 'fixture-model')
-    const afterConfig = (await getModel()).config
-    assert.deepEqual(afterConfig, beforeConfig, 'filling draft must not save model configuration')
-    await screenshot('models')
-    // The fill is only a draft: discarding restores the server configuration for later cases.
-    await page.getByTestId('ai-discard-connection').click()
-    await fieldInputValueEventually('本地模型 ID', 'fixture-initial-model')
+    const before = await getModel()
+    assert.deepEqual(before.config, { version: 2, source: { kind: 'dsh', provider: null, model: null } })
+    const catalog = await page.evaluate(async () => await (await fetch('/zodo-bridge/v1/harness/models')).json())
+    assert.equal(catalog.schema, 'zodo.harness-model-catalog/1')
+    assert.equal('default_route' in catalog, false, 'catalog never inherits the chat model')
+    const group = catalog.groups.find(row => row.provider === 'fixture-subscription')
+    assert.equal(group.supported, true)
+    assert.equal(group.models.find(row => row.id === 'fixture-subscribed-model').supported, true)
+    assert.doesNotMatch(JSON.stringify(group), /base_url|baseURL|api_key_env|endpoint/)
+    const select = page.getByTestId('model-dsh-select')
+    const value = dshSelection('fixture-subscription', 'fixture-subscribed-model')
+    await select.locator('option').filter({ hasText: 'Fixture subscription model' }).waitFor({ state: 'attached' })
+    assert.equal(await select.locator('option').filter({ hasText: 'Fixture subscription model' }).isEnabled(), true)
+    await select.selectOption(value)
+    assert.deepEqual((await getModel()).config, before.config, 'selecting a source/model does not save')
+    assert.equal(await page.getByLabel('API 地址', { exact: true }).count(), 0)
+    assert.equal(await page.getByLabel('密钥环境变量名（可选）', { exact: true }).count(), 0)
+    await screenshot('models-subscription-draft')
+    await page.getByTestId('model-discard').click()
+    await page.waitForFunction(() => document.querySelector('[data-testid="model-dsh-select"]').value === '')
   })
 
   await check('Catalog failure has usable retry and recovery', async () => {
     await nav('models')
-    await setAdvanced(true)
     await page.route('**/zodo-bridge/v1/harness/models', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false, error: { code: 'FIXTURE_CATALOG_DOWN', message: 'Fixture catalog temporarily unavailable' } }) }))
-    await page.getByTestId('harness-models-refresh').click()
-    await page.getByTestId('harness-models-retry').waitFor()
-    await screenshot('catalog-error')
-    await page.unroute('**/zodo-bridge/v1/harness/models')
-    await page.getByTestId('harness-models-retry').click()
-    await page.getByTestId('harness-models-retry').waitFor({ state: 'hidden' })
-    await page.getByTestId('harness-models-refresh').waitFor()
-  })
-
-  await check('Dual-mode defaults: shared surface, no data-level dropdown, advanced collapsed', async () => {
-    await nav('models')
-    await setAdvanced(false)
-    const model = await getModel()
-    assert.equal(model.effective.mode, 'local_only')
-    assert.equal(model.effective.connection_tested, false, 'status is preflight only, never a connection success')
-    assert.equal(model.effective.workspace.route, 'device')
-    assert.equal(model.effective.workspace.reason, 'local_only')
-    assert.equal(model.effective.device_only.route, 'device')
-    assert.equal(model.effective.device_only.reason, 'local_only', 'local_only policy reports local_only even for device-only content')
-    assert.equal(model.effective.roles.decompose.reason, 'local_only')
-    assert.equal(model.config.cloud, null, 'fixture starts without cloud configuration')
-    assert.equal(await page.getByTestId('ai-mode-local_only').isChecked(), true)
-    assert.equal(await page.getByTestId('ai-mode-cloud_assisted').isChecked(), false)
-    assert.equal(await page.getByTestId('ai-advanced').getAttribute('open'), null, 'advanced defaults to collapsed')
-    assert.equal(await page.getByTestId('harness-models').isVisible(), false, 'host catalog is behind advanced')
-    assert.equal(await page.locator('main select:visible').count(), 0, 'normal page shows no visible dropdown (role selects stay hidden in advanced)')
-    assert.equal(await page.locator('main option[value="device_only"], main option[value="trusted_workspace"], main option[value="cloud_allowed"]').count(), 0,
-      'the old data-level dropdown must not reappear anywhere on this surface')
-    assert.equal(await page.getByTestId('ai-saved-mode').innerText(), '已保存：仅本地')
-    const status = page.getByTestId('ai-effective-status')
-    await status.getByText('仅本地模式，不会回退云端', { exact: false }).first().waitFor()
-    await page.getByLabel('本地模型 ID', { exact: true }).waitFor()
-    await nav('privacy')
-    assert.equal(await page.locator('main h1').first().innerText(), '模型与隐私')
-    assert.equal(await page.getByTestId('ai-mode-local_only').isChecked(), true, 'privacy entry renders the same shared surface')
-    assert.equal(await page.getByTestId('ai-advanced').getAttribute('open'), null)
-    await screenshot('models-dual-mode-default')
-  })
-
-  await check('Cloud-assisted requires saved connection then explicit one-time consent', async () => {
-    await nav('models')
-    // Fixture-only setup: one device-classified note so later cases prove mode saves never rewrite content levels.
-    const note = await command('note.create', { note: { title: 'Fixture protected note',
-      body: 'Note body that must stay device-classified regardless of the saved AI mode.',
-      data_class: 'device_only', linked_tasks: [], linked_goals: [] } })
-    assert.equal(note.status, 'committed')
-    notesBaseline = (await snapshot()).notes.map(row => ({ id: row.id, data_class: row.data_class }))
-    assert.ok(notesBaseline.some(row => row.data_class === 'device_only'), 'baseline includes the device-only note')
-    // Setup bypassed the React writer; reload its workspace revision before testing UI writes.
-    await page.reload({ waitUntil: 'domcontentloaded' })
-    await connected()
-    await nav('models')
-    const before = (await snapshot()).workspace
-    const commands = []
-    const onRequest = request => {
-      if (!request.url().endsWith('/zodo-bridge/v1/rpc') || request.method() !== 'POST') return
-      try { const body = request.postDataJSON(); if (body?.kind === 'command') commands.push(body.envelope?.operation ?? '?') } catch {}
-    }
-    page.on('request', onRequest)
     try {
-      await page.getByTestId('ai-mode-cloud_assisted').click()
-      await page.getByTestId('ai-add-cloud').click()
-      await page.getByLabel('云端模型 ID', { exact: true }).waitFor()
-      assert.equal(await page.getByLabel('云端模型 ID', { exact: true }).inputValue(), 'deepseek-chat')
-      assert.deepEqual(commands, [], 'switching mode or adding a cloud draft must not send commands early')
-      assert.equal(await page.getByTestId('ai-cloud-consent').isVisible(), true)
-      await page.getByTestId('ai-effective-status').getByText('本地 · ', { exact: false }).first().waitFor()
-      assert.equal(await page.getByTestId('ai-mode-save').isDisabled(), true, 'first cloud_assisted save stays disabled until consent is checked')
-      await page.getByTestId('ai-cloud-consent').check()
-      await page.getByTestId('ai-mode-save').click()
-      await page.getByText('请先保存连接，再确认云端辅助。', { exact: true }).waitFor()
-      assert.deepEqual(commands, [], 'the client-side guard rejects before any command leaves the browser')
-      assert.equal((await snapshot()).workspace.policy.model_route, before.policy.model_route)
-      const connectionSave = page.waitForResponse(response => response.url().endsWith('/zodo-bridge/v1/model') && response.request().method() === 'POST')
-      await page.getByTestId('model-save').click()
-      assert.equal((await connectionSave).status(), 200)
-      await page.getByTestId('zodo-toast').filter({ hasText: '连接已保存；使用模式未改变。' }).waitFor()
-      assert.deepEqual(commands, [], 'saving a connection is not a policy command')
-      assert.equal(await page.getByTestId('ai-cloud-consent').isChecked(), false, 'a connection save resets the consent checkbox')
-      const connectionState = (await snapshot()).workspace
-      assert.equal(connectionState.policy.model_route, 'local_only', 'connection save cannot change policy')
-      assert.equal(connectionState.policy_revision, before.policy_revision)
-      let model = await getModel()
-      assert.equal(model.config.cloud.id, 'deepseek-cloud')
-      assert.equal(model.config.cloud.enabled, true)
-      assert.equal(model.config.cloud.credential_present, false, 'fixture environment deliberately lacks the cloud key')
-      await page.getByTestId('ai-credential-cloud').getByText('DEEPSEEK_API_KEY').waitFor()
-      // Consent resets after a connection save; the first authorizing save still requires an opt-in.
-      await page.getByTestId('ai-cloud-consent').check()
-      const modeSave = page.waitForResponse(response => response.url().endsWith('/zodo-bridge/v1/rpc') && (response.request().postData() ?? '').includes('workspace.update'))
-      await page.getByTestId('ai-mode-save').click()
-      assert.equal((await modeSave).status(), 200)
-      await page.getByTestId('zodo-toast').filter({ hasText: '使用模式已保存' }).waitFor()
-    } finally { page.off('request', onRequest) }
-    assert.deepEqual(commands, ['workspace.update'], 'exactly one mode-save command for the whole flow')
-    const afterState = await snapshot()
-    const after = afterState.workspace
-    assert.equal(after.policy.model_route, 'cloud_assisted')
-    assert.equal('private_notes' in after.policy, false, 'current policy schema carries no private_notes field')
-    assert.deepEqual(afterState.notes.map(row => ({ id: row.id, data_class: row.data_class })), notesBaseline,
-      'authorizing cloud assistance must not rewrite note content levels')
-    assert.deepEqual(after.policy.allowed_cloud_providers, ['deepseek-cloud'], 'new consent binds one explicit provider id, no wildcard')
-    assert.equal(after.policy.diagnostic_capture, false)
-    assert.equal(after.policy_revision, before.policy_revision + 1)
-    assert.equal(await page.getByTestId('ai-saved-mode').innerText(), '已保存：允许云端辅助')
-    await page.waitForFunction(() => document.querySelectorAll('[data-testid="ai-cloud-consent"]').length === 0,
-      undefined, { timeout: 8000 })
-    const modelAfter = await getModel()
-    assert.equal(modelAfter.effective.mode, 'cloud_assisted')
-    assert.equal(modelAfter.effective.connection_tested, false)
-    assert.equal(modelAfter.effective.workspace.route, 'device')
-    assert.equal(modelAfter.effective.workspace.reason, 'cloud_credentials_missing', 'missing key keeps requests local')
-    assert.equal(modelAfter.effective.device_only.route, 'device')
-    assert.equal(modelAfter.effective.device_only.reason, 'device_only')
-    await page.getByTestId('ai-effective-status').getByText('云端缺少凭据，安全使用本地', { exact: false }).first().waitFor()
-    await page.getByTestId('ai-effective-status').getByText('禁止外发的内容只在本地处理', { exact: false }).first().waitFor()
-    const runs = await page.evaluate(async () => (await (await fetch('/zodo-bridge/v1/runs')).json()).result.runs)
-    assert.equal(runs.length, 0, 'settings never dispatch a model request (real run list stays empty)')
-    await screenshot('models-cloud-assisted-consent')
+      await page.getByTestId('model-refresh').click()
+      await page.getByTestId('model-catalog-error').waitFor()
+      await page.getByText('Fixture catalog temporarily unavailable', { exact: false }).first().waitFor()
+      assert.equal(await page.getByTestId('model-refresh').isEnabled(), true)
+      assert.deepEqual((await getModel()).config.source, { kind: 'dsh', provider: null, model: null })
+      await screenshot('catalog-error')
+    } finally { await page.unroute('**/zodo-bridge/v1/harness/models') }
+    await page.getByTestId('model-refresh').click()
+    await page.getByTestId('model-catalog-error').waitFor({ state: 'hidden' })
+    await page.getByTestId('model-dsh-select').locator('option').filter({ hasText: 'Fixture subscription model' }).waitFor({ state: 'attached' })
   })
 
-  await check('Mode save failure surfaces error without success; local-only restores', async () => {
+  await check('Independent settings defaults: DSH unselected, privacy deny-all, preflight only', async () => {
     await nav('models')
+    assert.equal(await page.locator('main h1').first().innerText(), '模型')
+    assert.equal(await page.getByTestId('model-source-dsh').isChecked(), true)
+    assert.equal(await page.getByTestId('model-source-custom').isChecked(), false)
+    assert.equal(await page.getByTestId('model-dsh-select').inputValue(), '')
+    assert.equal(await page.locator('main input[type="radio"]').count(), 2, 'only DSH/custom sources')
+    assert.equal(await page.getByTestId('privacy-save').count(), 0)
+    const model = await getModel()
+    assert.equal(model.schema, 'zodo.model/1')
+    assert.equal(model.effective.status, 'preflight')
+    assert.equal(model.effective.connection_tested, false)
+    assert.equal(model.effective.selected.source, 'dsh')
+    assert.equal(model.effective.selected.provider, null)
+    assert.equal(model.effective.selected.model, null)
+    assert.equal(model.effective.selected.available, false)
+    assert.ok(model.effective.selected.reason)
+    for (const operation of ['decompose', 'clarify']) {
+      assert.equal(model.effective.operations[operation].available, false)
+      assert.ok(model.effective.operations[operation].reason)
+    }
+    await page.getByTestId('model-effective-status').waitFor()
+    await nav('privacy')
+    assert.equal(await page.locator('main h1').first().innerText(), '隐私')
+    for (const id of ['goals', 'projects', 'captures']) assert.equal(await page.getByTestId('privacy-' + id).isChecked(), false)
+    assert.equal(await page.getByTestId('privacy-advanced').getAttribute('open'), null)
+    assert.equal(await page.getByTestId('model-save').count(), 0, 'privacy is not another ModelsView entry')
+    assert.equal(await page.getByTestId('model-source-dsh').count(), 0)
+    assert.deepEqual((await snapshot()).workspace.policy, {
+      model_access: { goals: false, projects: false, captures: false }, diagnostic_capture: false,
+    })
+    assert.equal(fixture.llmCalls.defaultSelections, 0)
+    await screenshot('privacy-default')
+  })
+
+  await check('DSH subscription and custom model saves change no privacy or content state', async () => {
+    await nav('models')
+    const baseline = await snapshot()
+    await page.getByTestId('model-dsh-select').selectOption(dshSelection('fixture-subscription', 'fixture-subscribed-model'))
+    const subscribed = await saveModelInUI()
+    assert.equal(subscribed.schema, 'zodo.model/1')
+    assert.deepEqual(subscribed.config, { version: 2, source: { kind: 'dsh', provider: 'fixture-subscription', model: 'fixture-subscribed-model' } })
+    await page.getByTestId('model-source-custom').click()
+    await page.getByLabel('API 地址', { exact: true }).fill('http://127.0.0.1:9/v1')
+    await page.getByLabel('模型 ID', { exact: true }).fill('fixture-custom-model')
+    await setAdvanced('model-advanced', true)
+    await page.getByLabel('密钥环境变量名（可选）', { exact: true }).fill('')
+    assert.deepEqual((await getModel()).config, subscribed.config, 'custom fields remain a draft before save')
+    const custom = await saveModelInUI()
+    assert.deepEqual(custom.config, { version: 2, source: { kind: 'custom', base_url: 'http://127.0.0.1:9/v1', model: 'fixture-custom-model', api_key_env: null } })
+    const after = await snapshot()
+    assert.deepEqual(after.workspace.policy, baseline.workspace.policy)
+    assert.equal(after.workspace.policy_revision, baseline.workspace.policy_revision)
+    assert.deepEqual(after.notes, baseline.notes, 'model settings cannot reclassify notes')
+    assert.equal(fixture.llmCalls.streams.length, 0, 'saving a model never dispatches it')
+    await screenshot('models-custom-saved')
+  })
+
+  await check('Privacy independent booleans: failed save leaves state, retry saves without model changes', async () => {
+    const modelBefore = (await getModel()).config
+    await nav('privacy')
+    const before = (await snapshot()).workspace
+    await page.getByTestId('privacy-goals').check()
+    await page.getByTestId('privacy-captures').check()
+    assert.equal(await page.getByTestId('privacy-projects').isChecked(), false)
+    await setAdvanced('privacy-advanced', true)
+    await page.getByTestId('privacy-diagnostics').check()
+    assert.deepEqual((await snapshot()).workspace.policy, before.policy, 'privacy edits are draft-only')
     await page.getByTestId('zodo-toast').waitFor({ state: 'hidden', timeout: 6000 })
-    await page.getByTestId('ai-mode-local_only').click()
     await page.route('**/zodo-bridge/v1/rpc', route => {
-      const data = route.request().postData() ?? ''
-      if (data.includes('workspace.update')) {
-        return route.fulfill({ status: 502, contentType: 'application/json',
-          body: JSON.stringify({ ok: false, error: { code: 'FIXTURE_MODE_SAVE_FAILED', message: 'fixture injected mode save failure' } }) })
-      }
+      if ((route.request().postData() ?? '').includes('workspace.update')) return route.fulfill({ status: 502, contentType: 'application/json',
+        body: JSON.stringify({ ok: false, error: { code: 'FIXTURE_PRIVACY_SAVE_FAILED', message: 'fixture injected privacy save failure' } }) })
       return route.continue()
     })
     try {
-      await page.getByTestId('ai-mode-save').click()
-      await page.getByText('fixture injected mode save failure', { exact: false }).first().waitFor()
-      assert.equal(await page.getByTestId('zodo-toast').count(), 0, 'a failed save must not show a success notice')
-      assert.equal((await snapshot()).workspace.policy.model_route, 'cloud_assisted', 'a failed save must not change policy')
-      assert.equal(await page.getByTestId('ai-saved-mode').innerText(), '已保存：允许云端辅助')
+      await page.getByTestId('privacy-save').click()
+      await page.getByText('fixture injected privacy save failure', { exact: false }).first().waitFor()
+      assert.equal(await page.getByTestId('zodo-toast').count(), 0, 'failed save is not success')
+      assert.deepEqual((await snapshot()).workspace.policy, before.policy)
     } finally { await page.unroute('**/zodo-bridge/v1/rpc') }
-    await page.getByTestId('ai-mode-save').click()
-    await page.getByTestId('zodo-toast').filter({ hasText: '使用模式已保存' }).waitFor()
-    const restoredState = await snapshot()
-    const restored = restoredState.workspace
-    assert.equal(restored.policy.model_route, 'local_only')
-    assert.equal('private_notes' in restored.policy, false, 'current policy schema carries no private_notes field')
-    assert.deepEqual(restoredState.notes.map(row => ({ id: row.id, data_class: row.data_class })), notesBaseline,
-      'returning to local-only keeps note content levels untouched')
-    assert.deepEqual(restored.policy.allowed_cloud_providers, ['deepseek-cloud'], 'returning to local-only keeps the explicit authorization list intact')
-    assert.equal(await page.getByTestId('ai-saved-mode').innerText(), '已保存：仅本地')
-    await screenshot('models-local-only-restored')
+    const saved = page.waitForResponse(response => response.url().endsWith('/zodo-bridge/v1/rpc') && (response.request().postData() ?? '').includes('workspace.update'))
+    await page.getByTestId('privacy-save').click()
+    assert.equal((await saved).status(), 200)
+    await page.getByTestId('privacy-status').getByText('隐私设置已保存；模型选择未改变。', { exact: true }).waitFor()
+    assert.deepEqual((await snapshot()).workspace.policy, {
+      model_access: { goals: true, projects: false, captures: true }, diagnostic_capture: true,
+    })
+    // Change two context permissions without a global mode or touching the third one.
+    await page.getByTestId('privacy-projects').check()
+    await page.getByTestId('privacy-captures').uncheck()
+    const secondSave = page.waitForResponse(response => response.url().endsWith('/zodo-bridge/v1/rpc') && (response.request().postData() ?? '').includes('workspace.update'))
+    await page.getByTestId('privacy-save').click()
+    assert.equal((await secondSave).status(), 200)
+    await page.getByTestId('privacy-status').getByText('隐私设置已保存；模型选择未改变。', { exact: true }).waitFor()
+    assert.deepEqual((await snapshot()).workspace.policy, {
+      model_access: { goals: true, projects: true, captures: false }, diagnostic_capture: true,
+    })
+    assert.deepEqual((await getModel()).config, modelBefore, 'privacy cannot replace the chosen model')
+    assert.equal(fixture.llmCalls.streams.length, 0)
+    await screenshot('privacy-independent-saved')
   })
 
-  await check('Mode and connection persist across navigation and reload', async () => {
-    await nav('privacy')
-    assert.equal(await page.getByTestId('ai-mode-local_only').isChecked(), true)
-    assert.equal(await page.getByTestId('ai-saved-mode').innerText(), '已保存：仅本地')
+  await check('Source and privacy persist separately across navigation and reload', async () => {
+    const modelBefore = (await getModel()).config
+    const policyBefore = (await snapshot()).workspace.policy
     await nav('models')
-    assert.equal(await page.getByTestId('ai-mode-local_only').isChecked(), true)
+    await fieldInputValueEventually('模型 ID', 'fixture-custom-model')
+    assert.equal(await page.getByTestId('model-source-custom').isChecked(), true)
+    assert.equal(await page.getByLabel('模型 ID', { exact: true }).inputValue(), 'fixture-custom-model')
+    await nav('privacy')
+    assert.equal(await page.getByTestId('privacy-goals').isChecked(), true)
+    assert.equal(await page.getByTestId('privacy-captures').isChecked(), false)
     await page.reload({ waitUntil: 'domcontentloaded' }); await connected()
     await nav('models')
-    await page.getByTestId('ai-saved-mode').getByText('已保存：仅本地').waitFor()
-    assert.equal(await page.getByTestId('ai-mode-local_only').isChecked(), true, 'saved mode survives reload')
-    const model = await getModel()
-    assert.equal(model.config.cloud.id, 'deepseek-cloud', 'saved connection survives reload')
-    assert.equal(model.effective.mode, 'local_only')
-    assert.equal(model.effective.workspace.reason, 'local_only')
+    await fieldInputValueEventually('模型 ID', 'fixture-custom-model')
+    assert.equal(await page.getByTestId('model-source-custom').isChecked(), true)
+    await nav('privacy')
+    assert.equal(await page.getByTestId('privacy-projects').isChecked(), true)
+    assert.deepEqual((await getModel()).config, modelBefore)
+    assert.deepEqual((await snapshot()).workspace.policy, policyBefore)
   })
 
-  await check('Removed legacy policy surfaces are rejected without touching saved policy', async () => {
-    // Negative submissions through the fixture-only command helper: Core's deny_unknown_fields contract
-    // must reject the removed surfaces outright, never migrate or silently accept them.
+  await check('Legacy config and global privacy schemas are rejected without writes', async () => {
+    const modelBefore = (await getModel()).config
     const before = (await snapshot()).workspace
-    await assert.rejects(() => command('workspace.update', { settings: null, policy: {
-      model_route: 'local_only', private_notes: 'device_only', allowed_cloud_providers: [], diagnostic_capture: false } }),
-      /private_notes/, 'the removed private_notes field must be rejected as an unknown field')
-    await assert.rejects(() => command('workspace.update', { settings: null, policy: {
-      model_route: 'cloud_allowed', allowed_cloud_providers: [], diagnostic_capture: false } }),
-      /cloud_allowed/, 'the removed cloud_allowed model_route must be rejected as an unknown variant')
+    const invalidConfigs = [
+      { version: 1, local: null, cloud: null },
+      { ...modelBefore, roles: { decompose: 'auto' } },
+      { ...modelBefore, local: null, cloud: null },
+      { editable: modelBefore },
+      { version: 2, source: { ...modelBefore.source, api_key: 'fixture-not-a-real-key' } },
+    ]
+    for (const config of invalidConfigs) await assert.rejects(() => postModel(config), /./)
+    const invalidPolicies = [
+      { model_route: 'local_only', allowed_cloud_providers: [], diagnostic_capture: false },
+      { model_route: 'cloud_assisted', allowed_cloud_providers: ['fixture-subscription'], diagnostic_capture: false },
+      { model_route: 'cloud_allowed', private_notes: 'device_only', diagnostic_capture: false },
+      { ...before.policy, private_notes: 'device_only' },
+      { ...before.policy, allowed_cloud_providers: [] },
+      { ...before.policy, model_access: { ...before.policy.model_access, notes: true } },
+    ]
+    for (const policy of invalidPolicies) await assert.rejects(() => command('workspace.update', { settings: null, policy }), /./)
     const after = (await snapshot()).workspace
-    assert.equal('private_notes' in after.policy, false, 'rejections cannot reintroduce removed fields')
-    assert.deepEqual(after.policy, before.policy, 'rejected legacy submissions never modify the real policy')
-    assert.equal(after.policy_revision, before.policy_revision, 'no policy revision advances on rejection')
-    await nav('models')
-    assert.equal(await page.getByTestId('ai-mode-local_only').isChecked(), true, 'surface keeps the saved local-only mode')
-    assert.equal(await page.getByTestId('ai-saved-mode').innerText(), '已保存：仅本地')
-    await screenshot('models-legacy-rejected')
+    assert.deepEqual((await getModel()).config, modelBefore)
+    assert.deepEqual(after.policy, before.policy)
+    assert.equal(after.policy_revision, before.policy_revision)
+    await screenshot('settings-legacy-rejected')
   })
 
-  await check('Cross-window connection save: clean refresh syncs draft before editing', async () => {
+  await check('Cross-window source save: clean refresh syncs direct config before editing', async () => {
     await nav('models')
-    assert.equal((await getModel()).config.cloud?.id, 'deepseek-cloud', 'cloud connection precondition from the consent case')
-    // A second surface saves config B (local model id plus an unrelated cloud field).
-    const outside = await saveModelFromOutside(editable => {
-      editable.local.model = 'fixture-model-B'
-      editable.cloud.model = 'deepseek-B'
+    const outside = await saveModelFromOutside(config => {
+      config.source.model = 'fixture-model-B'
+      config.source.api_key_env = 'ZODO_FIXTURE_NO_KEY'
     })
-    assert.equal(outside.config.local.model, 'fixture-model-B')
-    // Clean refresh must adopt B before any local editing continues.
-    await page.getByTestId('ai-settings-refresh').click()
-    await fieldInputValueEventually('本地模型 ID', 'fixture-model-B')
-    await page.getByLabel('本地模型 ID', { exact: true }).fill('fixture-model-C')
-    const connectionSave = page.waitForResponse(response => response.url().endsWith('/zodo-bridge/v1/model') && response.request().method() === 'POST')
-    await page.getByTestId('model-save').click()
-    assert.equal((await connectionSave).status(), 200)
-    await page.getByTestId('zodo-toast').filter({ hasText: '连接已保存；使用模式未改变。' }).waitFor()
-    const model = await getModel()
-    assert.equal(model.config.local.model, 'fixture-model-C', 'the local edit is saved on top of B')
-    assert.equal(model.config.cloud.model, 'deepseek-B', 'saving a local edit must not roll back B’s other fields')
+    assert.equal(outside.config.source.model, 'fixture-model-B')
+    await page.getByTestId('model-refresh').click()
+    await fieldInputValueEventually('模型 ID', 'fixture-model-B')
+    await page.getByLabel('模型 ID', { exact: true }).fill('fixture-model-C')
+    const saved = await saveModelInUI()
+    assert.equal(saved.config.source.model, 'fixture-model-C')
+    assert.equal(saved.config.source.api_key_env, 'ZODO_FIXTURE_NO_KEY', 'refresh prevents rollback of an unrelated outside edit')
   })
 
-  await check('Stale dirty draft: save re-checks baseline, refuses overwrite, discard reloads', async () => {
+  await check('Stale source draft refuses POST, keeps draft, and discard reloads authoritative config', async () => {
     await nav('models')
-    await fieldInputValueEventually('本地模型 ID', 'fixture-model-C')
-    await page.getByLabel('本地模型 ID', { exact: true }).fill('fixture-model-D-draft')
-    await saveModelFromOutside(editable => { editable.local.model = 'fixture-model-external-D' })
+    await fieldInputValueEventually('模型 ID', 'fixture-model-C')
+    await page.getByLabel('模型 ID', { exact: true }).fill('fixture-model-D-draft')
+    await saveModelFromOutside(config => { config.source.model = 'fixture-model-external-D' })
     const seen = { get: 0, post: 0 }
     const onModelRequest = request => {
       if (!request.url().endsWith('/zodo-bridge/v1/model')) return
@@ -626,42 +603,36 @@ try {
     page.on('request', onModelRequest)
     try {
       await page.getByTestId('model-save').click()
-      await page.getByTestId('ai-connection-stale').waitFor()
-      await page.getByText('连接已在其他界面更新。', { exact: false }).first().waitFor()
+      await page.getByTestId('model-stale').waitFor()
     } finally { page.off('request', onModelRequest) }
-    assert.equal(seen.post, 0, 'a stale draft must never POST')
-    assert.ok(seen.get >= 1, 'the save button re-checks the server baseline via GET')
-    assert.equal(await page.getByLabel('本地模型 ID', { exact: true }).inputValue(), 'fixture-model-D-draft', 'the draft is preserved, not overwritten')
-    assert.equal(await page.getByTestId('model-save').isDisabled(), true, 'stale draft disables the save button')
-    assert.equal((await getModel()).config.local.model, 'fixture-model-external-D', 'the outside update stays authoritative')
-    await page.getByTestId('ai-discard-connection').click()
-    await fieldInputValueEventually('本地模型 ID', 'fixture-model-external-D')
-    await page.waitForFunction(() => document.querySelectorAll('[data-testid="ai-connection-stale"]').length === 0)
-    assert.equal(await page.getByTestId('model-save').isDisabled(), true, 'after discard there is nothing dirty to save')
+    assert.equal(seen.post, 0)
+    assert.ok(seen.get >= 1, 'save re-checks the server baseline')
+    assert.equal(await page.getByLabel('模型 ID', { exact: true }).inputValue(), 'fixture-model-D-draft')
+    assert.equal(await page.getByTestId('model-save').isDisabled(), true)
+    assert.equal((await getModel()).config.source.model, 'fixture-model-external-D')
+    await page.getByTestId('model-discard').click()
+    await fieldInputValueEventually('模型 ID', 'fixture-model-external-D')
+    await page.getByTestId('model-stale').waitFor({ state: 'hidden' })
+    assert.equal(await page.getByTestId('model-save').isDisabled(), true)
     await screenshot('models-stale-discarded')
   })
 
-  await check('Advanced section: keyboard toggling and narrow viewport stay contained', async () => {
+  await check('Independent advanced sections toggle by keyboard and fit narrow viewport', async () => {
     await nav('models')
-    await setAdvanced(false)
-    assert.equal(await page.getByTestId('ai-advanced').getAttribute('open'), null)
-    const summary = page.getByTestId('ai-advanced').locator('summary')
-    await summary.focus()
-    await page.keyboard.press('Enter')
-    await page.waitForFunction(() => document.querySelector('[data-testid="ai-advanced"]').open === true)
-    assert.equal(await page.getByLabel('本地 OpenAI 兼容端点', { exact: true }).inputValue(), 'http://127.0.0.1:9/v1')
-    assert.equal(await page.getByLabel('本地凭据环境变量名', { exact: true }).inputValue(), 'ZODO_FIXTURE_NO_KEY')
-    assert.equal(await page.getByLabel('目标拆解路由', { exact: true }).count() + await page.getByLabel('收集澄清路由', { exact: true }).count(), 2)
-    assert.equal(await page.getByTestId('ai-diagnostics').isChecked(), false)
-    await page.getByText('诊断与授权信息', { exact: false }).first().waitFor()
-    await page.getByText('已授权提供方：deepseek-cloud', { exact: false }).first().waitFor()
-    await page.keyboard.press('Enter')
-    await page.waitForFunction(() => document.querySelector('[data-testid="ai-advanced"]').open === false)
-    await setAdvanced(true)
+    await setAdvanced('model-advanced', false)
+    const summary = page.getByTestId('model-advanced').locator('summary')
+    await summary.focus(); await page.keyboard.press('Enter')
+    await page.waitForFunction(() => document.querySelector('[data-testid="model-advanced"]').open === true)
+    assert.equal(await page.getByLabel('密钥环境变量名（可选）', { exact: true }).inputValue(), 'ZODO_FIXTURE_NO_KEY')
+    assert.equal(await page.locator('main input[type="password"]').count(), 0, 'there is no manual secret input')
     await page.setViewportSize({ width: 390, height: 844 })
-    const dimensions = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth }))
-    assert.ok(dimensions.scroll <= dimensions.width + 1, 'advanced open must not overflow narrow screens: ' + JSON.stringify(dimensions))
-    await screenshot('models-advanced-narrow')
+    for (const id of ['models', 'privacy']) {
+      await nav(id)
+      await setAdvanced(id === 'models' ? 'model-advanced' : 'privacy-advanced', true)
+      const dimensions = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth }))
+      assert.ok(dimensions.scroll <= dimensions.width + 1, id + ' advanced overflow: ' + JSON.stringify(dimensions))
+      await screenshot(id + '-advanced-narrow')
+    }
     await page.setViewportSize({ width: 1440, height: 1000 })
   })
 
@@ -721,6 +692,8 @@ try {
   await check('No client JavaScript errors or external network', async () => {
     assert.deepEqual(report.pageErrors, [])
     assert.deepEqual(report.unexpectedNetwork, [])
+    assert.equal(fixture.llmCalls.streams.length, 0, 'settings/navigation never dispatch mock or paid model calls')
+    assert.equal(fixture.llmCalls.defaultSelections, 0, 'the current chat selection is never read')
   })
 } finally {
   await browser?.close()

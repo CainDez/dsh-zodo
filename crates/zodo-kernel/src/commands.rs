@@ -525,7 +525,7 @@ pub struct BusyEvent {
 impl CommandPayload {
     pub fn validate(&self) -> Result<()> {
         match self {
-            Self::WorkspaceUpdate { settings, policy } => {
+            Self::WorkspaceUpdate { settings, .. } => {
                 if let Some(settings) = settings {
                     if settings.work_windows.len() > 64 {
                         return Err(ZodoError::validation("at most 64 work windows are allowed"));
@@ -540,11 +540,6 @@ impl CommandPayload {
                     }
                     if settings.timezone.parse::<chrono_tz::Tz>().is_err() {
                         return Err(ZodoError::validation("timezone must be an IANA zone"));
-                    }
-                }
-                if let Some(policy) = policy {
-                    if policy.allowed_cloud_providers.len() > 16 {
-                        return Err(ZodoError::validation("too many cloud providers"));
                     }
                 }
                 Ok(())

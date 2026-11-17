@@ -97,10 +97,7 @@ impl<'a> Application<'a> {
                     world.workspace.settings = settings;
                 }
                 if let Some(policy) = policy {
-                    if policy.allowed_cloud_providers
-                        != world.workspace.policy.allowed_cloud_providers
-                        || policy.model_route != world.workspace.policy.model_route
-                    {
+                    if policy != world.workspace.policy {
                         world.workspace.policy_revision =
                             world.workspace.policy_revision.saturating_add(1);
                     }

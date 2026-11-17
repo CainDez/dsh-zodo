@@ -1,46 +1,44 @@
-# Core + DSH 插件测试报告
+# 当前测试报告
 
-日期：2026-11-17（Asia/Shanghai）。本轮清理开发期旧版本兼容，并将双模式实现作为当前唯一契约。历史结果另见 [2026-11-07 归档](<archive/TEST_REPORT_20261107.md>)，不作为本轮证据。
+日期：2026-11-17（Asia/Shanghai）。本轮以单一 DSH/自定义模型来源与独立隐私授权取代双模式设计。插件版本：0.3.0-dev.1。当前契约见 [模型与隐私](<MODEL_SETTINGS.md>)；上一轮结果另见 [当日上午归档](<archive/TEST_REPORT_20261117_MODES.md>)，不作为当前设计的证据。
 
-## 清理范围
+## 当前设计
 
-- 模型路由仅 `local_only` / `cloud_assisted`；删除旧模型路由、全局 `private_notes`、旧名单空值/通配授权旁路。内容 `DataClass` 及其云端等级保留。
-- 策略拒未知字段，命令必须显式给出 `operation_version`；测试过期格式的拒绝，而不维持迁移分支。
-- 删除 A0 probe crate、发布依赖与二进制声明；删除旧右 sidebar 注册及客户端依赖。Host 健康信息从现行 manifest 读取版本与需求，不冒充锁定旧 Host。
-- 15 个不维护 Python 测试、31 个旧浏览器脚本及 3 个固定旧路径诊断工具归档；不为旧入口维护当前产品。11 个现行准入脚本仍仅由隔离 runner 执行，cloud stub 已审查并改用当前模式。
+- 两个菜单打开两个页面：模型只保存 source，隐私只保存 model_access 与诊断开关，互不修改对方。
+- 模型严格 version:2，唯一 source.kind 为 dsh/custom；默认 DSH 未选，不继承聊天模型，无 local/cloud 双槽、角色或跨模型 fallback。
+- 目标内容、项目背景、收集原文分别授权，默认全部关闭；项目未授权就裁剪而非逼用户开启。
+- DSH 由实际 ctx.llm.stream 执行，凭据留在 Host，system/user 之外不传聊天历史、session 或工具。模型保存会更新当前可调用路由，避免新加入的模型只能等绑定过期才用。
+- Host 凭据与一次性派发许可仅内存；绑定实例、模型、策略版本、run、scope、正文摘要，拒绝伪造、重放与过期许可。自定义连接使用可取消成熟 HTTP client，无临时自制 relay、环境 proxy 或 redirect。
 
-## 本轮实际执行
+## 已完成验证
 
-| 层级 | 结果 | 入口 / 证据 |
-|---|---|---|
-| Rust workspace | **100 通过，0 失败** | `cargo test --workspace --locked --offline` |
-| Rust 格式 | **通过** | `cargo fmt --all -- --check` |
-| 隐私及发布范围 guard | **19 通过，0 失败** | `node --test tests/adapter/privacy.test.mjs tests/adapter/ui-scope.test.mjs` |
-| 隔离 runner 安全 guard | **9 通过，0 失败** | `python -B -m unittest discover -s tests/integration -p test_runner_safety.py -v` |
-| HTTP / 跨模块集成 | **12 场景组通过** | [本轮 API 报告](<../tests/integration/runs/isolated-13fhnuxo/summary.json>) |
-| React / bridge 回归 | **28 场景组通过** | [本轮浏览器报告](<../tests/browser/harness-fixture-runtime/results/2026-11-17T02-53-19-718Z/report.json>) |
-| 左 sidebar 注册 | **通过**，只使用 slots，无旧右 tab | `node tests/browser/zodo-sidebar-registration.mjs` |
-| Release workspace | **构建成功** | `cargo build --release --workspace --locked --offline` |
-| 差异格式 | **通过** | `git diff --check` |
+| 项目 | 结果 |
+|---|---|
+| Rust workspace | 110 项通过（FFI 3、contracts 13、runtime lib 28、a1 11、a4 50、runs 2、recurrence 3） |
+| Host gateway 单测与真实 Core 全链路 | 6/6 通过，最终 release Core |
+| 原隐私投影及独立 UI 范围 | 22/22 通过 |
+| 隔离 runner 安全契约 | 9/9 通过 |
+| HTTP 与跨模块集成 | 12 组通过，含自定义 stub 实际模型请求与两条任务依赖提交 |
+| 隔离浏览器 | 28/28 通过，21 个导航页面，最终包含上下文预览权限修正 |
+| 原生 sidebar/main 注册检查 | 通过 |
+| Rust fmt / diff 空白检查 | 通过 |
+| 两设置页视觉体检 | 390×844、1280×900 均通过；修复小点击区、字号及折叠内容检测问题 |
+| Release workspace build | 通过 |
 
-不同层级的“测试”“检查”“场景组”不叠加成一个总数。路由矩阵在测试内部覆盖 288 个组合。
+可重跑入口：[Host gateway tests](<../adapters/deepseek-harness/plugin/host-gateway.test.js>)、[browser regression](<../tests/browser/harness-isolated-regression.mjs>)、[integration runner](<../tools/run_isolated_integration.py>)。API 本轮结果位于 [summary](<../tests/integration/runs/isolated-ohf5y3zo/summary.json>)；浏览器最终结果见 [report](<../tests/browser/harness-fixture-runtime/results/2026-11-17T07-14-16-676Z/report.json>)。
 
-本轮 Core SHA-256：`d45cb76da7b3b047128fef66f5168713b362d11bd5254fa52eac140065157a6b`。
+## 验证到哪一层
 
-## 重点覆盖
+Host 测试不是只测目录：真实临时 Core run → 真实 Host gateway → 普通与订阅样式 provider 的确定性 llm stub → proposal。测试确认项目未授权时 title/scope/ID 不进入 messages，DeviceOnly note 不混入、goals/captures 拒绝零派发、缺 Host 不 fallback、模型只产候选、Agent 不能审批。另覆盖 registry 等待时撤权、在途取消、响应限额、旧 source/policy 拒绝与新目录刷新。
 
-- 两模式、内容敏感度、角色、显式名单、凭据与本地开关的路由组合；空名单和 `*` 不授权云端。
-- DeviceOnly / 仅本地不因云端角色偏好而联云；缺 Key 在请求前选本地或明确失败；loopback 固定解析、禁止代理与 redirect。
-- 三种笔记数据等级在模式切换中不变；Agent 仍不能改策略、批准或提交自己的提案。
-- 首次云端授权、连接与模式独立保存、缺 Key 状态、保存失败不误报成功、过期草稿检测与放弃重载。
-- 旧字段/旧路由拒绝且策略与笔记不变；错误输入不会触发自动迁移。
-- 21 个导航入口在 390px、800px 和 600px 容器中可达且无横向溢出；高级设置可键盘开合。
-- 浏览器无页面脚本错误、无非预期外部浏览器请求；自有 Core/server 均停止，临时数据删除。
+没有调用真实 ChatGPT/OAuth 或付费模型，没有读取真实 provider credentials；mock 结果不等于真实账号的认证、配额或推理质量验收。目录和预检状态也不表示模型请求已成功。
 
-初轮浏览器测试中的 409 是 fixture 直接创建笔记后 React 基线未刷新，已修正测试 setup 先同步 workspace revision；保留产品的冲突拒绝，不通过移除版本检查让测试变绿。
+隐私三个开关仅控制 Zodo 内置拆解/澄清；DSH 主动工具、文件、导出、手动粘贴仍走各自权限和资料等级。UI 对此明确说明，不将其称为全局数据防火墙。
 
-## 边界
+## 实际安装记录
 
-全部自动化使用合成数据及自有 loopback 服务，不证明真实云端推理成功，也不覆盖完整 DSH 登录、Host 路由与 Electron 转发、真实隐私历史生命周期或所有无障碍状态。真实安装更新与自动化 fixture 是两件事；安装结果以实际 Core 健康、二进制哈希和数据核对为准，不用另起服务器冒充当前 GUI。
+实际 Core 已经一致性备份后替换并经原 Host 健康端点重新发现。已核对业务实体内容哈希不变；过期模型/策略明确重置为 DSH 未选择、三个资料权限关闭，而非保留兼容迁移代码。旧模型配置与旧二进制也保存在用户数据备份目录，未进入 Git 或发布包。
 
-开发版本不提供旧数据结构自动迁移。更新已有开发实例时应先备份，再明确重置过期设置并核对实体不变；不要清空用户任务或笔记。
+测试与安装 Core SHA-256：1d04852ca7399021e61dc77b3d9fc65ce5dd4190fe42b8ff42c45e4ada536bc1。
+
+安装链接中的 manifest 已是 0.3.0-dev.1；正在承载本会话的 DSH Host 仍报告缓存的 0.2.0-dev.1，未强制关闭。需完整退出并重新打开 DSH 加载新版 Host/UI。未把隔离预览冒充实际桌面 GUI 已更新。
