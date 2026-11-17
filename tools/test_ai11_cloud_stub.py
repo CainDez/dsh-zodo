@@ -1,3 +1,8 @@
+"""Admitted synthetic cloud case; execute only through run_isolated_integration.py.
+
+The runner relocates ROOT/PORT, removes inherited secrets and enforces owned services.
+Do not execute or import this source directly.
+"""
 import json
 import pathlib
 import shutil
@@ -98,7 +103,7 @@ try:
         "schema": "zodo.command/1", "request_id": "ai11-policy", "idempotency_key": "ai11-policy",
         "workspace_id": "ws_local", "operation": "workspace.update", "operation_version": 1,
         "payload": {"settings": None, "policy": {
-            "model_route": "cloud_allowed", "private_notes": "cloud_allowed",
+            "model_route": "cloud_assisted",
             "allowed_cloud_providers": ["cloud-stub"], "diagnostic_capture": False,
         }},
     })

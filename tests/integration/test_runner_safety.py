@@ -29,10 +29,31 @@ class SafetyTests(unittest.TestCase):
             source = (REPO / "tools" / name).read_text(encoding="utf-8")
             self.assertEqual(hashlib.sha256(source.encode()).hexdigest(), expected, name)
 
-    def test_all_legacy_tests_are_classified(self):
-        actual = {p.name for p in (REPO / "tools").glob("test_*.py")}
-        self.assertEqual(set(runner.CASES) | set(runner.SKIPPED), actual)
+    def test_active_and_archived_sources_are_classified_separately(self):
+        tools = REPO / "tools"
+        active = {p.name for p in tools.glob("test_*.py")}
+        archived = {p.relative_to(tools).as_posix() for p in (tools / "archive").glob("test_*.py")}
+        self.assertEqual(set(runner.CASES), active)
+        self.assertEqual(set(runner.SKIPPED), archived)
         self.assertFalse(set(runner.CASES) & set(runner.SKIPPED))
+        self.assertTrue(all(name.startswith("archive/") for name in runner.SKIPPED))
+
+    def test_admitted_command_envelopes_require_explicit_current_version(self):
+        for name in runner.CASES:
+            source = (REPO / "tools" / name).read_text(encoding="utf-8")
+            envelopes = []
+            for node in ast.walk(ast.parse(source)):
+                if not isinstance(node, ast.Dict):
+                    continue
+                fields = {key.value: value for key, value in zip(node.keys, node.values)
+                          if isinstance(key, ast.Constant) and isinstance(key.value, str)}
+                schema = fields.get("schema")
+                if isinstance(schema, ast.Constant) and schema.value == "zodo.command/1":
+                    envelopes.append(node)
+                    version = fields.get("operation_version")
+                    self.assertIsInstance(version, ast.Constant, f"{name}:{node.lineno}")
+                    self.assertEqual(version.value, 1, f"{name}:{node.lineno}")
+            self.assertTrue(envelopes, f"no command envelope checked in {name}")
 
     def test_environment_excludes_secrets_proxy_and_live_configuration(self):
         with patch.dict(os.environ, {"DEEPSEEK_API_KEY":"never-copy", "ZODO_DATA_DIR":"live", "HTTPS_PROXY":"https://external.invalid", "ZODO_CALENDAR_WRITE_URL":"https://external.invalid"}):

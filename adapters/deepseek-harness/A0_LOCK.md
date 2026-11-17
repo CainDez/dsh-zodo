@@ -1,7 +1,6 @@
 # A0 locked host facts
 
-Status: in progress. This file is append-only evidence for the A0 harness lock; update it when a
-fact is re-measured, and keep the original archive hash.
+Status: historical archive, not a maintained Host compatibility contract. The A0 probe and old UI entrypoint have been removed from the current product. Facts below describe the original measurement only; preserved hashes are historical evidence.
 
 ## Host release
 

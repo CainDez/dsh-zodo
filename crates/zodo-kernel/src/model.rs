@@ -76,7 +76,8 @@ impl CommandContext {
 #[serde(rename_all = "snake_case")]
 pub enum ModelRoute {
     LocalOnly,
-    CloudAllowed,
+    /// Explicitly authorizes Workspace/Public request context, never DeviceOnly data.
+    CloudAssisted,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -105,9 +106,9 @@ pub struct WorkWindow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct PrivacyPolicy {
     pub model_route: ModelRoute,
-    pub private_notes: DataClass,
     pub allowed_cloud_providers: Vec<String>,
     pub diagnostic_capture: bool,
 }
@@ -116,7 +117,6 @@ impl Default for PrivacyPolicy {
     fn default() -> Self {
         Self {
             model_route: ModelRoute::LocalOnly,
-            private_notes: DataClass::DeviceOnly,
             allowed_cloud_providers: Vec::new(),
             diagnostic_capture: false,
         }

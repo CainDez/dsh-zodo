@@ -29,7 +29,7 @@ Do not run legacy evidence scripts directly: some reference an archived workspac
 
 ## Model and permission boundaries
 
-- `local_only` must not fall back to a cloud route. Cloud use requires explicit policy and credentials.
+- The UI and Core accept only `local_only` and `cloud_assisted`; see [model modes](<MODEL_MODES.md>) for consent, effective status and strict development schemas. Old modes and policy fields are rejected; no runtime migration is maintained. `local_only` must not fall back to cloud; device-only content remains local in either mode. Cloud assistance requires an explicitly allowed provider and a credential preflight; unavailable cloud routes choose local before dispatch.
 - An AI run produces proposals, not approval. Host tool permission is not business approval.
 - Agent/MCP channels cannot approve or commit. Revocation is checked at runtime.
 - The DSH model catalog is read-only; filling a Core model draft does not change Host model settings or save automatically.

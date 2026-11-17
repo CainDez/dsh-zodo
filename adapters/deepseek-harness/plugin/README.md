@@ -1,122 +1,47 @@
 # Zodo for DeepSeek Harness
 
-Status: A2 Host + Client plugin plus A3 Core model/MCP/durable-run integration. A0 bridge evidence
-remains in `../A0_LOCK.md`; the A0 probe binary is retained only as historical bridge evidence and is
-no longer used by the product surface.
+Development plugin `0.2.0-dev.1`. The Rust Core owns facts, validation, proposals, approvals, revisions, durable runs and outbox; the Host is an authenticated adapter.
 
-## Locked host
+## Maintained surface
 
-DeepSeek Harness Desktop `0.2.1-rc.3`, source tag `dsh-v0.2.1-rc.3`, source commit
-`1f81c047fc48fa190a683e469daa699857e9afe8`, MIT. The installed `app.asar` SHA-256 is recorded in
-`implementation/EVIDENCE_INDEX.md`.
+- Native left-sidebar Zodo entry and main-area React workbench. There is no old right-sidebar tab or A0 probe.
+- Two Core AI modes: **仅本地** / **允许云端辅助**, with advanced options collapsed. See [mode and privacy rules](<../../../docs/MODEL_MODES.md>).
+- Agent tools may capture, read scoped summaries and propose; they cannot approve or commit.
+- CLI, MCP and the native C ABI remain non-UI interfaces.
 
-## What this bundle does
+## Development contract
 
-| File | Role |
-|---|---|
-| `package.json` | Harness bundle and `dsh.client` manifest |
-| `cordis.patch.yml` | Inserts the Host adapter row |
-| `index.js` | Core discovery/start, native Zodo tools, same-origin UI BFF, agent/UI credential separation |
-| `client.js` | Left-menu Zodo entry and main-area React workbench (existing right Sidebar tabs remain compatible): today, inbox, goals/projects, tasks, schedule, proposals, review, focus, search, settings, privacy, audit |
-| `bin/win32-x64/zodo-core.exe` | Prebuilt independent Core runtime (built from this repository) |
+Only the current schema and fields are supported. Old model modes, global note policy, field aliases and implicit operation versions are not migrated or accepted. Content-level note/attachment classifications remain enforced. Current protocol/version checks, backup integrity checks, structured private export prevention and business-approval boundaries are security rules, not compatibility shims.
 
-The Host adapter owns no Zodo facts. It forwards commands/queries to the Core HTTP API and never
-returns a Core token to the browser or model. A Host tool execution is a separate gate from a Core
-business approval.
+Core and client must be updated together. Outdated development settings should be explicitly reset after a consistent backup; this is an administrative action, not an automatic runtime migration. Never erase tasks or notes to fix obsolete settings.
 
-## Build the Core and plugin binary
+## Build and install
 
 ```powershell
-cargo build --release -p zodo-runtime
-New-Item -ItemType Directory -Force adapters/deepseek-harness/plugin/bin/win32-x64
-Copy-Item target/release/zodo.exe adapters/deepseek-harness/plugin/bin/win32-x64/zodo-core.exe
+cargo build --release -p zodo-runtime --locked
+# Copy target/release/zodo.exe into bin/win32-x64/zodo-core.exe only after stopping its running instance.
 ```
 
-## Install into an isolated profile
+Add this directory through the DSH plugin manager or install a package built by the [release script](<../../../scripts/build-release.ps1>). A source-directory link loads this source; a ZIP install uses its packaged files. The package declares the required current DSH services in its manifest. No probe executable is built or shipped.
 
-Run the bundled CLI through Electron so it can read `app.asar`:
+Core data uses `ZODO_DATA_DIR`, otherwise the Windows user-local Zodo directory. Host discovers the runtime descriptor and connects to a healthy Core, or starts the packaged executable. Core runs detached and holds the single-writer lock; unloading Host does not stop it. Never start a second writer on the same data directory.
 
-```powershell
-$exe = 'C:\Users\<user>\AppData\Local\Programs\DeepSeek Harness\DeepSeek Harness.exe'
-$bin = 'C:\Users\<user>\AppData\Local\Programs\DeepSeek Harness\resources\app.asar\dsh\node_modules\@deepseek-ai\dsh\lib\bin.js'
-$env:ELECTRON_RUN_AS_NODE = '1'
-$env:DSH_HOME = 'D:\projects\zodo_dsh\.runtime\dsh-home-a0'
-$env:PATH = "D:\projects\zodo_dsh\.runtime\bin;$env:PATH"
-& $exe $bin --profile zodo-a0 --from-default-profile web --dump-config
-& $exe $bin plugin --profile zodo-a0 add 'D:\projects\zodo_dsh\adapters\deepseek-harness\plugin'
-```
+## Trust boundaries
 
-The runtime data directory is selected by `ZODO_DATA_DIR` (or `%LOCALAPPDATA%\zodo`). The Host
-discovers `runtime.json`; if no healthy Core exists it starts the packaged `zodo-core.exe` detached
-and then connects. The Core holds the single-writer lock, SQLite facts, receipts, approvals and
-outbox. Stopping/unloading the Host does not stop the shared Core.
+- **UI:** authenticated same-origin bridge requests use a short-lived UI session; the browser does not receive Core credentials. Desktop forwarding uses the current Host UI-session transport.
+- **Agent/MCP:** separate principals, scoped responses, no approval/commit capabilities, runtime revocation enforcement.
+- **Core:** domain validation, proposal hash, approval binding, revision and idempotency.
+- **Models:** credentials are referenced by environment-variable name and remain in the Core process. Model pages expose only presence/readiness, never values.
+- **Privacy:** device-only exports are rejected before entering Host chat. Verified restricted history blocks subsequent dispatch/fork; content already sent cannot be retroactively recalled. Same-UID Host/Shell is not a strong OS sandbox.
 
-## Trust faces
-
-- **Interactive UI:** `/zodo-bridge/v1/session` mints an HttpOnly SameSite cookie. `/rpc` accepts only
-  same-origin calls with that cookie and forwards Core commands/queries with the UI token. The browser
-  never receives a Core token.
-- **Agent tools:** `zodo_capture`, `zodo_list_tasks`, `zodo_propose`, `zodo_plan_propose`, and
-  `zodo_get_proposal` use the agent token. They expose structured summaries, never approval/commit
-  capability. The Core rejects agent approval/commit by principal kind.
-- **Core:** domain validation, actor resolution, proposal hash, approval binding, revision and
-  idempotency are all in Rust.
-
-## A3 additions
-
-The Host BFF also proxies Core `/v1/runs`, `/v1/model` and `/v1/admin/revoke` with the interactive UI
-session. The React workbench adds an AI Run center, Models page, and revoke/restore controls.
-
-Core-owned A3 flow:
-
-1. A goal card starts a durable `goal.decompose` run.
-2. The Core Run worker calls the configured local/cloud model outside the fact transaction.
-3. The model output is checkpointed, then Core creates a validated proposal as `delegated_agent`.
-4. The React workbench shows the task additions/diagnostics; a user approval plus commit consumes the
-   grant and writes a receipt.
-5. Cancellation, crash/restart recovery, revocation and reminder delivery are Core/worker concerns,
-   not Host state.
-
-MCP stdio (`zodo --data-dir <dir> mcp`) is independent of the Host and uses the MCP token. It exposes
-read/list/plan/propose/get only; it cannot approve or commit, and cannot read the private snapshot.
-`@modelcontextprotocol/sdk` 1.20.2 is used for the installed-client proof.
-
-Model credentials are read from environment names recorded in `model.json`; no API key is exposed to
-the browser, Host tools, MCP, or evidence. `local_only` never silently falls back to cloud.
-
-The Models page also shows a read-only Harness model catalog (Host BFF `GET
-/zodo-bridge/v1/harness/models`, interactive UI session only); `填入 Core 模型` fills the Core
-model-connection draft from a Harness route, but only provider/model names, endpoints and credential
-reference names cross the bridge — no secret is copied, Harness configuration is never mutated, and
-the Core save stays an explicit user action. Verified by `tests/browser/zodo-harness-models.mjs`.
+Cloud assistance requires explicit provider authorization and credential preflight. Restricted input stays local; local failure never silently becomes a cloud request. Connection readiness is not a successful network/inference test.
 
 ## Verification
 
-Browser evidence scripts live in `tests/browser/`:
+Use only the [current isolated browser regression](<../../../tests/browser/harness-isolated-regression.mjs>), [API runner](<../../../tools/run_isolated_integration.py>) and [regression entrypoint](<../../../scripts/run-regression.ps1>) for automated mutation tests. They create synthetic workspaces and owned services instead of using real task data or an existing Host profile.
 
-```powershell
-$env:ZODO_A2_URL = Get-Content .runtime\a2-url.txt -Raw
-node tests/browser/a2-flow.mjs
-node tests/browser/a2-native-tools.mjs
-node tests/browser/a2-agent-approval.mjs
-node tests/browser/a2-manual-flow.mjs
-node tests/browser/a2-inbox-flow.mjs
-node tests/browser/a3-ai-ui.mjs
-node tests/browser/a3-ui-surfaces.mjs
-cd tests/browser; node a3-mcp-sdk.mjs
-```
+Historical design and evidence remain documentation, not active product contracts. Archived scripts are not supported entrypoints and must not be run against user data.
 
-A3 Python reproduction scripts are under `tools/test_a3_*.py`; evidence is under
-`artifacts/evidence/a3/`.
+## Updating a running desktop
 
-Results and screenshots are in `artifacts/evidence/a2/` and indexed in
-`implementation/EVIDENCE_INDEX.md`.
-
-## Known limits at A2
-
-- Core model routing, MCP, durable AI Runs, actual notification delivery and cross-device recovery
-  are A3/A4 work.
-- The A0 incompatible-artifact and hot-unload arms remain open.
-- The Host is trusted code under the same OS user; the UI cookie and Core token separation is not an
-  OS sandbox.
-- UI P1 screens (habits, import/export, incremental calendar, automation, sync) are not yet exposed.
+Build/test first, back up data, stop the shared Core, replace its executable, and verify the new Core against the same workspace. Client resources also need rebuilding/reloading; changing source alone is not proof that the existing GUI has updated. Keep the current Host alive where possible; do not replace the GUI with another server. See [operations](<../../../docs/OPERATIONS.md>) and [release notes](<../../../docs/RELEASE.md>).

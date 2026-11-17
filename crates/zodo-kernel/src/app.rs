@@ -100,7 +100,6 @@ impl<'a> Application<'a> {
                     if policy.allowed_cloud_providers
                         != world.workspace.policy.allowed_cloud_providers
                         || policy.model_route != world.workspace.policy.model_route
-                        || policy.private_notes != world.workspace.policy.private_notes
                     {
                         world.workspace.policy_revision =
                             world.workspace.policy_revision.saturating_add(1);

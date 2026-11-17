@@ -1,7 +1,6 @@
 [workspace]
 resolver = "3"
 members = [
-  "crates/zodo-a0-probe",
   "crates/zodo-ffi",
   "crates/zodo-kernel",
   "crates/zodo-runtime",

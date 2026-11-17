@@ -21,6 +21,10 @@ test('release and regression entrypoints have no standalone-client route', () =>
 test('DSH UI and its structured privacy dependency remain packaged', () => {
   const manifest = JSON.parse(text(plugin + 'package.json'))
   assert.equal(manifest.exports['./client'], './client.js')
+  assert.ok(!manifest.files.some(file => file.includes('a0-probe')), 'no deprecated probe is packaged')
+  assert.ok(!manifest.dsh.client.inject.includes('@deepseek-ai/dsh-client-ui-sidebar-right'), 'no old right-sidebar dependency')
+  assert.doesNotMatch(text('Cargo.toml'), /zodo-a0-probe/)
+  assert.doesNotMatch(text('scripts/build-release.ps1'), /zodo-a0-probe/)
   for (const relative of ['client.js', 'index.js', 'privacy.js']) {
     assert.ok(manifest.files.includes(relative), relative + ' is listed for packaging')
     assert.ok(existsSync(path.join(root, plugin, relative)))

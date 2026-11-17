@@ -21,6 +21,10 @@ The original v1.3 design and historical evidence are retained for traceability; 
 
 最新执行结果与未覆盖范围见 [测试报告](<docs/TEST_REPORT.md>)；不要把历史台账当作本轮结果。
 
+## Development policy
+
+This project is in active development: only the current schema and two AI modes are supported. Deprecated modes/fields are rejected, not migrated or aliased. Historical design/evidence remains an archive, not an obligation to keep old APIs, UI entry points, probes or scripts working. Safety checks and current external protocol contracts remain mandatory.
+
 ## Build and test
 
 ```powershell
@@ -54,6 +58,6 @@ For deployment see the [plugin instructions](<adapters/deepseek-harness/plugin/R
 - Approval is explicit and bound to content, revision, policy and expiry. Host tool permission is not business approval.
 - Every mutation is revisioned and idempotent; one writer owns each workspace.
 - Past, started and locked allocations are not moved automatically. Infeasibility is reported.
-- `local_only` never silently falls back to cloud.
+- [Two AI modes](<docs/MODEL_MODES.md>): `local_only` never falls back to cloud; `cloud_assisted` keeps device-only content local and checks cloud authorization/credentials before dispatch.
 - Credentials, runtime descriptors, launch URLs and real user data are not test fixtures or release assets.
 - Same-UID Host/Shell is not a strong OS sandbox.

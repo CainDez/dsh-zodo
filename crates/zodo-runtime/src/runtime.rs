@@ -939,6 +939,25 @@ async fn model_catalog(State(state): State<AppState>, headers: HeaderMap) -> Res
     Json(config.catalog()).into_response()
 }
 
+fn model_response(state: &AppState, workspace_id: &str) -> Result<Value> {
+    let (data_dir, policy) = {
+        let mut inner = state
+            .inner
+            .lock()
+            .map_err(|_| ZodoError::new(ErrorCode::StorageFailure, "runtime state unavailable"))?;
+        let world = inner
+            .store
+            .load_world(workspace_id)?
+            .ok_or_else(|| ZodoError::not_found("workspace", workspace_id))?;
+        (inner.data_dir.clone(), world.workspace.policy)
+    };
+    let gateway = ModelGateway::load(&data_dir);
+    Ok(json!({
+        "schema": "zodo.model/1", "config": gateway.config.sanitized(),
+        "effective": gateway.effective(&policy),
+    }))
+}
+
 async fn model_info(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let principal = match authenticate(&state, &headers) {
         Ok(value) => value,
@@ -947,18 +966,10 @@ async fn model_info(State(state): State<AppState>, headers: HeaderMap) -> Respon
     if let Err(error) = require_capability(&principal, "read") {
         return error_response(status_for(&error), "", &error);
     }
-    let data_dir = match state.inner.lock() {
-        Ok(inner) => inner.data_dir.clone(),
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "",
-                &ZodoError::new(ErrorCode::StorageFailure, "runtime state unavailable"),
-            );
-        }
-    };
-    let gateway = ModelGateway::load(&data_dir);
-    Json(json!({"schema": "zodo.model/1", "config": gateway.config.sanitized()})).into_response()
+    match model_response(&state, &principal.workspace_id) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => error_response(status_for(&error), "", &error),
+    }
 }
 
 async fn update_model(
@@ -985,8 +996,10 @@ async fn update_model(
     };
     let mut gateway = ModelGateway::load(&data_dir);
     match gateway.configure(config) {
-        Ok(()) => Json(json!({"schema": "zodo.model/1", "config": gateway.config.sanitized()}))
-            .into_response(),
+        Ok(()) => match model_response(&state, &principal.workspace_id) {
+            Ok(value) => Json(value).into_response(),
+            Err(error) => error_response(status_for(&error), "", &error),
+        },
         Err(error) => error_response(status_for(&error), "", &error),
     }
 }
@@ -2091,4 +2104,124 @@ fn sha256_file(path: &Path) -> std::io::Result<String> {
         hasher.update(&buffer[..read]);
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+#[cfg(test)]
+mod model_api_tests {
+    use super::*;
+    use zodo_kernel::model::{ModelRoute, PrivacyPolicy, Workspace};
+
+    fn state(dir: &Path, policy: PrivacyPolicy) -> AppState {
+        let mut store = SqliteStore::open(dir.join("test.sqlite3")).unwrap();
+        let mut world = World::new(Workspace::new(
+            WORKSPACE_ID.into(),
+            "Synthetic test".into(),
+            Utc::now(),
+        ));
+        world.workspace.policy = policy;
+        store.create_workspace(&world).unwrap();
+        AppState {
+            inner: Arc::new(Mutex::new(RuntimeInner {
+                store,
+                instance_id: "test".into(),
+                workspace_id: WORKSPACE_ID.into(),
+                started_at: Utc::now(),
+                tokens: principals(
+                    BTreeMap::from([
+                        ("ui".into(), "ui-token".into()),
+                        ("agent".into(), "agent-token".into()),
+                    ]),
+                    WORKSPACE_ID,
+                ),
+                revoked_channels: BTreeSet::new(),
+                revoked_devices: BTreeSet::new(),
+                data_dir: dir.into(),
+                _lock: File::create(dir.join("test.lock")).unwrap(),
+                _lock_path: dir.join("test.lock"),
+                _info_path: dir.join("test-info.json"),
+            })),
+        }
+    }
+
+    fn headers(token: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+        headers
+    }
+
+    async fn body(response: Response) -> Value {
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn model_info_uses_saved_policy_and_reports_preflight_not_connection_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let policy = PrivacyPolicy {
+            model_route: ModelRoute::CloudAssisted,
+            allowed_cloud_providers: vec!["deepseek-cloud".into()],
+            ..PrivacyPolicy::default()
+        };
+        let state = state(dir.path(), policy.clone());
+        let mut config = ModelConfig::default();
+        config.local.base_url = "http://127.0.0.1:11434/v1".into();
+        config.cloud.as_mut().unwrap().enabled = true;
+        config.cloud.as_mut().unwrap().api_key_env = None;
+        config.roles.insert("decompose".into(), "cloud".into());
+        config.save(dir.path()).unwrap();
+        let response = body(model_info(State(state.clone()), headers("ui-token")).await).await;
+        assert_eq!(response["schema"], "zodo.model/1");
+        assert_eq!(response["effective"]["mode"], "cloud_assisted");
+        assert_eq!(response["effective"]["workspace"]["route"], "device");
+        assert_eq!(
+            response["effective"]["workspace"]["reason"],
+            "cloud_credentials_missing"
+        );
+        assert_eq!(
+            response["effective"]["roles"]["decompose"]["reason"],
+            "cloud_credentials_missing"
+        );
+        assert_eq!(
+            response["effective"]["device_only"]["reason"],
+            "device_only"
+        );
+        assert_eq!(response["effective"]["connection_tested"], false);
+        assert_eq!(response["config"]["cloud"]["credential_ready"], false);
+        assert_eq!(
+            state
+                .inner
+                .lock()
+                .unwrap()
+                .store
+                .load_world(WORKSPACE_ID)
+                .unwrap()
+                .unwrap()
+                .workspace
+                .policy,
+            policy
+        );
+        let denied = update_model(
+            State(state.clone()),
+            headers("agent-token"),
+            Json(config.clone()),
+        )
+        .await;
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+        let response =
+            body(update_model(State(state.clone()), headers("ui-token"), Json(config)).await).await;
+        assert_eq!(
+            response["effective"]["workspace"]["reason"],
+            "cloud_credentials_missing"
+        );
+        assert_eq!(
+            model_info(State(state), HeaderMap::new()).await.status(),
+            StatusCode::FORBIDDEN
+        );
+    }
 }

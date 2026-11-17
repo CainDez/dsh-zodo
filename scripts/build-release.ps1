@@ -17,8 +17,7 @@ try {
   if ($buildCode -ne 0) { throw 'cargo build failed' }
   $core = Join-Path $root 'target/release/zodo.exe'
   $ffi = Join-Path $root 'target/release/zodo_ffi.dll'
-  $probe = Join-Path $root 'target/release/zodo-a0-probe.exe'
-  foreach ($file in @($core, $ffi, $probe)) {
+  foreach ($file in @($core, $ffi)) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Required binary missing: $file" }
   }
 
@@ -40,7 +39,6 @@ try {
   }
   Copy-Item -LiteralPath (Join-Path $plugin 'locale') -Destination (Join-Path $stage 'locale') -Recurse
   Copy-Item -LiteralPath $core -Destination (Join-Path $stage 'bin/win32-x64/zodo-core.exe')
-  Copy-Item -LiteralPath $probe -Destination (Join-Path $stage 'bin/win32-x64/zodo-a0-probe.exe')
   Compress-Archive -Path (Join-Path $stage '*') -DestinationPath (Join-Path $release $pluginName)
   Remove-Item -LiteralPath $stage -Recurse -Force
 

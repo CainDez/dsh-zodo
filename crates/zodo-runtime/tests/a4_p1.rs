@@ -3068,6 +3068,111 @@ fn habit_skip_and_undo_are_reconstructible_and_not_completions() {
 }
 
 #[test]
+fn model_mode_switch_preserves_existing_note_classifications() {
+    use zodo_kernel::model::ModelRoute;
+    let mut f = Fixture::new();
+    for data_class in ["device_only", "trusted_workspace", "cloud_allowed"] {
+        f.execute("note.create", json!({"note": {
+            "title": "Synthetic classified note", "body": "fixture only", "data_class": data_class
+        }})).unwrap();
+    }
+    f.execute(
+        "workspace.update",
+        json!({"policy": {
+            "model_route": "local_only",
+            "allowed_cloud_providers": [], "diagnostic_capture": true
+        }}),
+    )
+    .unwrap();
+    let before = f.world();
+    let before_notes = serde_json::to_value(&before.notes).unwrap();
+    let mut policy = before.workspace.policy.clone();
+    policy.model_route = ModelRoute::CloudAssisted;
+    policy.allowed_cloud_providers = vec!["deepseek-cloud".into()];
+    f.execute("workspace.update", json!({"policy": policy}))
+        .unwrap();
+    let after = f.world();
+    assert_eq!(
+        after.workspace.policy.model_route,
+        ModelRoute::CloudAssisted
+    );
+    assert!(after.workspace.policy.diagnostic_capture);
+    assert_eq!(serde_json::to_value(&after.notes).unwrap(), before_notes);
+    assert_eq!(
+        after.workspace.policy_revision,
+        before.workspace.policy_revision + 1
+    );
+    let mut local_policy = after.workspace.policy.clone();
+    local_policy.model_route = ModelRoute::LocalOnly;
+    f.execute("workspace.update", json!({"policy": local_policy}))
+        .unwrap();
+    let local = f.world();
+    assert_eq!(local.workspace.policy.model_route, ModelRoute::LocalOnly);
+    assert_eq!(
+        local.workspace.policy_revision,
+        after.workspace.policy_revision + 1
+    );
+    assert_eq!(serde_json::to_value(&local.notes).unwrap(), before_notes);
+}
+
+#[test]
+fn obsolete_policy_inputs_are_rejected_without_mutating_workspace_or_notes() {
+    let mut f = Fixture::new();
+    f.execute(
+        "note.create",
+        json!({"note": {
+            "title": "Synthetic private note", "body": "fixture only", "data_class": "device_only"
+        }}),
+    )
+    .unwrap();
+    let before = serde_json::to_value(f.world()).unwrap();
+    for policy in [
+        json!({"model_route": "cloud_allowed", "allowed_cloud_providers": [], "diagnostic_capture": false}),
+        json!({"model_route": "local_only", "private_notes": "device_only", "allowed_cloud_providers": [], "diagnostic_capture": false}),
+        json!({"model_route": "cloud_assisted", "private_notes": "cloud_allowed", "allowed_cloud_providers": ["deepseek-cloud"], "diagnostic_capture": false}),
+        json!({"model_route": "local_only", "unknown_policy_option": true, "allowed_cloud_providers": [], "diagnostic_capture": false}),
+    ] {
+        let error = f
+            .execute("workspace.update", json!({"policy": policy}))
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::ValidationFailed);
+        assert_eq!(serde_json::to_value(f.world()).unwrap(), before);
+    }
+}
+
+#[test]
+fn cloud_assisted_mode_does_not_grant_agents_admin_or_approval_authority() {
+    let mut f = Fixture::new();
+    let before = serde_json::to_value(f.world()).unwrap();
+    f.context.principal_kind = PrincipalKind::DelegatedAgent;
+    f.context.capabilities = ["read", "capture", "propose", "execute"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let error = f
+        .execute(
+            "workspace.update",
+            json!({"policy": {
+                "model_route": "cloud_assisted",
+                "allowed_cloud_providers": ["deepseek-cloud"], "diagnostic_capture": false
+            }}),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::PermissionDenied);
+    assert_eq!(serde_json::to_value(f.world()).unwrap(), before);
+    let proposal = f.execute("proposal.create", json!({
+        "intent": "Synthetic proposal", "operations": [{"operation":"task.create", "payload":{"task":{"title":"Synthetic task"}}}],
+        "assumptions": [], "questions": [], "ttl_seconds": 86400
+    })).unwrap();
+    let id = proposal.data["proposal"]["id"].as_str().unwrap();
+    let error = f
+        .execute("proposal.approve", json!({"proposal_id": id}))
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::PermissionDenied);
+    assert!(f.world().tasks.is_empty());
+}
+
+#[test]
 fn proposal_batch_creates_dependencies_by_client_ref() {
     let mut f = Fixture::new();
     let created = f.execute("proposal.create", json!({

@@ -24,17 +24,12 @@ pub struct CommandEnvelope {
     pub idempotency_key: String,
     pub workspace_id: String,
     pub operation: String,
-    #[serde(default = "default_operation_version")]
     pub operation_version: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_revision: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub policy_revision: Option<u64>,
     pub payload: Value,
-}
-
-fn default_operation_version() -> u8 {
-    model::OPERATION_VERSION
 }
 
 #[derive(Debug, Clone)]

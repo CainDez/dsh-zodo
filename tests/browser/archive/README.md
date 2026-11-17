@@ -1,0 +1,7 @@
+# Historical browser/MCP evidence scripts — do not run
+
+These scripts preserve earlier A0/A2/A3/A4 observations, not supported test entry points. They are unmaintained and excluded from the current browser package test command. A0 uses the retired probe and UI; later scripts assume the removed right-Sidebar workbench, an existing Host/session, frozen `.runtime/zodo-a2` data, real local models, or old fixed ports. Do not execute or import them, use them against user data, or restore runtime compatibility just to make them pass. Their existing evidence is preserved unchanged.
+
+Use [the isolated workbench regression](<../harness-isolated-regression.mjs>) and [fixture](<../harness-isolated-fixture.mjs>) for current disposable-data coverage. These substitute Host services and are not installed-Host acceptance. The maintained [registration check](<../zodo-sidebar-registration.mjs>) validates the current left-menu/main-panel entry; the [sidebar check](<../zodo-sidebar.mjs>) remains outside this archive but requires an explicitly authorized disposable Host and is not part of default regression. The old model-catalog script is archived here as well: it hardcodes an A0 profile/model and accepts an obsolete response envelope; the current catalog is covered by isolated regression.
+
+The archived scripts are unchanged so old reports remain interpretable. Paths and commands inside them are historical, not setup instructions. Port old assertions into a fresh fixture rather than running these scripts or updating their obsolete schemas.

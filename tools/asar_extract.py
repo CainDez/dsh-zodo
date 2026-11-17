@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """List or extract files from an Electron asar archive without npm dependencies.
 
-This is kept in the repository so A0 evidence can be reproduced against the
-installed DeepSeek Harness application package.
+This is a generic diagnostic utility for inspecting a selected archive; it does
+not provide product runtime compatibility or select an installed profile.
 """
 from __future__ import annotations
 

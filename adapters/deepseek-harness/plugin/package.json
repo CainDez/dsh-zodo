@@ -1,8 +1,8 @@
 {
   "name": "@zodo/harness-plugin",
-  "version": "0.1.0-a0",
+  "version": "0.2.0-dev.1",
   "private": true,
-  "description": "Zodo for DeepSeek Harness: A0 bridge probe and the first Zodo workbench shell.",
+  "description": "Zodo task workbench for DeepSeek Harness with local-only and cloud-assisted AI modes.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -21,7 +21,6 @@
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
-    "bin/win32-x64/zodo-a0-probe.exe",
     "bin/win32-x64/zodo-core.exe"
   ],
   "dsh": {
@@ -33,8 +32,7 @@
       "immediately": true,
       "inject": [
         "@deepseek-ai/dsh-client-ui-layout",
-        "@deepseek-ai/dsh-client-ui-sidebar",
-        "@deepseek-ai/dsh-client-ui-sidebar-right"
+        "@deepseek-ai/dsh-client-ui-sidebar"
       ]
     }
   }

@@ -46,26 +46,29 @@ REVIEWED_SHA256 = {
     "test_dat08_encrypted_sync.py": "1fcf462ba91cc20ee5300913d107e0efced597303f08cafe7f9a822890396c1a",
     "test_a6_sync.py": "24e3ceb5ba80c3324cc71f573b28d249942e53592094d63a19b2ba31366b96d9",
     "test_a4_restore.py": "3aa23b56eadedf5354d2bf0238f19b322802407b08c3b5b28baa19aa60ea1b32",
-    "test_ai11_cloud_stub.py": "1c7422e68d2e1fa72ae9d68d43651bcfb7a51d556cae315ce3daea0fede15223",
+    # Re-reviewed: current cloud_assisted policy; synthetic loopback stub/dummy keys only;
+    # ROOT/PORT/local endpoint are relocated and owned_processes retains its guards.
+    "test_ai11_cloud_stub.py": "d425a71511dd4e0c5bb5fde2cc6128d8835e95039ca6d991503e9e3fd37c7e8d",
     "test_pln16_calendar_write.py": "c9fff852b394d592c06556464ca86963659d5bfb26e525c15ff35411f2156070"
 }
 
+# Historical sources live under tools/archive and are never admitted for execution.
 SKIPPED = {
-    "test_a3_cancel.py": "archive/live runtime dependency, preexisting goal and real model",
-    "test_a3_mcp_authz.py": "archive/live runtime dependency; covered by fresh API suite",
-    "test_a3_revocation.py": "archive/live auth mutation; covered by fresh API suite",
-    "test_a3_notification.py": "archive/live runtime and real Windows toast",
-    "test_a4_scheduler.py": "archive/live runtime; covered by fresh API suite",
-    "test_a4_import.py": "exports archive/live data; replaced by synthetic dat04 tests",
-    "test_h16_admin_forgery.py": "archive/live runtime and existing bridge port 3181",
-    "test_restore_preflight.py": "reads frozen archive backup files",
-    "test_fnd06_reconcile.py": "real Windows toast has no disable/mock flag",
-    "test_pln14_notification_retry.py": "restores real Windows toast script and delivers notification",
-    "test_a3_model_run.py": "real local model on port 11434",
-    "test_a3_recovery.py": "real local model on port 11434",
-    "test_h21_cancel_race.py": "real local model; later coverage needs dedicated deterministic stub",
-    "test_ai01_clarify.py": "real local model; later coverage needs dedicated deterministic stub",
-    "test_a3_privacy.py": "external cloud URL and real credential inheritance risk; do not run unchanged",
+    "archive/test_a3_cancel.py": "archive/live runtime dependency, preexisting goal and real model",
+    "archive/test_a3_mcp_authz.py": "archive/live runtime dependency; covered by fresh API suite",
+    "archive/test_a3_revocation.py": "archive/live auth mutation; covered by fresh API suite",
+    "archive/test_a3_notification.py": "archive/live runtime and real Windows toast",
+    "archive/test_a4_scheduler.py": "archive/live runtime; covered by fresh API suite",
+    "archive/test_a4_import.py": "exports archive/live data; replaced by synthetic dat04 tests",
+    "archive/test_h16_admin_forgery.py": "archive/live runtime and existing bridge port 3181",
+    "archive/test_restore_preflight.py": "reads frozen archive backup files",
+    "archive/test_fnd06_reconcile.py": "real Windows toast has no disable/mock flag",
+    "archive/test_pln14_notification_retry.py": "restores real Windows toast script and delivers notification",
+    "archive/test_a3_model_run.py": "real local model on port 11434",
+    "archive/test_a3_recovery.py": "real local model on port 11434",
+    "archive/test_h21_cancel_race.py": "real local model; later coverage needs dedicated deterministic stub",
+    "archive/test_ai01_clarify.py": "real local model; later coverage needs dedicated deterministic stub",
+    "archive/test_a3_privacy.py": "external cloud URL and real credential inheritance risk; do not run unchanged",
 }
 
 

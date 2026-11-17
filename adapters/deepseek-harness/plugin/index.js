@@ -22,7 +22,9 @@ export const inject = ['tools', 'webServer', 'llm', 'sessions', 'sessionProjecti
 const PACKAGE_DIR = path.dirname(fileURLToPath(import.meta.url))
 const CORE_PROTOCOL = 'zodo/1'
 const BRIDGE_VERSION = 'zodo.harness-bridge/0.2'
-const HOST_LOCK = '0.2.1-rc.3'
+const PACKAGE_META = JSON.parse(await readFile(path.join(PACKAGE_DIR, 'package.json'), 'utf8'))
+const ADAPTER_VERSION = PACKAGE_META.version
+const HOST_REQUIREMENT = PACKAGE_META.engines.dsh
 const COOKIE = 'zodo_ui'
 const SESSION_TTL_MS = 60 * 60 * 1000
 const MAX_BODY_BYTES = 2 * 1024 * 1024
@@ -904,8 +906,8 @@ async function readHarnessModelCatalog(ctx, log) {
     schema: HARNESS_CATALOG_SCHEMA,
     fetched_at: new Date().toISOString(),
     host: {
-      adapter: '0.2.1-privacy-fix',
-      host_lock: HOST_LOCK,
+      adapter: ADAPTER_VERSION,
+      host_requirement: HOST_REQUIREMENT,
       privacy_guard: PRIVACY_GUARD_VERSION,
     },
     default_route: defaultRoute,
@@ -957,8 +959,8 @@ export async function apply(ctx) {
           ok: true,
           schema: BRIDGE_VERSION,
           bridge: {
-            host_lock: HOST_LOCK,
-            adapter: '0.2.1-privacy-fix',
+            host_requirement: HOST_REQUIREMENT,
+            adapter: ADAPTER_VERSION,
             privacy_guard: PRIVACY_GUARD_VERSION,
             core_owned_by_host: false,
             ui_token_exposed: false,
@@ -1452,7 +1454,7 @@ export async function apply(ctx) {
   install()
 
   // New private data is refused before it enters canonical native/PTC values.
-  // For legacy exports, use host-owned session records and tool provenance, not
+  // For protected exports, use host-owned session records and tool provenance, not
   // words in messages. Scan the full log, including compressed/shadowed prefixes.
   ctx.on('llm/stream', (options, next) => {
     const sessionId = options?.sessionId ?? ctx.agents.currentInitiator()?.session?.id

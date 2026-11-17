@@ -3,6 +3,7 @@
 use serde_json::{Value, json};
 use zodo_kernel::commands::{CommandEnvelope, ErrorEnvelope, QueryEnvelope};
 use zodo_kernel::error::ErrorCode;
+use zodo_kernel::model::{DataClass, ModelRoute, PrivacyPolicy};
 
 const COMMAND: &str = include_str!("../../../contracts/fixtures/command.json");
 const QUERY: &str = include_str!("../../../contracts/fixtures/query.json");
@@ -97,6 +98,15 @@ fn command_identifiers_enforce_byte_limits_and_reject_blank_values() {
 }
 
 #[test]
+fn command_operation_version_is_required() {
+    let mut missing: Value = serde_json::from_str(COMMAND).unwrap();
+    missing.as_object_mut().unwrap().remove("operation_version");
+    let error = serde_json::from_value::<CommandEnvelope>(missing).unwrap_err();
+    assert!(error.to_string().contains("missing field"), "{error}");
+    assert!(error.to_string().contains("operation_version"), "{error}");
+}
+
+#[test]
 fn unsupported_versions_and_unknown_envelope_fields_are_rejected() {
     for version in [0, 2, u8::MAX] {
         let mut envelope: CommandEnvelope = serde_json::from_str(COMMAND).unwrap();
@@ -157,4 +167,37 @@ fn canonical_command_hash_ignores_transport_ids_but_binds_revision_and_payload()
     let mut changed = original;
     changed.workspace_id = "different-workspace".to_string();
     assert_ne!(changed.parse().unwrap().canonical_hash, expected);
+}
+
+#[test]
+fn privacy_policy_accepts_only_current_modes_and_fields() {
+    for (mode, route) in [
+        ("local_only", ModelRoute::LocalOnly),
+        ("cloud_assisted", ModelRoute::CloudAssisted),
+    ] {
+        let current = json!({"model_route": mode, "allowed_cloud_providers": ["deepseek-cloud"], "diagnostic_capture": false});
+        let policy: PrivacyPolicy = serde_json::from_value(current.clone()).unwrap();
+        assert_eq!(policy.model_route, route);
+        assert_eq!(serde_json::to_value(policy).unwrap(), current);
+        for field in ["private_notes", "unknown_policy_option"] {
+            let mut old = current.clone();
+            old[field] = json!("device_only");
+            let error = serde_json::from_value::<PrivacyPolicy>(old).unwrap_err();
+            assert!(error.to_string().contains("unknown field"), "{error}");
+        }
+    }
+    let old = json!({"model_route": "cloud_allowed", "allowed_cloud_providers": [], "diagnostic_capture": false});
+    let error = serde_json::from_value::<PrivacyPolicy>(old).unwrap_err();
+    assert!(error.to_string().contains("unknown variant"), "{error}");
+    assert_eq!(
+        serde_json::to_value(PrivacyPolicy::default()).unwrap(),
+        json!({
+            "model_route": "local_only", "allowed_cloud_providers": [], "diagnostic_capture": false
+        })
+    );
+    // Content classification is independent from the removed model-routing variant.
+    assert_eq!(
+        serde_json::from_value::<DataClass>(json!("cloud_allowed")).unwrap(),
+        DataClass::CloudAllowed
+    );
 }
