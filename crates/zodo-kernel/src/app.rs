@@ -1188,6 +1188,11 @@ impl<'a> Application<'a> {
                 let planned = plan(&world, &input, now)?;
                 let operation = ChangeOp::PlanApply {
                     replace_task_ids: planned.replace_task_ids.clone(),
+                    expected_removed_allocation_ids: Some(crate::apply::plan_removal_ids(
+                        &world,
+                        &planned.replace_task_ids,
+                        now,
+                    )),
                     assignments: planned.assignments.clone(),
                     unplaced: planned.unplaced.clone(),
                 };
@@ -2426,6 +2431,23 @@ impl<'a> Application<'a> {
                 operations,
             )
         };
+        // Plan effects depend on the clock as well as the workspace revision. Do not issue
+        // approval for a legacy/unbound plan or a preview whose removals/start times changed.
+        // Evaluate on a clone; neither facts nor approval-bound operation bytes are rewritten.
+        if operations
+            .iter()
+            .any(|operation| matches!(operation, ChangeOp::PlanApply { .. }))
+        {
+            let mut replay = world.clone();
+            apply_operations(
+                &mut replay,
+                &operations,
+                &ctx.principal_id,
+                &ctx.channel,
+                now,
+                self.ids,
+            )?;
+        }
         let ttl = ttl_seconds.unwrap_or(900).clamp(30, 24 * 3600);
         let grant_expiry = (now + Duration::seconds(ttl)).min(expires_at);
         let grant = ApprovalGrant {

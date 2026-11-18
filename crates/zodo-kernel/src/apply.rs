@@ -542,12 +542,14 @@ pub fn apply_change(
         }
         ChangeOp::PlanApply {
             replace_task_ids,
+            expected_removed_allocation_ids,
             assignments,
             unplaced,
         } => {
             apply_plan(
                 world,
                 replace_task_ids,
+                expected_removed_allocation_ids.as_deref(),
                 assignments,
                 unplaced,
                 now,
@@ -1220,20 +1222,15 @@ fn overlaps(
     a_start < b_end && b_start < a_end
 }
 
-fn apply_plan(
-    world: &mut World,
+/// Exact eligible replacement IDs at one command instant; used for both approval binding
+/// and replay. Crossing a start boundary must not silently change the approved deletion set.
+pub(crate) fn plan_removal_ids(
+    world: &World,
     replace_task_ids: &[String],
-    assignments: &[AllocationDraft],
-    unplaced: &[UnplacedWork],
     now: DateTime<Utc>,
-    ids: &dyn IdSource,
-    source: &SourceRef,
-    outcome: &mut ApplyOutcome,
-) -> Result<()> {
-    // Remove only future, unlocked planned allocations for tasks that this proposal claims. Fixed
-    // facts (started, locked, past) remain untouched; unrelated tasks are never re-planned.
+) -> Vec<String> {
     let replace: BTreeSet<&str> = replace_task_ids.iter().map(String::as_str).collect();
-    let removed: Vec<String> = world
+    let mut removed: Vec<String> = world
         .allocations
         .iter()
         .filter(|allocation| {
@@ -1244,6 +1241,44 @@ fn apply_plan(
         })
         .map(|allocation| allocation.id.clone())
         .collect();
+    removed.sort();
+    removed
+}
+
+fn apply_plan(
+    world: &mut World,
+    replace_task_ids: &[String],
+    expected_removed_allocation_ids: Option<&[String]>,
+    assignments: &[AllocationDraft],
+    unplaced: &[UnplacedWork],
+    now: DateTime<Utc>,
+    ids: &dyn IdSource,
+    source: &SourceRef,
+    outcome: &mut ApplyOutcome,
+) -> Result<()> {
+    // Remove only future, unlocked planned allocations for tasks that this proposal claims. Fixed
+    // facts (started, locked, past) remain untouched; unrelated tasks are never re-planned.
+    let expected = expected_removed_allocation_ids.ok_or_else(|| {
+        ZodoError::new(
+            crate::error::ErrorCode::ApprovalRequired,
+            "legacy plan has no deletion binding; regenerate plan and approve its new preview",
+        )
+    })?;
+    let removed = plan_removal_ids(world, replace_task_ids, now);
+    let mut expected = expected.to_vec();
+    expected.sort();
+    if expected != removed {
+        return Err(ZodoError::new(
+            crate::error::ErrorCode::ApprovalRequired,
+            "plan deletion effects changed with time; regenerate plan and approve its new preview",
+        ));
+    }
+    if assignments.iter().any(|allocation| allocation.start < now) {
+        return Err(ZodoError::new(
+            crate::error::ErrorCode::ApprovalRequired,
+            "planned interval has already started; regenerate plan and approve its new preview",
+        ));
+    }
     for id in removed {
         world.allocations.retain(|allocation| allocation.id != id);
         outcome.record("allocation", &id, "removed_by_plan");

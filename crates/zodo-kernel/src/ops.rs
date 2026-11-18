@@ -627,6 +627,10 @@ pub enum ChangeOp {
     #[serde(rename = "plan.apply")]
     PlanApply {
         replace_task_ids: Vec<String>,
+        /// Approval-bound exact deletion set. Missing on legacy serialized operations.
+        /// Omit None when reserializing so old approval hashes are not rewritten.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_removed_allocation_ids: Option<Vec<String>>,
         assignments: Vec<AllocationDraft>,
         unplaced: Vec<UnplacedWork>,
     },
@@ -706,9 +710,19 @@ impl ChangeOp {
             Self::ReminderCancel { .. } => Ok(()),
             Self::PlanApply {
                 replace_task_ids,
+                expected_removed_allocation_ids,
                 assignments,
                 ..
             } => {
+                if let Some(expected) = expected_removed_allocation_ids {
+                    let unique: std::collections::BTreeSet<_> = expected.iter().collect();
+                    if expected.len() > 2000
+                        || unique.len() != expected.len()
+                        || expected.iter().any(|id| id.trim().is_empty())
+                    {
+                        return Err(ZodoError::validation("invalid plan deletion binding"));
+                    }
+                }
                 if replace_task_ids.len() > MAX_BATCH || assignments.len() > 2000 {
                     return Err(ZodoError::validation("plan proposal is too large"));
                 }
