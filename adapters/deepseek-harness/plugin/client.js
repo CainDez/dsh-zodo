@@ -532,6 +532,10 @@ window.__ModuleLoader__.load({
         ['capacity', snapshot.capacity_blocks],
         ['commitment', snapshot.commitments],
         ['allocation', snapshot.allocations],
+        // Match Core planner's busy predicate. Project only interval data, never
+        // imported titles, notes, source IDs or external IDs into view models.
+        ['busy', (snapshot.calendar_events ?? []).filter(event => event.busy === true)
+          .map((event, index) => ({ id: `busy-${index}`, start: event.start, end: event.end }))],
       ]) {
         for (const row of rows ?? []) {
           const start = typeof row.start === 'string' ? Date.parse(row.start) : NaN
@@ -548,6 +552,12 @@ window.__ModuleLoader__.load({
       // Compare instants, not offset-bearing strings or grouped event types.
       return entries.sort((a, b) => a.start - b.start || a.end - b.end ||
         a.kind.localeCompare(b.kind) || String(a.row.id).localeCompare(String(b.row.id)))
+    }
+    function calendarFreshness(source, now = Date.now()) {
+      const synced = typeof source.last_sync_at === 'string' ? Date.parse(source.last_sync_at) : NaN
+      const ttl = source.freshness_seconds
+      if (!Number.isFinite(synced) || synced > now || !Number.isFinite(ttl) || ttl < 0) return '未知'
+      return (now - synced) / 1000 > ttl ? '过期' : '新鲜'
     }
     // END PURE AGENDA PROJECTION
 
@@ -3381,7 +3391,7 @@ window.__ModuleLoader__.load({
             ? h('div', { className: 'zw-list' }, snapshot.calendar_sources.map(source =>
                 h('div', { className: 'zw-list-row', key: source.id, 'data-testid': `settings-calendar-${source.id}` },
                   h('span', null, source.display_name),
-                  h('span', { className: 'zw-muted' }, `${source.provider} · ${source.writable ? '可写' : '只读'} · 同步 ${dateTimeFor(source.last_sync_at)}`),
+                  h('span', { className: 'zw-muted' }, `${source.provider} · ${source.writable ? '可写' : '只读'} · 同步 ${calendarFreshness(source) === '未知' ? '未知' : dateTimeFor(source.last_sync_at)}`),
                 )))
             : h(Empty, null, '尚未连接外部日历；忙碌快照仍可从日程页手动导入。'),
           h('p', { className: 'zw-fineprint' }, '时间连接只显示本地日历源快照；浏览器不直接访问外部账号，也不支持自动写入。'),
@@ -3871,9 +3881,8 @@ window.__ModuleLoader__.load({
         return b.priority - a.priority
       })[0]
       const selectedTask = findTask(snapshot, selectedTaskId)
-      const todayCommitments = (snapshot?.commitments ?? []).filter(row => row.start.slice(0, 10) <= today && row.end.slice(0, 10) >= today)
-      const todayCapacity = (snapshot?.capacity_blocks ?? []).filter(row => row.start.slice(0, 10) <= today && row.end.slice(0, 10) >= today)
-      const todayAllocations = (snapshot?.allocations ?? []).filter(row => row.start.slice(0, 10) <= today && row.end.slice(0, 10) >= today)
+      const todayEntries = agendaEntries(snapshot ?? {}, today)
+      const todayAllocations = todayEntries.filter(entry => entry.kind === 'allocation').map(entry => entry.row)
       const unplacedMinutes = activeTasks.reduce((sum, task) => {
         const remaining = task.remaining_minutes ?? task.estimate_minutes ?? 0
         const allocated = (snapshot?.allocations ?? []).filter(row => row.task_id === task.id).reduce((value, row) => value + row.minutes, 0)
@@ -4069,23 +4078,17 @@ window.__ModuleLoader__.load({
         h('div', { className: 'zw-today-grid' },
           h(Section, { title: '承诺与容量', className: 'zw-span2' },
             h('div', { className: 'zw-agenda' },
-              todayCommitments.map(row => h('div', { className: 'zw-agenda-row', key: row.id },
-                h('span', { className: 'zw-time' }, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                h('span', { className: 'zw-agenda-title' }, row.title),
-                h(Badge, { tone: 'fixed' }, '固定'),
-              )),
-              todayCapacity.map(row => h('div', { className: 'zw-agenda-row', key: row.id },
-                h('span', { className: 'zw-time' }, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                h('span', { className: 'zw-agenda-title' }, row.title),
-                h(Badge, { tone: 'accent' }, `容量 ${row.capacity_minutes} 分`),
-              )),
-              todayAllocations.map(row => h('div', { className: 'zw-agenda-row zw-allocation', key: row.id },
-                h('span', { className: 'zw-time' }, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                h('span', { className: 'zw-agenda-title' }, taskTitle(snapshot, row.task_id)),
-                h(Badge, { tone: 'soft' }, '任务分配'),
-              )),
-              (todayCommitments.length + todayCapacity.length + todayAllocations.length) === 0
-                ? h(Empty, null, '今天没有固定安排或容量块。增加容量后可以生成计划。') : null,
+              todayEntries.map(entry => {
+                const { row, kind } = entry
+                return h('div', { className: `zw-agenda-row ${kind === 'allocation' ? 'zw-allocation' : ''}`, key: `${kind}:${row.id}` },
+                  h('span', { className: 'zw-time' }, `${timeFor(new Date(entry.visibleStart).toISOString())}–${entry.endsAtDayBoundary ? '24:00' : timeFor(new Date(entry.visibleEnd).toISOString())}`),
+                  h('span', { className: 'zw-agenda-title' }, kind === 'busy' ? '外部日历忙碌' : kind === 'allocation' ? taskTitle(snapshot, row.task_id) : row.title),
+                  h(Badge, { tone: kind === 'commitment' || kind === 'busy' ? 'fixed' : 'soft' }, kind === 'busy' ? '只读忙碌快照' : kind === 'commitment' ? '固定' : kind === 'capacity' ? `容量 ${row.capacity_minutes} 分（全段）` : '任务分配'),
+                  entry.continuesBefore || entry.continuesAfter ? h('small', null, [entry.continuesBefore ? '从前日延续' : '', entry.continuesAfter ? '延续至次日' : ''].filter(Boolean).join(' · ')) : null,
+                )
+              }),
+              todayEntries.length === 0 ? h(Empty, null, '今天暂无已知安排，空白不代表可预约。') : null,
+              h('p', { className: 'zw-fineprint' }, '按本机时区显示。外部忙碌为只读快照；来源缺失、未知或过期时不能据此判断可预约，请在日程中检查日历新鲜度。'),
             ),
           ),
           h(Section, { title: '下一步' },
@@ -4337,7 +4340,7 @@ window.__ModuleLoader__.load({
             h(Button, { onClick: () => setScheduleStart(value => agendaShift(value, 7)), disabled: scheduleStart >= AGENDA_MAX, testid: 'schedule-next' }, '后 7 天'),
             h('span', { 'aria-live': 'polite', 'data-testid': 'schedule-range' }, `${days[0]} 至 ${days[6]}`),
           ),
-          h('p', { className: 'zw-fineprint' }, '按本机时区显示；跨日安排分段展示，详情保留完整时间。外部日历忙碌快照暂不在此展开，空白不代表可预约。'),
+          h('p', { className: 'zw-fineprint' }, '按本机时区显示；跨日安排分段展示，详情保留完整时间。外部日历仅显示只读忙碌区间；空白不代表可预约，来源缺失、未知或过期时请先核实日历。'),
           h('div', { className: 'zw-week' },
             days.map(day => {
               const entries = agendaEntries(snapshot, day)
@@ -4345,6 +4348,11 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'zw-day-head' }, h('strong', null, dateForLocal(`${day}T12:00:00`)), h('span', null, new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(new Date(`${day}T12:00:00`)))),
                 entries.map(entry => {
                   const { row, kind } = entry
+                  if (kind === 'busy') return h('div', { className: 'zw-slot zw-slot-fixed', key: row.id, 'data-testid': 'time-busy' },
+                    h('strong', null, `${timeFor(new Date(entry.visibleStart).toISOString())}–${entry.endsAtDayBoundary ? '24:00' : timeFor(new Date(entry.visibleEnd).toISOString())}`),
+                    h('span', null, '外部日历忙碌'), h('em', null, '只读忙碌快照'),
+                    entry.continuesBefore || entry.continuesAfter ? h('small', null, [entry.continuesBefore ? '从前日延续' : '', entry.continuesAfter ? '延续至次日' : ''].filter(Boolean).join(' · ')) : null,
+                  )
                   const openDetail = () => setModal({ type: 'time-detail', kind, row })
                   return h('div', { className: `zw-slot zw-slot-${kind === 'commitment' ? 'fixed' : kind}`, key: `${kind}:${row.id}`, role: 'button', tabIndex: 0,
                     onClick: openDetail,
@@ -4356,7 +4364,7 @@ window.__ModuleLoader__.load({
                     entry.continuesBefore || entry.continuesAfter ? h('small', null, [entry.continuesBefore ? '从前日延续' : '', entry.continuesAfter ? '延续至次日' : ''].filter(Boolean).join(' · ')) : null,
                   )
                 }),
-                entries.length === 0 ? h('div', { className: 'zw-day-empty' }, '暂无本地安排') : null,
+                entries.length === 0 ? h('div', { className: 'zw-day-empty' }, '暂无已知安排') : null,
               )
             }),
           ),
@@ -4368,16 +4376,15 @@ window.__ModuleLoader__.load({
             ),
             h(Section, { title: '日历新鲜度' },
               snapshot.calendar_sources?.length ? snapshot.calendar_sources.map(source => {
-                const eventCount = (snapshot.calendar_events ?? []).filter(event => event.source_id === source.id).length
-                const ageSeconds = Math.max(0, (Date.now() - new Date(source.last_sync_at).getTime()) / 1000)
-                const stale = Number.isFinite(ageSeconds) && ageSeconds > (source.freshness_seconds ?? 0)
+                const eventCount = (snapshot.calendar_events ?? []).filter(event => event.source_id === source.id && event.busy === true).length
+                const freshness = calendarFreshness(source)
                 return h('div', { className: 'zw-list-row', key: source.id, 'data-testid': `calendar-source-${source.id}` },
                   h('span', null, source.display_name),
-                  h('span', { className: 'zw-muted' }, `${eventCount} 个忙碌事件 · 同步 ${dateTimeFor(source.last_sync_at)}`),
-                  h(Badge, { tone: stale ? 'warn' : 'accent' }, stale ? '过期' : '新鲜'),
+                  h('span', { className: 'zw-muted' }, `${eventCount} 个忙碌事件 · 同步 ${freshness === '未知' ? '未知' : dateTimeFor(source.last_sync_at)}`),
+                  h(Badge, { tone: freshness === '新鲜' ? 'accent' : 'warn' }, freshness),
                   h(Badge, { tone: 'neutral' }, source.provider),
                 )
-              }) : h(Empty, null, '没有外部日历快照。忙碌导入是只读的，不会移动固定事实。'),
+              }) : h(Empty, null, '没有外部日历来源，无法判断日历覆盖情况。忙碌导入是只读的，空白不代表可预约。'),
             ),
           ),
         )

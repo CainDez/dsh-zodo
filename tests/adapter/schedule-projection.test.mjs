@@ -9,7 +9,7 @@ const source = readFileSync(new URL('../../adapters/deepseek-harness/plugin/clie
 const start = source.indexOf('    // BEGIN PURE AGENDA PROJECTION')
 const end = source.indexOf('    // END PURE AGENDA PROJECTION')
 assert.ok(start >= 0 && end > start)
-const api = vm.runInNewContext(`${source.slice(start, end)}\n({ agendaDays, agendaShift, agendaEntries })`)
+const api = vm.runInNewContext(`${source.slice(start, end)}\n({ agendaDays, agendaShift, agendaEntries, calendarFreshness })`)
 const row = (id, start, end) => ({ id, start, end })
 const ids = entries => Array.from(entries, entry => `${entry.kind}:${entry.row.id}`)
 function inZone(zone, run) {
@@ -89,4 +89,61 @@ test('navigation, unified detail wiring and existing action hooks are retained',
   for (const hook of ['schedule-previous', 'schedule-today', 'schedule-next', 'schedule-range', 'schedule-time', 'capacity-suggest', 'meeting-propose']) assert.ok(source.includes(`'${hook}'`), hook)
   assert.ok(source.includes("setModal({ type: 'time-detail', kind, row })"))
   assert.ok(source.includes('`time-${kind}-${row.id}`'))
+})
+
+test('busy projection mirrors Core, strips private fields, retains stale/orphan busy and never mutates input', () => inZone('UTC', () => {
+  const secret = 'PRIVATE_SENTINEL'
+  const snapshot = { calendar_events: [
+    { ...row(secret, '2026-11-18T09:00Z', '2026-11-18T10:00Z'), busy: true, title: secret, notes: secret, source_id: secret, external_id: secret },
+    { ...row('free', '2026-11-18T08:00Z', '2026-11-18T09:00Z'), busy: false },
+    { ...row('missing', '2026-11-18T08:00Z', '2026-11-18T09:00Z') },
+  ], commitments: [row('local', '2026-11-18T08:00Z', '2026-11-18T08:30Z')] }
+  const before = JSON.stringify(snapshot)
+  const result = api.agendaEntries(snapshot, '2026-11-18')
+  assert.deepEqual(ids(result), ['commitment:local', 'busy:busy-0'])
+  assert.deepEqual(Object.keys(result[1].row).sort(), ['end', 'id', 'start'])
+  assert.equal(JSON.stringify(result).includes(secret), false)
+  assert.equal(JSON.stringify(snapshot), before)
+  assert.equal(api.agendaEntries(snapshot, '2026-11-19').length, 0)
+}))
+
+test('freshness fails closed for missing, invalid and future timestamps, TTL and stale data', () => {
+  const now = Date.parse('2026-11-18T12:00Z')
+  const valid = { last_sync_at: '2026-11-18T11:00Z', freshness_seconds: 3600 }
+  assert.equal(api.calendarFreshness(valid, now), '新鲜')
+  assert.equal(api.calendarFreshness(valid, now + 1), '过期')
+  for (const source of [{}, {...valid, last_sync_at:'bad'}, {...valid, last_sync_at:'2026-11-19T12:00Z'}, {...valid, freshness_seconds:undefined}, {...valid, freshness_seconds:-1}]) {
+    assert.equal(api.calendarFreshness(source, now), '未知')
+  }
+})
+
+test('Today consumes shared chronological projection; busy slots have no detail handler or identifier attribute', () => {
+  assert.ok(source.includes('const todayEntries = agendaEntries(snapshot ?? {}, today)'))
+  assert.ok(source.includes('todayEntries.map(entry =>'))
+  assert.equal(source.includes('const todayCommitments ='), false)
+  const busyStart = source.indexOf("if (kind === 'busy') return h('div'")
+  const busyEnd = source.indexOf('const openDetail', busyStart)
+  const busyRender = source.slice(busyStart, busyEnd)
+  assert.ok(busyRender.includes('只读忙碌快照'))
+  for (const excluded of ['onClick', 'onKeyDown', 'tabIndex', 'row.title', 'source_id', 'external_id', 'notes', 'setModal']) assert.equal(busyRender.includes(excluded), false, excluded)
+  assert.ok(source.includes('空白不代表可预约'))
+})
+
+test('Settings calendar source section executes with populated and missing sources without leaked scope', () => {
+  const begin = source.indexOf("h(Section, { title: '时间连接与日历源' }")
+  const end = source.indexOf("h(Section, { title: '无模型手工路径' }", begin)
+  assert.ok(begin > 0 && end > begin)
+  // Execute the production render expression, not a reimplementation. A bare
+  // out-of-scope `freshness` reference must throw here, even without a browser.
+  const expression = source.slice(begin, end).trim().replace(/,$/, '')
+  const render = calendar_sources => vm.runInNewContext(expression, {
+    snapshot: { calendar_sources }, Section: 'Section', Empty: 'Empty',
+    h: (tag, props, ...children) => ({ tag, props, children }),
+    calendarFreshness: api.calendarFreshness,
+    dateTimeFor: value => `formatted:${value}`,
+  })
+  const valid = { id: 'source', provider: 'fixture', display_name: 'Calendar', last_sync_at: '2026-01-01T12:00Z', freshness_seconds: 60, writable: false }
+  assert.ok(JSON.stringify(render([valid])).includes('formatted:2026-01-01T12:00Z'))
+  assert.ok(JSON.stringify(render([{ ...valid, last_sync_at: undefined }])).includes('同步 未知'))
+  assert.ok(JSON.stringify(render([])).includes('尚未连接外部日历'))
 })
