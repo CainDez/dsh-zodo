@@ -9,7 +9,7 @@ const source = readFileSync(new URL('../../adapters/deepseek-harness/plugin/clie
 const start = source.indexOf('    // BEGIN PURE AGENDA PROJECTION')
 const end = source.indexOf('    // END PURE AGENDA PROJECTION')
 assert.ok(start >= 0 && end > start)
-const api = vm.runInNewContext(`${source.slice(start, end)}\n({ agendaDays, agendaShift, agendaEntries, calendarFreshness })`)
+const api = vm.runInNewContext(`${source.slice(start, end)}\n({ agendaDays, agendaShift, agendaEntries, calendarFreshness, todayNextAction })`)
 const row = (id, start, end) => ({ id, start, end })
 const ids = entries => Array.from(entries, entry => `${entry.kind}:${entry.row.id}`)
 function inZone(zone, run) {
@@ -146,4 +146,70 @@ test('Settings calendar source section executes with populated and missing sourc
   assert.ok(JSON.stringify(render([valid])).includes('formatted:2026-01-01T12:00Z'))
   assert.ok(JSON.stringify(render([{ ...valid, last_sync_at: undefined }])).includes('同步 未知'))
   assert.ok(JSON.stringify(render([])).includes('尚未连接外部日历'))
+})
+
+test('Today chooses saved current/next allocation, not priority or a running focus claim', () => inZone('UTC', () => {
+  const now = Date.parse('2026-11-18T10:00Z')
+  const tasks = [{id:'a'}, {id:'b'}, {id:'urgent', not_before:'2026-11-20T10:00Z', dependencies:['blocked']}]
+  const snapshot = { allocations: [
+    {...row('ended', '2026-11-18T08:00Z', '2026-11-18T10:00Z'), task_id:'urgent'},
+    {...row('current', '2026-11-18T09:00Z', '2026-11-18T11:00Z'), task_id:'a'},
+    {...row('next', '2026-11-18T12:00Z', '2026-11-18T13:00Z'), task_id:'b'},
+  ] }
+  const entries = api.agendaEntries(snapshot, '2026-11-18')
+  const current = api.todayNextAction(entries, tasks, tasks[2], now)
+  assert.equal(current.kind, 'scheduled-now')
+  assert.equal(current.task.id, 'a')
+  assert.equal(current.entry.row.id, 'current')
+  const next = api.todayNextAction(entries, tasks, tasks[2], Date.parse('2026-11-18T11:00Z'))
+  assert.equal(next.kind, 'scheduled-next')
+  assert.equal(next.task.id, 'b')
+  // No remaining allocation: deadline shortlist remains explicitly a suggestion,
+  // including potentially blocked/future tasks; never infer feasibility.
+  const fallback = api.todayNextAction(entries, tasks, tasks[2], Date.parse('2026-11-18T14:00Z'))
+  assert.equal(fallback.kind, 'suggestion')
+  assert.equal(fallback.task, tasks[2])
+  assert.equal(fallback.entry, undefined)
+  assert.equal(api.todayNextAction(entries, [], null, now), null)
+  assert.equal(api.todayNextAction([], tasks, tasks[2], now).kind, 'suggestion')
+}))
+
+test('Today default card opens task; focus is explicit and does not bubble; timestamp and caveat render', () => {
+  const begin = source.indexOf("h(Section, { title: '下一步' }")
+  const end = source.indexOf("h(Section, { title: '风险与未排入' }", begin)
+  const expression = source.slice(begin, end).trim().replace(/,$/, '')
+  const opened = [], focused = []
+  const task = {id:'task', title:'Fixture', estimate_minutes:15}
+  const tree = vm.runInNewContext(expression, {
+    Section:'Section', Button:'Button', Empty:'Empty', busy:false,
+    todayCheckedAt: Date.parse('2026-11-18T10:00Z'), todayAction:{kind:'suggestion',task},
+    dateTimeFor: value => value,
+    openTask: id => opened.push(id), focusStart: task => focused.push(task.id),
+    h: (tag, props, ...children) => ({tag, props, children}),
+  })
+  assert.ok(JSON.stringify(tree).includes('2026-11-18T10:00:00.000Z'))
+  assert.ok(JSON.stringify(tree).includes('建议不是可执行性判断'))
+  const card = tree.children.find(child => child?.props?.['data-testid'] === 'today-next-task')
+  card.props.onClick()
+  let prevented = false
+  const cardElement = {}
+  const childButtonElement = {}
+  // Native child buttons own Enter/Space; bubbling must not navigate or cancel
+  // their browser activation. Only keyboard input on the card itself opens it.
+  for (const key of ['Enter', ' ']) {
+    card.props.onKeyDown({key, target:childButtonElement, currentTarget:cardElement, preventDefault:()=>{prevented=true}})
+  }
+  assert.equal(prevented, false)
+  assert.deepEqual(opened, ['task'])
+  for (const key of ['Enter', ' ']) {
+    card.props.onKeyDown({key, target:cardElement, currentTarget:cardElement, preventDefault:()=>{prevented=true}})
+  }
+  assert.equal(prevented, true)
+  assert.deepEqual(opened, ['task','task','task'])
+  assert.deepEqual(focused, [])
+  const button = card.children.find(child => child?.props?.testid === 'today-focus')
+  let stopped = false
+  button.props.onClick({stopPropagation:()=>{stopped=true}})
+  assert.equal(stopped, true)
+  assert.deepEqual(focused, ['task'])
 })

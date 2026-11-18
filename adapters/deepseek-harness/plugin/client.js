@@ -559,6 +559,14 @@ window.__ModuleLoader__.load({
       if (!Number.isFinite(synced) || synced > now || !Number.isFinite(ttl) || ttl < 0) return '未知'
       return (now - synced) / 1000 > ttl ? '过期' : '新鲜'
     }
+    // Read-only selection, not a feasibility check or a running focus session.
+    function todayNextAction(entries, tasks, suggestion, now) {
+      const scheduled = entries.filter(entry => entry.kind === 'allocation' && entry.end > now)
+        .map(entry => ({ entry, task: tasks.find(task => task.id === entry.row.task_id) }))
+        .find(candidate => candidate.task)
+      if (scheduled) return { ...scheduled, kind: scheduled.entry.start <= now ? 'scheduled-now' : 'scheduled-next' }
+      return suggestion ? { kind: 'suggestion', task: suggestion } : null
+    }
     // END PURE AGENDA PROJECTION
 
     function statusLabel(status) {
@@ -3882,6 +3890,8 @@ window.__ModuleLoader__.load({
       })[0]
       const selectedTask = findTask(snapshot, selectedTaskId)
       const todayEntries = agendaEntries(snapshot ?? {}, today)
+      const todayCheckedAt = Date.now()
+      const todayAction = todayNextAction(todayEntries, activeTasks, nextTask, todayCheckedAt)
       const todayAllocations = todayEntries.filter(entry => entry.kind === 'allocation').map(entry => entry.row)
       const unplacedMinutes = activeTasks.reduce((sum, task) => {
         const remaining = task.remaining_minutes ?? task.estimate_minutes ?? 0
@@ -4092,12 +4102,16 @@ window.__ModuleLoader__.load({
             ),
           ),
           h(Section, { title: '下一步' },
-            nextTask ? h('div', { className: 'zw-next', onClick: () => openTask(nextTask.id), role: 'button', tabIndex: 0,
-              onKeyDown: event => { if (event.key === 'Enter') openTask(nextTask.id) } },
-              h('span', { className: 'zw-next-kicker' }, '最值得开始的一项'),
-              h('strong', null, nextTask.title),
-              h('span', { className: 'zw-muted' }, `${nextTask.remaining_minutes ?? nextTask.estimate_minutes ?? '—'} 分钟剩余`),
-              h(Button, { tone: 'primary', onClick: event => { event.stopPropagation(); focusStart(nextTask) }, disabled: busy, testid: 'today-focus' }, '开始专注'),
+            h('p', { className: 'zw-fineprint', 'data-testid': 'today-action-asof' }, `截至 ${dateTimeFor(new Date(todayCheckedAt).toISOString())} · 本次页面计算，非实时专注状态`),
+            todayAction ? h('div', { className: 'zw-next', onClick: () => openTask(todayAction.task.id), role: 'button', tabIndex: 0,
+              onKeyDown: event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openTask(todayAction.task.id) } },
+              'data-testid': 'today-next-task' },
+              h('span', { className: 'zw-next-kicker' }, todayAction.kind === 'scheduled-now' ? '计划时段覆盖当前时间' : todayAction.kind === 'scheduled-next' ? '今天下一项计划安排' : '按截止日期与优先级排序的建议'),
+              h('strong', null, todayAction.task.title),
+              todayAction.entry ? h('span', { className: 'zw-muted' }, `${dateTimeFor(todayAction.entry.row.start)}–${dateTimeFor(todayAction.entry.row.end)}`) : null,
+              h('span', { className: 'zw-muted' }, `${todayAction.task.remaining_minutes ?? todayAction.task.estimate_minutes ?? '—'} 分钟剩余`),
+              h('p', { className: 'zw-fineprint' }, todayAction.entry ? '这是已保存的计划，不代表正在专注，也不保证当前可执行。点击任务卡查看详情。' : '今天没有后续有效任务分配。建议不是可执行性判断；请核实依赖、最早开始时间与容量。点击任务卡查看详情。'),
+              h(Button, { tone: 'primary', onClick: event => { event.stopPropagation(); focusStart(todayAction.task) }, disabled: busy, testid: 'today-focus' }, '开始专注'),
             ) : h(Empty, null, '没有待办。可以从收集箱开始。'),
           ),
           h(Section, { title: '风险与未排入' },
