@@ -398,6 +398,11 @@ pub fn apply_change(
             let id = create_allocation(world, allocation, &source, now, ids)?;
             outcome.record("allocation", &id, "created");
         }
+        ChangeOp::AllocationSchedule { allocation } => {
+            let draft = validate_scheduled_allocation(world, allocation, now)?;
+            let id = create_allocation(world, &draft, &source, now, ids)?;
+            outcome.record("allocation", &id, "created");
+        }
         ChangeOp::AllocationUpdate { id, allocation } => {
             update_allocation(world, id, allocation, source.clone(), now)?;
             outcome.record("allocation", id, "updated");
@@ -952,6 +957,98 @@ fn update_capacity(
     block.locked = input.locked;
     block.updated_at = now;
     Ok(())
+}
+
+/// Rechecked during both proposal validation and commit. Only the eventual allocation is
+/// appended; no task, existing allocation, capacity, activity, or provider fact is modified.
+fn validate_scheduled_allocation(
+    world: &World,
+    input: &crate::ops::ScheduledAllocation,
+    now: DateTime<Utc>,
+) -> Result<AllocationDraft> {
+    input.validate()?;
+    if input.start <= now {
+        return Err(ZodoError::validation(
+            "scheduled interval must start in the future",
+        ));
+    }
+    let task = world
+        .task(&input.task_id)
+        .ok_or_else(|| ZodoError::not_found("task", &input.task_id))?;
+    if task.version != input.expected_task_version {
+        return Err(ZodoError::new(
+            crate::error::ErrorCode::RevisionConflict,
+            "task changed; refresh and create a new scheduling proposal",
+        ));
+    }
+    if !world.is_leaf(&task.id) || task.blocked_manual {
+        return Err(ZodoError::validation(
+            "only an unblocked leaf task can be scheduled",
+        ));
+    }
+    if task.not_before.is_some_and(|start| input.start < start)
+        || task.hard_deadline.is_some_and(|end| input.end > end)
+    {
+        return Err(ZodoError::validation(
+            "scheduled interval violates task time constraints",
+        ));
+    }
+    // Match planner dependency semantics: completed/cancelled predecessors are satisfied;
+    // otherwise all remaining work must have outstanding reservations ending before us.
+    // An elapsed plan is never treated as proof that predecessor work was completed.
+    for dependency in world.dependencies_of(&task.id) {
+        let predecessor = world
+            .task(&dependency.predecessor_id)
+            .ok_or_else(|| ZodoError::not_found("task", &dependency.predecessor_id))?;
+        if matches!(predecessor.status, TaskStatus::Done | TaskStatus::Cancelled) {
+            continue;
+        }
+        let required = predecessor
+            .remaining_minutes
+            .or(predecessor.estimate_minutes)
+            .unwrap_or(0);
+        let mut reserved = 0_u64;
+        let mut latest_end = now;
+        for allocation in world.allocations.iter().filter(|allocation| {
+            allocation.task_id == predecessor.id && allocation.reserves_work_at(now)
+        }) {
+            reserved += u64::from(allocation.minutes);
+            latest_end = latest_end.max(allocation.end);
+        }
+        if predecessor.archived
+            || predecessor.blocked_manual
+            || required == 0
+            || reserved < u64::from(required)
+            || latest_end > input.start
+        {
+            return Err(ZodoError::validation(
+                "predecessor work is not fully scheduled before this interval",
+            ));
+        }
+    }
+    if world.workspace.settings.timezone.parse::<Tz>().is_err() {
+        return Err(ZodoError::validation(
+            "workspace timezone must be valid before scheduling",
+        ));
+    }
+    if crate::planner::workspace_allowed_ranges(world, input.start, input.end)
+        != vec![(input.start, input.end)]
+    {
+        return Err(ZodoError::validation(
+            "scheduled interval is outside workspace availability",
+        ));
+    }
+    // Existing allocation validation remains authoritative for membership/budget, open-task
+    // work bounds, and overlap with allocations, commitments, and imported busy events.
+    Ok(AllocationDraft {
+        id: None,
+        task_id: input.task_id.clone(),
+        capacity_block_id: Some(input.capacity_block_id.clone()),
+        start: input.start,
+        end: input.end,
+        minutes: (input.end - input.start).num_minutes() as u32,
+        locked: false,
+    })
 }
 
 fn create_allocation(

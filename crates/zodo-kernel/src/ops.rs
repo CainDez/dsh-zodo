@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
@@ -454,6 +454,49 @@ impl AllocationDraft {
     }
 }
 
+/// Exact, additive user-confirmed scheduling. Unlike manual/history allocation writes,
+/// this operation carries no override, caller-chosen identity, or mutable duration field.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduledAllocation {
+    pub task_id: String,
+    pub expected_task_version: u64,
+    pub capacity_block_id: String,
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+}
+
+impl ScheduledAllocation {
+    pub fn validate(&self) -> Result<()> {
+        if self.task_id.trim().is_empty() || self.capacity_block_id.trim().is_empty() {
+            return Err(ZodoError::validation(
+                "task and existing capacity IDs are required",
+            ));
+        }
+        if self.expected_task_version == 0 {
+            return Err(ZodoError::validation(
+                "expected_task_version must be positive",
+            ));
+        }
+        if self.start.second() != 0
+            || self.end.second() != 0
+            || self.start.nanosecond() != 0
+            || self.end.nanosecond() != 0
+        {
+            return Err(ZodoError::validation(
+                "scheduled interval must use whole-minute boundaries",
+            ));
+        }
+        let minutes = (self.end - self.start).num_minutes();
+        if !(1..=1440).contains(&minutes) {
+            return Err(ZodoError::validation(
+                "scheduled interval must be 1..1440 minutes",
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct NoteSpec {
@@ -553,6 +596,8 @@ pub enum ChangeOp {
     CapacityRemove { id: String },
     #[serde(rename = "allocation.create")]
     AllocationCreate { allocation: AllocationDraft },
+    #[serde(rename = "allocation.schedule")]
+    AllocationSchedule { allocation: ScheduledAllocation },
     #[serde(rename = "allocation.update")]
     AllocationUpdate {
         id: String,
@@ -648,6 +693,7 @@ impl ChangeOp {
             Self::AllocationCreate { allocation } | Self::AllocationUpdate { allocation, .. } => {
                 allocation.validate()
             }
+            Self::AllocationSchedule { allocation } => allocation.validate(),
             Self::AllocationRemove { .. } | Self::AllocationSetLocked { .. } => Ok(()),
             Self::NoteCreate { note } | Self::NoteUpdate { note, .. } => note.validate(),
             Self::TaskArchive { .. } | Self::TaskSetBlocked { .. } => Ok(()),
@@ -677,7 +723,9 @@ impl ChangeOp {
     pub fn effects(&self) -> Vec<String> {
         match self {
             Self::ReminderCreate { .. } => vec!["reminder".to_string()],
-            Self::PlanApply { .. } => vec!["schedule".to_string()],
+            Self::PlanApply { .. } | Self::AllocationSchedule { .. } => {
+                vec!["schedule".to_string()]
+            }
             _ => Vec::new(),
         }
     }

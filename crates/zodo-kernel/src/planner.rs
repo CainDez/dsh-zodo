@@ -507,7 +507,7 @@ fn build_slots(
 
 /// Hard work windows and weekend policy are availability constraints. Soft windows are only a
 /// preference and never silently become hard exclusions.
-fn workspace_allowed_ranges(
+pub(crate) fn workspace_allowed_ranges(
     world: &World,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
