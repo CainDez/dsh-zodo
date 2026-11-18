@@ -1410,6 +1410,69 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // Strict quick scheduling creates a candidate only; normal approval owns commit.
+    function QuickSchedule({ day, snapshot, send, busy, onClose, setModal }) {
+      const timeZone = workspaceTimezone(snapshot)
+      const zoneValid = isKnownTimezone(timeZone)
+      const pending = useRef(false)
+      const [form, setForm] = useState({ task: '', capacity: '', start: `${day}T09:00`, end: `${day}T10:00`, startChoice: null, endChoice: null })
+      const [error, setError] = useState('')
+      const tasks = (snapshot.tasks ?? []).filter(task => !task.archived && !['done', 'cancelled'].includes(task.status))
+      const selected = tasks.find(task => task.id === form.task)
+      const capacity = (snapshot.capacity_blocks ?? []).find(block => block.id === form.capacity)
+      const resolved = Object.fromEntries(['start', 'end'].map(key => [key, zoneValid && form[key]
+        ? resolveWallTime(form[key].slice(0, 10), form[key].slice(11, 16), timeZone) : { instants: [] }]))
+      const instant = key => resolved[key].instants.length === 1 ? resolved[key].instants[0]
+        : resolved[key].instants.includes(form[`${key}Choice`]) ? form[`${key}Choice`] : null
+      const start = instant('start'), end = instant('end')
+      const close = () => { if (!pending.current && !busy) onClose() }
+      const propose = async () => {
+        if (pending.current || busy) return
+        setError('')
+        if (!selected || !capacity) return setError('请选择任务和已有容量块；不会自动创建容量。')
+        if (!zoneValid || start == null || end == null) return setError('时间缺失、不存在或存在夏令时歧义；请修正并明确选择时刻。')
+        if (end <= start) return setError('结束必须晚于开始。')
+        if (!Number.isInteger(selected.version) || selected.version < 1) return setError('任务版本无效，请刷新后重试。')
+        pending.current = true
+        try {
+          const result = await send('proposal.create', {
+            intent: `安排任务「${selected.title}」到容量「${capacity.title}」：${form.start} 至 ${form.end}（${timeZone}）；UTC ${new Date(start).toISOString()} 至 ${new Date(end).toISOString()}`,
+            operations: [{ operation: 'allocation.schedule', payload: { allocation: {
+              task_id: selected.id, expected_task_version: selected.version, capacity_block_id: capacity.id,
+              start: new Date(start).toISOString(), end: new Date(end).toISOString(),
+            } } }],
+          })
+          const proposal = result.data?.proposal
+          if (!proposal || proposal.status !== 'validated') {
+            setError('Core 未返回有效的严格安排提案。请检查提案诊断或升级 Core；未安排任何时间，不会退回手工接口。')
+            return
+          }
+          setModal({ type: 'plan', proposal, plan: null, grant: null })
+        } catch (failure) {
+          setError(`严格安排预览失败：${failure.message}。若 Core 不支持 allocation.schedule，请升级后重试；不会使用宽松接口。`)
+        } finally { pending.current = false }
+      }
+      return h(Modal, { title: '安排任务时段', onClose: close, wide: true,
+        footer: h(React.Fragment, null,
+          h(Button, { onClick: close, disabled: busy }, COPY.cancel),
+          h(Button, { onClick: propose, disabled: busy, testid: 'schedule-slot-preview' }, '生成严格预览')) },
+        error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
+        busy ? h('p', { role: 'status' }, '正在生成预览，请等待后关闭。') : null,
+        h('p', { className: 'zw-fineprint' }, `所选日期标签 ${day} 来自本机日程；下面所有日期与钟点按工作空间时区 ${timeZone} 解释，不自动猜测跨时区对应时刻。请核对 UTC 预览。`),
+        h(Field, { label: '任务' }, h('select', { value: form.task, onChange: event => setForm({ ...form, task: event.target.value }), 'data-testid': 'schedule-slot-task' },
+          h('option', { value: '' }, '选择任务'), tasks.map(task => h('option', { key: task.id, value: task.id }, task.title)))),
+        h(Field, { label: '已有容量块' }, h('select', { value: form.capacity, onChange: event => setForm({ ...form, capacity: event.target.value }), 'data-testid': 'schedule-slot-capacity' },
+          h('option', { value: '' }, '选择容量块'), (snapshot.capacity_blocks ?? []).map(block => h('option', { key: block.id, value: block.id }, `${block.title} · ${zoneValid ? wallClockText(Date.parse(block.start), timeZone) : block.start} 至 ${zoneValid ? wallClockText(Date.parse(block.end), timeZone) : block.end}`)))),
+        ['start', 'end'].map(key => h(Field, { key, label: key === 'start' ? '开始（工作空间时区）' : '结束（工作空间时区）' },
+          h('input', { type: 'datetime-local', value: form[key], onChange: event => setForm({ ...form, [key]: event.target.value, [`${key}Choice`]: null }) }),
+          resolved[key].instants.length > 1 ? h('select', { value: form[`${key}Choice`] ?? '', onChange: event => setForm({ ...form, [`${key}Choice`]: event.target.value === '' ? null : Number(event.target.value) }) },
+            h('option', { value: '' }, '钟点重复，请选择 UTC 时刻'), resolved[key].instants.map(value => h('option', { key: value, value }, new Date(value).toISOString()))) : null,
+        )),
+        h('p', { 'data-testid': 'schedule-slot-utc' }, `UTC：${start == null ? '待确认' : new Date(start).toISOString()} 至 ${end == null ? '待确认' : new Date(end).toISOString()}`),
+        h('p', { className: 'zw-fineprint' }, '生成预览可能保存提案元数据，但不会分配时间。只有检查后批准并收到 Core 提交成功回执才保存安排。严格检查任务、依赖、容量和冲突；不移动已有安排、不开始专注、不写外部日历。忙碌快照可能过期，不能保证实时外部可用性。'),
+      )
+    }
+
     function CapacityEditor({ onClose, send, busy }) {
       const date = `${addDays(todayIso(), 1)}T14:00`
       const [form, setForm] = useState({
@@ -1943,6 +2006,7 @@ window.__ModuleLoader__.load({
           }, stale ? '计划依据已变化' : (grant ? '重试提交' : COPY.approve)),
         ),
       },
+      h('p', { className: 'zw-fineprint', 'data-testid': 'plan-intent' }, proposal.intent),
       (error || localError) ? h('div', { className: 'zw-alert zw-alert-error' }, error || localError) : null,
       stale ? h('div', { className: 'zw-alert zw-alert-warn' },
         '计划依据已变化，请刷新后重新检查。旧批准不能用于新内容。') : null,
@@ -3958,7 +4022,7 @@ window.__ModuleLoader__.load({
         setError('')
         try {
           const result = await command(operation, payload, snapshot?.workspace?.revision)
-          setNotice(`已保存 · r${result.revision} · ${result.operation_id.slice(0, 12)}`)
+          setNotice(`${['proposal.create', 'plan.propose'].includes(operation) ? '提案已记录 · 尚未应用' : '已保存'} · r${result.revision} · ${result.operation_id.slice(0, 12)}`)
           if (operation !== 'proposal.approve') await refresh()
           return result
         } catch (failure) {
@@ -4454,6 +4518,7 @@ window.__ModuleLoader__.load({
               const entries = agendaEntries(snapshot, day)
               return h('div', { className: `zw-day ${day === today ? 'zw-day-today' : ''}`, key: day },
                 h('div', { className: 'zw-day-head' }, h('strong', null, dateForLocal(`${day}T12:00:00`)), h('span', null, new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(new Date(`${day}T12:00:00`)))),
+                h(Button, { onClick: () => setModal({ type: 'quick-schedule', day }), disabled: busy, testid: `schedule-slot-${day}` }, '安排任务时段'),
                 h(Button, { onClick: () => setModal({ type: 'time', day, task: null, tasks: activeTasks }), disabled: busy, testid: `schedule-task-date-${day}` }, '设置任务日期'),
                 h(Button, { onClick: () => setModal({ type: 'commitment', day }), disabled: busy, testid: `schedule-add-appointment-${day}` }, '新增预约'),
                 entries.map(entry => {
@@ -4705,6 +4770,7 @@ window.__ModuleLoader__.load({
           case 'reminder': return h(ReminderEditor, { task: modal.task, onClose: closeModal, send, busy })
           case 'blocked': return h(BlockedEditor, { task: modal.task, onClose: closeModal, send, busy })
           case 'commitment': return h(CommitmentEditor, { day: modal.day, snapshot, onClose: closeModal, send, busy })
+          case 'quick-schedule': return h(QuickSchedule, { day: modal.day, snapshot, send, busy, onClose: closeModal, setModal })
           case 'capacity': return h(CapacityEditor, { onClose: closeModal, send, busy })
           case 'capacity-candidates': return h(CapacitySuggestions, { onClose: closeModal, send, busy })
           case 'meeting-propose': return h(MeetingProposal, { onClose: closeModal, send, busy, setView, report: setNotice })
