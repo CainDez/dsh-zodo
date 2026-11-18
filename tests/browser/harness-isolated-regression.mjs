@@ -527,7 +527,7 @@ try {
     const day = new Date(capacity.start).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
     const intent = 'Fixture intentionally lost commit receipt'
     receiptCheckpoint = 'create-strict-proposal'
-    const { proposal } = await command('proposal.create', { intent, operations: [{ operation: 'allocation.schedule', payload: { allocation: {
+    const { data: { proposal } } = await command('proposal.create', { intent, operations: [{ operation: 'allocation.schedule', payload: { allocation: {
       task_id: task.id, expected_task_version: task.version, capacity_block_id: capacity.id,
       start: `${day}T16:30:00+08:00`, end: `${day}T17:00:00+08:00`,
     } } }] })

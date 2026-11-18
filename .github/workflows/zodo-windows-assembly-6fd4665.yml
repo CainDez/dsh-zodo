@@ -1,4 +1,4 @@
-# Build and verify exactly the triggering push SHA, including the lost-receipt recovery regression.
+# Build and verify exactly the triggering push SHA, including real bridge response envelopes and lost receipts.
 # Scope: Windows package assembly and owned synthetic browser fixture; never DSH acceptance.
 name: Zodo Windows isolated verification
 
