@@ -491,6 +491,66 @@ window.__ModuleLoader__.load({
       return addDays(isoDate, -(day - 1))
     }
 
+    // BEGIN PURE AGENDA PROJECTION: also exercised directly by schedule-projection.test.mjs.
+    // Navigation is civil-date arithmetic; event boundaries are browser-local midnights.
+    const AGENDA_MIN = '0001-01-01'
+    const AGENDA_MAX = '9999-12-25' // Leave room for the complete seven-day window.
+
+    function agendaDate(value) {
+      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+      const date = new Date(`${value}T12:00:00Z`)
+      return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : null
+    }
+
+    function agendaShift(value, days) {
+      const date = agendaDate(value)
+      if (!date || !Number.isSafeInteger(days)) return AGENDA_MIN
+      date.setUTCDate(date.getUTCDate() + days)
+      if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() > 9999) return days < 0 ? AGENDA_MIN : AGENDA_MAX
+      if (date.getUTCFullYear() < 1) return AGENDA_MIN
+      const result = date.toISOString().slice(0, 10)
+      return result < AGENDA_MIN ? AGENDA_MIN : result > AGENDA_MAX ? AGENDA_MAX : result
+    }
+
+    function agendaDays(start) {
+      const date = agendaDate(agendaShift(start, 0))
+      return Array.from({ length: 7 }, (_, index) => {
+        const day = new Date(date.getTime())
+        day.setUTCDate(day.getUTCDate() + index)
+        return day.toISOString().slice(0, 10)
+      })
+    }
+
+    function agendaEntries(snapshot, day) {
+      if (!agendaDate(day)) return []
+      const boundary = new Date(`${day}T00:00:00`)
+      const dayStart = boundary.getTime()
+      boundary.setDate(boundary.getDate() + 1)
+      const dayEnd = boundary.getTime()
+      const entries = []
+      for (const [kind, rows] of [
+        ['capacity', snapshot.capacity_blocks],
+        ['commitment', snapshot.commitments],
+        ['allocation', snapshot.allocations],
+      ]) {
+        for (const row of rows ?? []) {
+          const start = typeof row.start === 'string' ? Date.parse(row.start) : NaN
+          const end = typeof row.end === 'string' ? Date.parse(row.end) : NaN
+          // Half-open intervals exclude midnight endings from the following day.
+          if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || start >= dayEnd || end <= dayStart) continue
+          entries.push({ kind, row, start, end,
+            visibleStart: Math.max(start, dayStart), visibleEnd: Math.min(end, dayEnd),
+            continuesBefore: start < dayStart, continuesAfter: end > dayEnd,
+            endsAtDayBoundary: end >= dayEnd,
+          })
+        }
+      }
+      // Compare instants, not offset-bearing strings or grouped event types.
+      return entries.sort((a, b) => a.start - b.start || a.end - b.end ||
+        a.kind.localeCompare(b.kind) || String(a.row.id).localeCompare(String(b.row.id)))
+    }
+    // END PURE AGENDA PROJECTION
+
     function statusLabel(status) {
       return ({ open: '待处理', in_progress: '进行中', done: '已完成', cancelled: '已取消' })[status] ?? status
     }
@@ -3673,6 +3733,7 @@ window.__ModuleLoader__.load({
       const [runsLoading, setRunsLoading] = useState(false)
       const [taskFilter, setTaskFilter] = useState({ text: '', status: '', tag: '', overdue: false })
       const [selectedTaskIds, setSelectedTaskIds] = useState([])
+      const [scheduleStart, setScheduleStart] = useState(() => agendaShift(todayIso(), 0))
       const settledRuns = useRef(new Set())
       stateSnapshotRef.current = snapshot
 
@@ -4251,7 +4312,7 @@ window.__ModuleLoader__.load({
       }
 
       const renderSchedule = () => {
-        const days = Array.from({ length: 7 }, (_, index) => addDays(today, index))
+        const days = agendaDays(scheduleStart)
         const unplacedList = snapshot.tasks.filter(task => !task.archived && task.status !== 'done' && task.status !== 'cancelled').map(task => {
           const allocation = snapshot.allocations.filter(row => row.task_id === task.id).reduce((sum, row) => sum + row.minutes, 0)
           return { task, minutes: Math.max(0, (task.remaining_minutes ?? task.estimate_minutes ?? 0) - allocation) }
@@ -4270,38 +4331,32 @@ window.__ModuleLoader__.load({
             h(Button, { onClick: openPlan, disabled: busy, title: '保持锁定/已开始/过去事实不变，重新计算本地计划' }, '重新规划'),
             ),
           ),
+          h('div', { className: 'zw-head-actions', role: 'group', 'aria-label': '日程日期导航' },
+            h(Button, { onClick: () => setScheduleStart(value => agendaShift(value, -7)), disabled: scheduleStart <= AGENDA_MIN, testid: 'schedule-previous' }, '前 7 天'),
+            h(Button, { onClick: () => setScheduleStart(agendaShift(today, 0)), testid: 'schedule-today' }, '今天'),
+            h(Button, { onClick: () => setScheduleStart(value => agendaShift(value, 7)), disabled: scheduleStart >= AGENDA_MAX, testid: 'schedule-next' }, '后 7 天'),
+            h('span', { 'aria-live': 'polite', 'data-testid': 'schedule-range' }, `${days[0]} 至 ${days[6]}`),
+          ),
+          h('p', { className: 'zw-fineprint' }, '按本机时区显示；跨日安排分段展示，详情保留完整时间。外部日历忙碌快照暂不在此展开，空白不代表可预约。'),
           h('div', { className: 'zw-week' },
             days.map(day => {
-              const commitments = snapshot.commitments.filter(row => row.start.slice(0, 10) === day)
-              const capacity = snapshot.capacity_blocks.filter(row => row.start.slice(0, 10) === day)
-              const allocations = snapshot.allocations.filter(row => row.start.slice(0, 10) === day)
+              const entries = agendaEntries(snapshot, day)
               return h('div', { className: `zw-day ${day === today ? 'zw-day-today' : ''}`, key: day },
                 h('div', { className: 'zw-day-head' }, h('strong', null, dateForLocal(`${day}T12:00:00`)), h('span', null, new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(new Date(`${day}T12:00:00`)))),
-                capacity.map(row => h('div', { className: 'zw-slot zw-slot-capacity', key: row.id, role: 'button', tabIndex: 0,
-                  onClick: () => setModal({ type: 'time-detail', kind: 'capacity', row }),
-                  onKeyDown: event => { if (event.key === 'Enter' || event.key === ' ') setModal({ type: 'time-detail', kind: 'capacity', row }) },
-                  'data-testid': `time-capacity-${row.id}` },
-                  h('strong', null, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                  h('span', null, row.title),
-                  h('em', null, `${row.capacity_minutes} 分容量`),
-                )),
-                commitments.map(row => h('div', { className: 'zw-slot zw-slot-fixed', key: row.id, role: 'button', tabIndex: 0,
-                  onClick: () => setModal({ type: 'time-detail', kind: 'commitment', row }),
-                  onKeyDown: event => { if (event.key === 'Enter' || event.key === ' ') setModal({ type: 'time-detail', kind: 'commitment', row }) },
-                  'data-testid': `time-commitment-${row.id}` },
-                  h('strong', null, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                  h('span', null, row.title),
-                  h('em', null, '固定预约'),
-                )),
-                allocations.map(row => h('div', { className: 'zw-slot zw-slot-allocation', key: row.id, role: 'button', tabIndex: 0,
-                  onClick: () => setModal({ type: 'time-detail', kind: 'allocation', row }),
-                  onKeyDown: event => { if (event.key === 'Enter' || event.key === ' ') setModal({ type: 'time-detail', kind: 'allocation', row }) },
-                  'data-testid': `time-allocation-${row.id}` },
-                  h('strong', null, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                  h('span', null, taskTitle(snapshot, row.task_id)),
-                  h('em', null, `${row.minutes} 分钟`),
-                )),
-                (commitments.length + capacity.length + allocations.length) === 0 ? h('div', { className: 'zw-day-empty' }, '空闲') : null,
+                entries.map(entry => {
+                  const { row, kind } = entry
+                  const openDetail = () => setModal({ type: 'time-detail', kind, row })
+                  return h('div', { className: `zw-slot zw-slot-${kind === 'commitment' ? 'fixed' : kind}`, key: `${kind}:${row.id}`, role: 'button', tabIndex: 0,
+                    onClick: openDetail,
+                    onKeyDown: event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openDetail() } },
+                    'data-testid': `time-${kind}-${row.id}` },
+                    h('strong', null, `${timeFor(new Date(entry.visibleStart).toISOString())}–${entry.endsAtDayBoundary ? '24:00' : timeFor(new Date(entry.visibleEnd).toISOString())}`),
+                    h('span', null, kind === 'allocation' ? taskTitle(snapshot, row.task_id) : row.title),
+                    h('em', null, kind === 'commitment' ? '固定预约' : kind === 'capacity' ? `${row.capacity_minutes} 分容量（全段）` : `${row.minutes} 分钟（全段）`),
+                    entry.continuesBefore || entry.continuesAfter ? h('small', null, [entry.continuesBefore ? '从前日延续' : '', entry.continuesAfter ? '延续至次日' : ''].filter(Boolean).join(' · ')) : null,
+                  )
+                }),
+                entries.length === 0 ? h('div', { className: 'zw-day-empty' }, '暂无本地安排') : null,
               )
             }),
           ),
