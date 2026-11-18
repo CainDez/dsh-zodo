@@ -146,8 +146,10 @@ export function createHostGateway({ llm, coreRequest = requestCore, now = Date.n
         if (result?.authorized !== true || current !== binding || controller.signal.aborted) throw failure('HOST_AUTHORIZATION_STALE')
       }
       await abortable(check('dispatch'), controller.signal)
+      // The Core wire format uses strings; DSH one-shot user input uses typed content blocks.
       const options = { provider: body.provider, model: body.model, system: body.messages[0].content,
-        messages: [{ role: 'user', content: body.messages[1].content }], maxTokens: 4096, signal: controller.signal }
+        messages: [{ role: 'user', content: [{ type: 'text', text: body.messages[1].content }] }],
+        maxTokens: 4096, signal: controller.signal }
       owned.add(options)
       iterator = llm.stream(options)[Symbol.asyncIterator]()
       let checking = false

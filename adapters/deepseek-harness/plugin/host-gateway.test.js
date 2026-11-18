@@ -17,6 +17,17 @@ function stubLlm(mode = 'ok') {
     listModels: async provider => [{ provider, id: 'test-model', name: 'Test model' }],
     async *stream(options) {
       calls.push(options)
+      // DSH adapters consume content blocks, not OpenAI-style message strings.
+      assert.equal(options.messages.length, 1)
+      const [message] = options.messages
+      assert.deepEqual(Object.keys(message).sort(), ['content', 'role'])
+      assert.equal(message.role, 'user')
+      assert.ok(Array.isArray(message.content))
+      assert.equal(message.content.length, 1)
+      const [block] = message.content
+      assert.deepEqual(Object.keys(block).sort(), ['text', 'type'])
+      assert.equal(block.type, 'text')
+      assert.equal(typeof block.text, 'string')
       if (mode === 'error') throw new Error('SYNTHETIC_PROVIDER_SECRET_MUST_NOT_LEAK')
       if (mode === 'wait') {
         await new Promise(resolve => { if (options.signal.aborted) resolve(); else options.signal.addEventListener('abort', resolve, { once: true }) })
@@ -86,7 +97,7 @@ test('callback rejects forged token, origin, arbitrary fields/models/scope/class
   } finally { await f.gateway.close() }
 })
 
-test('callback dispatches only Core system/user content via real llm stream contract and prevents replay', async () => {
+test('callback maps Core user text to a DSH content block and prevents replay', async () => {
   const f = await fixture()
   try {
     const body = f.body()
@@ -98,7 +109,7 @@ test('callback dispatches only Core system/user content via real llm stream cont
     assert.equal(options.provider, 'subscription-mock')
     assert.equal(options.model, 'test-model')
     assert.equal(options.system, 'Core system prompt')
-    assert.deepEqual(options.messages, [{ role: 'user', content: 'Core goal only' }])
+    assert.deepEqual(options.messages, [{ role: 'user', content: [{ type: 'text', text: body.messages[1].content }] }])
   } finally { await f.gateway.close() }
 })
 
@@ -217,7 +228,7 @@ test('isolated real Core run -> Host llm ordinary/subscription mock -> proposal,
     await policy(true, false, true)
     assert.equal((await run('capture.clarify', { text: 'AUTHORIZED_CAPTURE' })).state, 'succeeded')
     assert.equal(llm.calls.length, 3)
-    assert.ok(llm.calls[2].messages[0].content.includes('AUTHORIZED_CAPTURE'))
+    assert.ok(llm.calls[2].messages[0].content[0].text.includes('AUTHORIZED_CAPTURE'))
     // Pause registry lookup, revoke actual Core policy, then release callback: zero new dispatch.
     let releaseLookup
     let reachedLookup
