@@ -23,3 +23,10 @@
 6. 退出/重启 Host，验证当前插件版本确实装载，再验证卸载时 UI/bridge 消失且独立 Core 生命周期符合契约。清理测试 profile 和临时数据。
 
 只有验证到的层才标通过。若无法取得合适环境，不视为产品已完成验收，也不要求开放真实账户或写入真实日历。
+
+
+### 真实桌面启动的前置检查（尚未执行）
+
+- 只在一次性 Windows 测试机或专用隔离账号内运行官方 Desktop，核对实际安装包的版本、签名与哈希。除 Core 数据目录外，先确认打包版实际采用独立的 Harness home 和 Electron user-data；不要用开发启动变量代替现场验证。启动可能注册 `dsh://` 协议，不能在日常环境试跑。
+- 已从 [DSH 0.2.2-rc.5 固定源码](https://github.com/deepseek-ai/deepseek-harness/blob/9c2670d3bce5275e0d1610272958121af87787bb/apps/desktop/src/client/WelcomePage.tsx#L202-L208) 确认：欢迎页进入 API Key 子页后可选择「稍后」，冷启动后再次走同一入口。不填真实或伪造凭据。如果实际安装包没有显示该入口，停止本轮。
+- 按[官方 Desktop 安装插件说明](https://github.com/deepseek-ai/deepseek-harness/blob/9c2670d3bce5275e0d1610272958121af87787bb/apps/desktop/README.md)先启动初始化、退出，再用随 Desktop 提供的 CLI 操作 `desktop` profile。Zodo 的 ZIP 先验哈希再解包到测试目录；使用安装器实际支持的本地包格式，不假定 ZIP 可直接安装。真实启动前仍需明确遥测和更新的处理；若出现未安排的权限、更新或服务访问，停止并记录。
