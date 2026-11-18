@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'
 import { startFixture } from './harness-isolated-fixture.mjs'
 import { fixtureFailure, fixtureSummary } from './harness-isolated-diagnostics.mjs'
+import { LOST_RECEIPT_CASE } from './harness-ci-summary.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const output = path.join(here, 'harness-fixture-runtime/results', new Date().toISOString().replace(/[:.]/g, '-'))
@@ -17,13 +18,15 @@ const report = { fixture: 'real Core + real index.js bridge + real client.js + R
   exclusions: ['DSH authentication/login', 'DSH router and sidebar composition', 'live model dispatch', 'native desktop shell'],
   cases: [], navigation: [], pageErrors: [], unexpectedNetwork: [] }
 let browser, fixture, page
+let receiptCheckpoint = 'not-started', receiptFailureCheckpoint
 let stage = 'artifacts'
 report.runtime = { node: process.version, platform: process.platform, arch: process.arch, timezone: 'Asia/Shanghai' }
 const check = async (name, run) => {
   const start = Date.now()
   try { await run(); report.cases.push({ name, passed: true, ms: Date.now() - start }) }
   catch (error) {
-    report.cases.push({ name, passed: false, error: String(error), ms: Date.now() - start })
+    report.cases.push({ name, passed: false, error: String(error), ms: Date.now() - start,
+      ...(name === LOST_RECEIPT_CASE ? { checkpoint: receiptFailureCheckpoint ?? receiptCheckpoint } : {}) })
     if (page) {
       await page.screenshot({ path: path.join(output, 'failure-' + report.cases.length + '.png'), fullPage: true }).catch(() => {})
       await page.unrouteAll({ behavior: 'wait' }).catch(() => {})
@@ -513,24 +516,34 @@ try {
   await check('Lost commit receipt blocks resubmit while refresh reconciles the single saved allocation', async () => {
     // The actual owned Core commits once; only its response to the browser is lost.
     // No second commit or fabricated success response is submitted.
+    receiptCheckpoint = 'create-synthetic-task'
     await command('task.create', { task: { title: 'Fixture lost receipt task', estimate_minutes: 30 } })
+    receiptCheckpoint = 'read-setup'
     const setup = await snapshot()
     const task = setup.tasks.find(row => row.title === 'Fixture lost receipt task')
     const capacity = setup.capacity_blocks.find(row => row.title === 'Fixture strict slot capacity')
+    receiptCheckpoint = 'require-task-and-capacity'
     assert.ok(task && capacity)
     const day = new Date(capacity.start).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
     const intent = 'Fixture intentionally lost commit receipt'
+    receiptCheckpoint = 'create-strict-proposal'
     const { proposal } = await command('proposal.create', { intent, operations: [{ operation: 'allocation.schedule', payload: { allocation: {
       task_id: task.id, expected_task_version: task.version, capacity_block_id: capacity.id,
       start: `${day}T16:30:00+08:00`, end: `${day}T17:00:00+08:00`,
     } } }] })
+    receiptCheckpoint = 'require-validated-proposal'
     assert.equal(proposal.status, 'validated')
+    receiptCheckpoint = 'read-preview-facts'
     const before = await snapshot()
+    receiptCheckpoint = 'require-no-preview-allocation'
     assert.equal(before.allocations.filter(row => row.task_id === task.id).length, 0)
+    receiptCheckpoint = 'open-proposals-page'
     await page.reload({ waitUntil: 'domcontentloaded' }); await connected(); await nav('proposals')
     const card = page.locator('article').filter({ has: page.getByRole('heading', { name: intent, exact: true }) })
+    receiptCheckpoint = 'open-proposal-review'
     await card.getByRole('button', { name: '检查并批准', exact: true }).click()
     const review = page.getByRole('dialog', { name: '检查提案' })
+    receiptCheckpoint = 'review-mounted'
     await review.waitFor()
     let commitRequests = 0
     let upstreamStatus
@@ -543,36 +556,65 @@ try {
       await result.dispose()
       await route.abort('failed')
     }
+    receiptCheckpoint = 'install-response-loss'
     await page.route('**/zodo-bridge/v1/rpc', loseReceipt)
     try {
+      receiptCheckpoint = 'click-approve'
       await review.getByTestId('plan-apply').click()
+      receiptCheckpoint = 'wait-uncertain-notice'
       await review.getByText(/本次批准或提交结果不确定，可能已经生效/).waitFor()
+      receiptCheckpoint = 'require-upstream-success'
       assert.equal(upstreamStatus, 200, 'the owned Core really committed before the receipt was lost')
+      receiptCheckpoint = 'require-one-commit'
       assert.equal(commitRequests, 1)
+      receiptCheckpoint = 'require-disabled-approval'
       assert.equal(await review.getByTestId('plan-apply').isDisabled(), true)
+      receiptCheckpoint = 'require-no-retry-control'
       assert.equal(await review.getByRole('button', { name: '重试提交', exact: true }).count(), 0)
+      receiptCheckpoint = 'read-committed-facts'
       const after = await snapshot()
       const added = after.allocations.filter(row => row.task_id === task.id)
+      receiptCheckpoint = 'require-one-new-allocation'
       assert.equal(added.length, 1)
+      receiptCheckpoint = 'require-allocation-fields'
       assert.equal(added[0].minutes, 30)
       assert.equal(Date.parse(added[0].start), Date.parse(`${day}T16:30:00+08:00`))
       assert.equal(Date.parse(added[0].end), Date.parse(`${day}T17:00:00+08:00`))
+      receiptCheckpoint = 'require-preserved-allocations'
       for (const old of before.allocations) assert.deepEqual(after.allocations.find(row => row.id === old.id), old)
+      receiptCheckpoint = 'require-preserved-facts'
       for (const key of ['tasks', 'commitments', 'capacity_blocks', 'calendar_events', 'focus_sessions']) assert.deepEqual(after[key], before[key], key)
+      receiptCheckpoint = 'require-applied-proposal'
       assert.equal(after.proposals.find(row => row.id === proposal.id).status, 'applied')
+      receiptCheckpoint = 'capture-local-evidence'
       await screenshot('commit-uncertain-not-retryable')
-      await review.getByRole('button', { name: '放弃预览', exact: true }).click()
+      receiptCheckpoint = 'close-review'
+      await review.getByRole('button', { name: '关闭并核实状态', exact: true }).click()
+      receiptCheckpoint = 'review-closed'
       await review.waitFor({ state: 'hidden' })
+      receiptCheckpoint = 'reload-agenda'
       await page.reload({ waitUntil: 'domcontentloaded' }); await connected(); await nav('schedule')
+      receiptCheckpoint = 'select-single-day'
       await page.getByTestId('schedule-mode').selectOption('1')
+      receiptCheckpoint = 'select-date'
       await page.getByTestId('schedule-date').fill(day)
+      receiptCheckpoint = 'allocation-visible-after-reload'
       await page.getByTestId('time-allocation-' + added[0].id).waitFor()
+      receiptCheckpoint = 'require-no-duplicate-after-reload'
       assert.equal((await snapshot()).allocations.filter(row => row.task_id === task.id).length, 1)
+      receiptCheckpoint = 'require-no-resubmit'
       assert.equal(commitRequests, 1, 'reconciliation must not resubmit')
+    } catch (error) {
+      receiptFailureCheckpoint = receiptCheckpoint
+      throw error
     } finally {
+      receiptCheckpoint = 'remove-response-interceptor'
       await page.unroute('**/zodo-bridge/v1/rpc', loseReceipt)
+      receiptCheckpoint = 'restore-agenda-view'
       await nav('schedule')
+      receiptCheckpoint = 'restore-seven-day-view'
       await page.getByTestId('schedule-mode').selectOption('7')
+      receiptCheckpoint = 'restore-today'
       await page.getByTestId('schedule-today').click()
     }
   })

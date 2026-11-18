@@ -1,4 +1,4 @@
-# Draft based on 6fd4665. Build exactly the triggering push SHA, never branch-tip drift.
+# Build and verify exactly the triggering push SHA, including the lost-receipt recovery regression.
 # Scope: Windows package assembly and owned synthetic browser fixture; never DSH acceptance.
 name: Zodo Windows isolated verification
 
