@@ -251,6 +251,66 @@ try {
     assert.ok(after.workspace.revision > before.workspace.revision, 'commit advances authoritative revision')
   })
 
+  await check('Agenda date navigation and row details are local-only under Asia/Shanghai', async () => {
+    // Reuse the synthetic capacity and allocation created through the real bridge
+    // above. This checks rendered UI wiring, not a second projection implementation.
+    const before = await snapshot()
+    const capacity = before.capacity_blocks.find(row => row.title === 'Fixture future capacity')
+    const allocation = before.allocations.find(row => row.task_id === taskId)
+    assert.ok(capacity && allocation, 'approved fixture plan prerequisite')
+    await nav('schedule')
+    const dates = await page.evaluate(() => {
+      const format = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+      const now = new Date()
+      now.setHours(12, 0, 0, 0)
+      return [-7, 0, 7].map(offset => {
+        const first = new Date(now); first.setDate(first.getDate() + offset)
+        const last = new Date(first); last.setDate(last.getDate() + 6)
+        return `${format(first)} 至 ${format(last)}`
+      })
+    })
+    const waitRange = expected => page.waitForFunction(value => document.querySelector('[data-testid="schedule-range"]')?.textContent === value, expected)
+    const writes = []
+    const recordWrite = request => {
+      if (!request.url().endsWith('/zodo-bridge/v1/rpc') || request.method() !== 'POST') return
+      const body = request.postDataJSON()
+      if (body?.kind === 'command') writes.push(body.envelope?.operation ?? 'unknown command')
+    }
+    page.on('request', recordWrite)
+    try {
+      await page.getByTestId('schedule-today').click(); await waitRange(dates[1])
+      await page.getByTestId('time-capacity-' + capacity.id).waitFor()
+      await page.getByTestId('schedule-next').click(); await waitRange(dates[2])
+      assert.equal(await page.getByTestId('time-capacity-' + capacity.id).count(), 0)
+      await page.getByTestId('schedule-previous').click(); await waitRange(dates[1])
+      await page.getByTestId('time-capacity-' + capacity.id).waitFor()
+      await page.getByTestId('schedule-previous').click(); await waitRange(dates[0])
+      await page.getByTestId('schedule-today').click(); await waitRange(dates[1])
+      const capacityCard = page.getByTestId('time-capacity-' + capacity.id)
+      assert.match(await capacityCard.innerText(), /14:00.*16:00/)
+      await capacityCard.focus(); await capacityCard.press('Space')
+      const detail = page.getByRole('dialog', { name: '时间对象详情' })
+      await detail.waitFor()
+      assert.match(await detail.innerText(), /Fixture future capacity/)
+      assert.match(await detail.innerText(), /容量块/)
+      await detail.getByRole('button', { name: '关闭', exact: true }).last().click()
+      await detail.waitFor({ state: 'hidden' })
+      await page.getByTestId('time-allocation-' + allocation.id).click()
+      await detail.waitFor()
+      assert.match(await detail.innerText(), /Fixture task edited/)
+      assert.match(await detail.innerText(), /任务分配/)
+      await detail.getByTestId('time-detail-task-time').waitFor()
+      await detail.getByRole('button', { name: '关闭', exact: true }).last().click()
+      await detail.waitFor({ state: 'hidden' })
+      await screenshot('agenda-navigation-and-details')
+      assert.deepEqual(writes, [], 'navigation and drilldown never send a write RPC')
+      const after = await snapshot()
+      assert.equal(after.workspace.revision, before.workspace.revision)
+      assert.deepEqual(after.capacity_blocks, before.capacity_blocks)
+      assert.deepEqual(after.allocations, before.allocations)
+    } finally { page.off('request', recordWrite) }
+  })
+
   await check('Search resolves committed task', async () => {
     await nav('search')
     await page.getByPlaceholder('搜索任务、目标、项目…').fill('Fixture task edited')
