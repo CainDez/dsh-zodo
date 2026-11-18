@@ -3542,7 +3542,6 @@ window.__ModuleLoader__.load({
         timezone: snapshot.workspace.settings.timezone,
         weekend: snapshot.workspace.settings.weekend_policy,
         defaultEstimate: snapshot.workspace.settings.default_estimate_minutes,
-        dailyLimit: snapshot.workspace.settings.daily_limit_minutes ?? '',
       })
       const [error, setError] = useState('')
       const save = async () => {
@@ -3554,7 +3553,6 @@ window.__ModuleLoader__.load({
               timezone: form.timezone,
               weekend_policy: form.weekend,
               default_estimate_minutes: Number(form.defaultEstimate) || 30,
-              daily_limit_minutes: form.dailyLimit === '' ? null : Number(form.dailyLimit),
             },
             policy: null,
           })
@@ -3578,8 +3576,10 @@ window.__ModuleLoader__.load({
               h('option', { value: 'ask' }, '每次询问'), h('option', { value: 'allow' }, '允许'), h('option', { value: 'deny' }, '禁止'))),
             h(Field, { label: '默认估时（分钟）' }, h('input', { type: 'number', value: form.defaultEstimate,
               onChange: event => setForm({ ...form, defaultEstimate: event.target.value }) })),
-            h(Field, { label: '每日上限（可选）' }, h('input', { type: 'number', value: form.dailyLimit,
-              onChange: event => setForm({ ...form, dailyLimit: event.target.value }) })),
+            h('div', { 'data-testid': 'settings-daily-limit' },
+              h('span', null, `每日上限（保留值）：${snapshot.workspace.settings.daily_limit_minutes == null ? '未设置' : `${snapshot.workspace.settings.daily_limit_minutes} 分钟`}`),
+              h('p', { className: 'zw-fineprint' }, '尚未启用，不参与自动排程或指定时段安排。保存其他设置不会更改此保留值。'),
+            ),
           ),
           h('div', { className: 'zw-workwindows' },
             (snapshot.workspace.settings.work_windows ?? []).map((window, index) =>
