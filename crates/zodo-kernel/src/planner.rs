@@ -94,13 +94,18 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
 
     let mut fixed_allocations = Vec::new();
     let mut fixed_minutes: BTreeMap<String, u32> = BTreeMap::new();
+    let mut fixed_end: BTreeMap<String, DateTime<Utc>> = BTreeMap::new();
     for allocation in &world.allocations {
         if removed_allocations.contains(&allocation.id) {
             continue;
         }
         fixed_allocations.push(allocation.id.clone());
-        if scope.contains(allocation.task_id.as_str()) && allocation.end > now {
+        if allocation.end > now {
             *fixed_minutes.entry(allocation.task_id.clone()).or_default() += allocation.minutes;
+            fixed_end
+                .entry(allocation.task_id.clone())
+                .and_modify(|end| *end = (*end).max(allocation.end))
+                .or_insert(allocation.end);
         }
     }
 
@@ -147,9 +152,15 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
                         !matches!(
                             task.status,
                             crate::model::TaskStatus::Done | crate::model::TaskStatus::Cancelled
-                        ) && !world.allocations.iter().any(|allocation| {
-                            allocation.task_id == *predecessor_id && allocation.end > now
-                        })
+                        ) && {
+                            let required = task
+                                .remaining_minutes
+                                .or(task.estimate_minutes)
+                                .unwrap_or(0);
+                            required == 0
+                                || fixed_minutes.get(predecessor_id).copied().unwrap_or(0)
+                                    < required
+                        }
                     }) {
                         blocked = true;
                         break;
@@ -201,12 +212,15 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
         let mut remaining = total.saturating_sub(already);
         let earliest = effective_earliest(world, &task_id, input, now, &scheduled_end);
         if remaining == 0 {
-            scheduled_end.insert(task_id.clone(), earliest);
+            scheduled_end.insert(
+                task_id.clone(),
+                earliest.max(fixed_end.get(&task_id).copied().unwrap_or(earliest)),
+            );
             continue;
         }
         let hard = task.hard_deadline;
         let mut chunk_start = earliest;
-        let mut last_end = earliest;
+        let mut last_end = earliest.max(fixed_end.get(&task_id).copied().unwrap_or(earliest));
         while remaining > 0 {
             let Some((slot_index, start, end)) = choose_slot(
                 &mut slots,
@@ -243,7 +257,7 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
             });
             remaining -= take;
             chunk_start = allocation_end;
-            last_end = allocation_end;
+            last_end = last_end.max(allocation_end);
             if slots[slot_index].capacity_left == 0 || allocation_end >= slots[slot_index].end {
                 slots[slot_index].capacity_left = 0;
             }
@@ -266,7 +280,11 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
                 task_id: Some(task_id.clone()),
             });
         }
-        scheduled_end.insert(task_id.clone(), last_end);
+        // A dependency is satisfied only once all remaining work has a scheduled finish.
+        // A partial placement must not release successors into the leftover capacity.
+        if remaining == 0 {
+            scheduled_end.insert(task_id.clone(), last_end);
+        }
     }
 
     if visited.len() < replace_task_ids.len() {
@@ -398,7 +416,18 @@ fn build_slots(
         if cursor < end {
             free.push((cursor, end));
         }
-        let mut capacity_left = block.capacity_minutes;
+        // Match allocation validation: retained allocations consume the block's minute
+        // budget as well as its wall-clock availability, including historical allocations.
+        let used: u32 = world
+            .allocations
+            .iter()
+            .filter(|allocation| {
+                allocation.capacity_block_id.as_deref() == Some(block.id.as_str())
+                    && !removed_allocations.contains(&allocation.id)
+            })
+            .map(|allocation| allocation.minutes)
+            .sum();
+        let mut capacity_left = block.capacity_minutes.saturating_sub(used);
         for (free_start, free_end) in free {
             for (allowed_start, allowed_end) in
                 workspace_allowed_ranges(world, free_start, free_end)
