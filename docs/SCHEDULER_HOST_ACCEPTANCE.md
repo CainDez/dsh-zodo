@@ -10,7 +10,7 @@
 - [整周 Core 合成回归](SCHEDULER_WEEK_CORE_QA.md)验证默认追加、预约变动引发的旧批准拒绝、重新排程和两次 SQLite 关闭重开；不代表桌面重启。
 - Host gateway 6/6：先用 `cargo build -p zodo-runtime --locked` 构建测试 Core，再运行 `node --test adapters/deepseek-harness/plugin/host-gateway.test.js`；自定义构建目录应先把 `ZODO_CORE_TEST_BIN` 指向该可执行文件。真实临时 Core 接入的是模拟 Host 供应商，不调用线上模型，也不是桌面集成。
 - 390px 单日布局、键盘操作和真实提交回执丢失的浏览器用例已写但没进断言。当前独立 Chromium 的进程 socket 不可用，应用内浏览器也无法连接该测试进程的 loopback。
-- 新的 Windows 打包脚本已有静态回归，ZIP 校验器有合成归档测试；没有实际 Windows 产物可核验。
+- Windows x64 打包已在标准 Windows Server 2025 runner 验证：[Actions #1](https://github.com/CainDez/dsh-zodo/actions/runs/44351001121) 的实际构建和同源 ZIP 校验步骤通过，源码精确为 `58c7df4c6439a0a4b165f90acd43e07617134f1b`。ZIP SHA-256 为 `d5d32bb116a6dedf282b5267171a8d2c379b571f840f326fcee8f462a31cec5c`。只记录校验结果和哈希，未发布/上传 ZIP，未安装 DSH。
 - 真实 DSH 桌面加载、升级、卸载均未验收；不访问真实用户配置、日历或账号，不降低隔离机制来跑测试。
 
 ## 用隔离环境验收
