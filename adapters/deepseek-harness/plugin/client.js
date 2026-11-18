@@ -3985,7 +3985,7 @@ window.__ModuleLoader__.load({
         { id: 'capture', glyph: '＋', label: '收集一句话', hint: '原文进入 Inbox', run: () => setModal({ type: 'capture' }) },
         { id: 'task-new', glyph: '□', label: '新建任务', hint: '直接创建正式任务', run: () => setModal({ type: 'task', task: null }) },
         { id: 'goal-new', glyph: '◇', label: '新建目标', hint: 'Goal', run: () => setModal({ type: 'goal' }) },
-        { id: 'plan', glyph: '→', label: '生成计划预览', hint: '不写事实，需批准', run: () => { setModal(null); void openPlan() } },
+        { id: 'plan', glyph: '→', label: '生成计划预览', hint: '5 分钟后起规划 7 天；只补充、不移动已有分配；需批准', run: () => { setModal(null); void openPlan() } },
       ]
 
       useEffect(() => {
@@ -4145,16 +4145,21 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const openPlan = async () => {
+      const openPlan = async (mode = 'additive') => {
+        const moveUnlocked = mode === 'replan'
         setError('')
         try {
-          const start = new Date()
+          // Leave an explicit review window; never shift a candidate after approval.
+          const start = new Date(Date.now() + 5 * 60 * 1000)
           const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000)
           const result = await send('plan.propose', {
             task_ids: [],
             horizon_start: start.toISOString(),
             horizon_end: end.toISOString(),
-            move_unlocked: true,
+            move_unlocked: moveUnlocked,
+            intent: moveUnlocked
+              ? '重新规划：允许重排范围内未来未锁定、未开始的分配；固定预约、锁定、已开始和过去事实保持不变。从生成时刻 5 分钟后起规划，保留 7 天范围供检查；预览需批准后提交，超过候选开始时间须重新生成。'
+              : '生成计划：仅补充安排，不移动或移除已有分配；容量不足会报告缺口。从生成时刻 5 分钟后起规划，保留 7 天范围供检查；预览需批准后提交，超过候选开始时间须重新生成。',
           })
           setModal({ type: 'plan', proposal: result.data.proposal, plan: result.data.plan, grant: null })
         } catch (failure) {
@@ -4274,8 +4279,8 @@ window.__ModuleLoader__.load({
           ),
           h('div', { className: 'zw-head-actions' },
             h(Button, { onClick: () => setModal({ type: 'capture' }), disabled: busy }, '收集'),
-            h(Button, { onClick: openPlan, disabled: busy, tone: 'primary' }, COPY.plan),
-            h(Button, { onClick: openPlan, disabled: busy, title: '保持锁定/已开始/过去事实不变，重新计算本地计划' }, '重新规划'),
+            h(Button, { onClick: () => openPlan(), disabled: busy, tone: 'primary', title: '从现在 5 分钟后起规划 7 天，仅补充安排、不移动已有分配；先预览再批准' }, COPY.plan),
+            h(Button, { onClick: () => openPlan('replan'), disabled: busy, title: '从现在 5 分钟后起规划 7 天，允许重排未来未锁定、未开始分配；固定预约、锁定、已开始和过去事实保持不变，需预览批准' }, '重新规划'),
           ),
         ),
         error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
@@ -4545,8 +4550,8 @@ window.__ModuleLoader__.load({
               h(Button, { onClick: () => setModal({ type: 'busy' }), disabled: busy }, '导入忙碌'),
               h(Button, { onClick: () => setModal({ type: 'capacity-candidates' }), disabled: busy, testid: 'capacity-suggest' }, '建议容量'),
               h(Button, { onClick: () => setModal({ type: 'meeting-propose' }), disabled: busy, testid: 'meeting-propose' }, '提议会议'),
-              h(Button, { onClick: openPlan, disabled: busy, tone: 'primary' }, COPY.plan),
-            h(Button, { onClick: openPlan, disabled: busy, title: '保持锁定/已开始/过去事实不变，重新计算本地计划' }, '重新规划'),
+              h(Button, { onClick: () => openPlan(), disabled: busy, tone: 'primary', title: '从现在 5 分钟后起规划 7 天，仅补充安排、不移动已有分配；先预览再批准' }, COPY.plan),
+            h(Button, { onClick: () => openPlan('replan'), disabled: busy, title: '从现在 5 分钟后起规划 7 天，允许重排未来未锁定、未开始分配；固定预约、锁定、已开始和过去事实保持不变，需预览批准' }, '重新规划'),
             ),
           ),
           h('div', { className: 'zw-head-actions', role: 'group', 'aria-label': '日程日期导航' },
