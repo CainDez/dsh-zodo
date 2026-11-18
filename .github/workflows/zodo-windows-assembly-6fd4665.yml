@@ -1,6 +1,6 @@
 # Draft based on 6fd4665. Build exactly the triggering push SHA, never branch-tip drift.
-# Scope: Windows package assembly only; never DSH acceptance.
-name: Zodo Windows package assembly check
+# Scope: Windows package assembly and owned synthetic browser fixture; never DSH acceptance.
+name: Zodo Windows isolated verification
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
     if: github.repository == 'CainDez/dsh-zodo' && github.ref == 'refs/heads/xiaoz/zodo-scheduler' && github.event_name == 'push' && github.event.deleted == false
     permissions: {}
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         shell: pwsh
@@ -90,3 +90,70 @@ jobs:
             $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
             Write-Output "$hash  $([IO.Path]::GetFileName($file))"
           }
+      - name: Preinstalled browser tools and locked synthetic dependencies
+        timeout-minutes: 5
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $source = Join-Path $env:RUNNER_TEMP 'zodo-reviewed-source'
+          Set-Location $source
+          if ((& git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw 'Source identity changed' }
+          foreach ($tool in @('node', 'npm', 'python')) {
+            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw 'Preinstalled browser-test tool unavailable; no tool installation attempted' }
+          }
+          & node -e "if(Number(process.versions.node.split('.')[0])<22)process.exit(1)"
+          if ($LASTEXITCODE -ne 0) { throw 'Preinstalled Node is too old' }
+          $log = Join-Path $env:RUNNER_TEMP 'zodo-browser-deps-private.log'
+          $chrome = Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'
+          if (-not (Test-Path -LiteralPath $chrome -PathType Leaf)) { throw 'Runner-preinstalled Chrome unavailable; no browser installation attempted' }
+          # This six-package npm graph must equal the existing pnpm pins before fetching.
+          & python -B tests/browser/ci-deps/verify-lock.py *> $log
+          if ($LASTEXITCODE -ne 0) { throw 'Minimal test lock disagrees with repository pins; nothing installed' }
+          $npmCache = Join-Path $env:RUNNER_TEMP 'zodo-locked-npm-cache'
+          & npm ci --prefix tests/browser/ci-deps --cache $npmCache --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org *>> $log
+          if ($LASTEXITCODE -ne 0) { throw 'Locked minimal test dependencies failed; no unlocked fallback' }
+          & python -B tests/browser/ci-deps/verify-lock.py *>> $log
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency lock changed during installation' }
+          $installed = Join-Path $source 'tests/browser/ci-deps/node_modules'
+          foreach ($destination in @('tests/browser/node_modules', 'tests/browser/harness-fixture-runtime/node_modules')) {
+            $target = Join-Path $source $destination
+            if (Test-Path -LiteralPath $target) { throw 'Expected empty test-only dependency destination' }
+            Copy-Item -LiteralPath $installed -Destination $target -Recurse
+          }
+      - name: Owned synthetic rendered regression and sanitized result
+        timeout-minutes: 10
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $source = Join-Path $env:RUNNER_TEMP 'zodo-reviewed-source'
+          Set-Location $source
+          if ((& git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw 'Source identity changed' }
+          $env:ZODO_FIXTURE_CORE_BIN = Join-Path $source 'artifacts/release/zodo.exe'
+          $env:ZODO_CHROME = Join-Path $env:ProgramFiles 'Google/Chrome/Application/chrome.exe'
+          $results = Join-Path $source 'tests/browser/harness-fixture-runtime/results'
+          if (Test-Path -LiteralPath $results) { throw 'Expected fresh browser result directory' }
+          $stdout = Join-Path $env:RUNNER_TEMP 'zodo-browser-stdout-private.log'
+          $stderr = Join-Path $env:RUNNER_TEMP 'zodo-browser-stderr-private.log'
+          $node = (Get-Command node).Source
+          $process = Start-Process -FilePath $node -ArgumentList @('tests/browser/harness-isolated-regression.mjs') -WorkingDirectory $source -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          if (-not $process.WaitForExit(480000)) {
+            $process.Kill($true)
+            Write-Output '{"status":"timeout","cleanup":"unverified"}'
+            throw 'Owned rendered test timed out; no success inferred'
+          }
+          $process.WaitForExit()
+          $testExit = $process.ExitCode
+          $reports = @(Get-ChildItem -LiteralPath $results -Filter report.json -Recurse -File -ErrorAction SilentlyContinue)
+          if ($reports.Count -ne 1) {
+            Write-Output '{"status":"missing-or-ambiguous-report","cleanup":"unverified"}'
+            throw 'Rendered result unavailable; raw output withheld'
+          }
+          # Prints counts, known static case names and cleanup only. Never error bodies,
+          # screenshots, local URLs, runtime descriptors or raw diagnostic logs.
+          & node tests/browser/harness-ci-summary.mjs $reports[0].FullName
+          $summaryExit = $LASTEXITCODE
+          if ($testExit -ne 0 -or $summaryExit -ne 0) { throw 'Rendered regression failed or incomplete; see sanitized result' }

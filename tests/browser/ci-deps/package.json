@@ -1,0 +1,10 @@
+{
+  "name": "zodo-isolated-ci-deps",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "playwright-core": "1.64.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}
