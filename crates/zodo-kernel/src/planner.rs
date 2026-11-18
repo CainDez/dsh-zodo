@@ -261,6 +261,9 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
             if slots[slot_index].capacity_left == 0 || allocation_end >= slots[slot_index].end {
                 slots[slot_index].capacity_left = 0;
             }
+            // Different capacity blocks may describe the same wall-clock time. A new
+            // assignment reserves that interval globally, not only in its source block.
+            reserve_interval(&mut slots, start, allocation_end);
         }
         if remaining > 0 {
             let reason = if hard.is_some_and(|deadline| deadline <= input.horizon_end) {
@@ -318,6 +321,43 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
         diagnostics,
         replace_task_ids: replace_task_ids.clone(),
     })
+}
+
+/// Remove a newly assigned interval from all remaining slots. Splitting preserves free
+/// time on both sides, while distributing (never duplicating) each slot's minute budget.
+/// The source slot has already consumed its minutes and advanced its cursor.
+fn reserve_interval(slots: &mut Vec<Slot>, start: DateTime<Utc>, end: DateTime<Utc>) {
+    let mut available = Vec::with_capacity(slots.len());
+    for slot in slots.drain(..) {
+        if slot.capacity_left == 0 || slot.cursor >= slot.end {
+            continue;
+        }
+        if end <= slot.cursor || start >= slot.end {
+            available.push(slot);
+            continue;
+        }
+        let mut budget = slot.capacity_left;
+        for (free_start, free_end) in [
+            (slot.cursor, start.min(slot.end)),
+            (end.max(slot.cursor), slot.end),
+        ] {
+            let minutes = (free_end - free_start).num_minutes().max(0) as u32;
+            let usable = budget.min(minutes);
+            if usable == 0 {
+                continue;
+            }
+            available.push(Slot {
+                capacity_block_id: slot.capacity_block_id.clone(),
+                start: free_start,
+                end: free_start + Duration::minutes(i64::from(usable)),
+                cursor: free_start,
+                capacity_left: usable,
+            });
+            budget -= usable;
+        }
+    }
+    available.sort_by_key(|slot| slot.start);
+    *slots = available;
 }
 
 fn sort_key(
