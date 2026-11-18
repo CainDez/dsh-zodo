@@ -1,0 +1,92 @@
+# Draft based on 6fd4665. Build exactly the triggering push SHA, never branch-tip drift.
+# Scope: Windows package assembly only; never DSH acceptance.
+name: Zodo Windows package assembly check
+
+on:
+  push:
+    branches:
+      - xiaoz/zodo-scheduler
+    paths:
+      - .github/workflows/zodo-windows-assembly-6fd4665.yml
+
+permissions: {}
+
+concurrency:
+  group: zodo-windows-assembly-6fd4665
+  cancel-in-progress: false
+
+jobs:
+  assembly:
+    if: github.repository == 'CainDez/dsh-zodo' && github.ref == 'refs/heads/xiaoz/zodo-scheduler' && github.event_name == 'push' && github.event.deleted == false
+    permissions: {}
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+    steps:
+      - name: Public pinned checkout, Windows assembly and same-build verification
+        timeout-minutes: 28
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $source = Join-Path $env:RUNNER_TEMP 'zodo-reviewed-source'
+          $gitLog = Join-Path $env:RUNNER_TEMP 'zodo-git-private.log'
+          $buildLog = Join-Path $env:RUNNER_TEMP 'zodo-build-private.log'
+          $verifyLog = Join-Path $env:RUNNER_TEMP 'zodo-verify-private.log'
+          $expected = $env:GITHUB_SHA
+          if ($expected -notmatch '^[0-9a-f]{40}$') { throw 'Invalid source identity' }
+          foreach ($tool in @('git', 'pwsh', 'python')) {
+            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw 'Required preinstalled tool unavailable; nothing will be installed' }
+          }
+          # Direct preinstalled executables avoid rustup downloading any missing toolchain.
+          $rustHomes = @($env:RUSTUP_HOME, (Join-Path $env:USERPROFILE '.rustup'), 'C:/Users/Default/.rustup')
+          $rustBin = $null
+          foreach ($homePath in $rustHomes) {
+            if (-not $homePath) { continue }
+            $candidate = Join-Path $homePath 'toolchains/stable-x86_64-pc-windows-msvc/bin'
+            if ((Test-Path -LiteralPath (Join-Path $candidate 'cargo.exe') -PathType Leaf) -and
+                (Test-Path -LiteralPath (Join-Path $candidate 'rustc.exe') -PathType Leaf)) {
+              $rustBin = $candidate
+              break
+            }
+          }
+          if (-not $rustBin) { throw 'Preinstalled Windows MSVC Rust toolchain unavailable; no installation attempted' }
+          $env:PATH = "$rustBin;$env:PATH"
+          $targetLib = Join-Path (Split-Path $rustBin -Parent) 'lib/rustlib/x86_64-pc-windows-msvc/lib'
+          if (-not (Test-Path -LiteralPath $targetLib -PathType Container)) { throw 'Preinstalled Windows Rust target unavailable' }
+          if (Test-Path -LiteralPath $source) { throw 'Expected fresh source directory' }
+          New-Item -ItemType Directory -Path $source | Out-Null
+          Set-Location $source
+          & git init --quiet *> $gitLog
+          if ($LASTEXITCODE -ne 0) { throw 'Public checkout initialization failed; raw log withheld' }
+          & git remote add origin https://github.com/CainDez/dsh-zodo.git *>> $gitLog
+          if ($LASTEXITCODE -ne 0) { throw 'Public source configuration failed' }
+          # No checkout action, GitHub token, credential helper or authenticated fetch.
+          & git -c credential.helper= -c http.extraHeader= fetch --no-tags --depth=128 origin refs/heads/xiaoz/zodo-scheduler *>> $gitLog
+          if ($LASTEXITCODE -ne 0) { throw 'Public branch fetch failed; no credential fallback' }
+          & git merge-base --is-ancestor $expected FETCH_HEAD *>> $gitLog
+          if ($LASTEXITCODE -ne 0) { throw 'Reviewed SHA is not available in bounded branch history; update draft deliberately, do not deepen automatically' }
+          & git checkout --detach $expected *>> $gitLog
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned checkout failed' }
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $expected) { throw 'Source identity mismatch' }
+          $dirty = @(& git status --porcelain --untracked-files=normal)
+          if ($LASTEXITCODE -ne 0 -or $dirty.Count -ne 0) { throw 'Source tree is not clean' }
+          & pwsh -NoProfile -File scripts/build-release.ps1 *> $buildLog
+          if ($LASTEXITCODE -ne 0) { throw 'Windows assembly failed; raw build log withheld, no artifacts uploaded' }
+          $info = Get-Content -LiteralPath artifacts/release/BUILD_INFO.json -Raw | ConvertFrom-Json
+          if ($info.commit -ne $expected -or $info.working_tree_dirty -ne $false -or $info.cargo_target -ne 'x86_64-pc-windows-msvc') { throw 'Build identity mismatch' }
+          $manifest = Get-Content -LiteralPath adapters/deepseek-harness/plugin/package.json -Raw | ConvertFrom-Json
+          if ($manifest.version -notmatch '^[0-9A-Za-z.-]+$') { throw 'Invalid package version' }
+          $zip = "artifacts/release/zodo-harness-plugin-$($manifest.version).zip"
+          & python -B scripts/verify-plugin-package.py $zip artifacts/release/zodo.exe *> $verifyLog
+          if ($LASTEXITCODE -ne 0) { throw 'Same-build package verification failed; raw log withheld' }
+          # Evidence only: source identity and hashes of the actual assembled outputs.
+          Write-Output "verified-source-sha $actual"
+          foreach ($file in @('artifacts/release/zodo.exe', 'artifacts/release/zodo_ffi.dll', $zip, 'artifacts/release/BUILD_INFO.json')) {
+            $hash = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            Write-Output "$hash  $([IO.Path]::GetFileName($file))"
+          }
