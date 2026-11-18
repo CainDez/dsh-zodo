@@ -897,13 +897,13 @@ window.__ModuleLoader__.load({
       ))
     }
 
-    function defaultTimeForm(task, timeZone) {
+    function defaultTimeForm(task, timeZone, day) {
       const zoneUsable = isKnownTimezone(timeZone)
       const hardInstant = task?.hard_deadline ? new Date(task.hard_deadline).getTime() : null
       const hardKnown = hardInstant != null && Number.isFinite(hardInstant)
       const hardWall = hardKnown && zoneUsable ? wallClockInput(hardInstant, timeZone) : null
       return {
-        date: hardWall ? hardWall.slice(0, 10) : (task?.target_due ?? todayIso()),
+        date: hardWall ? hardWall.slice(0, 10) : (task?.target_due ?? (agendaDate(day) ? day : todayIso())),
         time: hardWall ? hardWall.slice(11, 16) : '',
         strength: task?.hard_deadline ? 'hard' : 'soft',
         notBefore: task?.not_before
@@ -916,16 +916,16 @@ window.__ModuleLoader__.load({
 
     // L04: 时间与时区编辑。Every save writes a complete TaskSpec (existing fields preserved) so
     // Core keeps its version/relationship validation; the dialog never sends a partial patch.
-    function TimeEditor({ task, tasks, snapshot, onClose, send, busy }) {
+    function TimeEditor({ task, tasks, day, snapshot, onClose, send, busy }) {
       const timeZone = workspaceTimezone(snapshot)
       const zoneValid = isKnownTimezone(timeZone)
       const [pickedId, setPickedId] = useState(task?.id ?? '')
       const selected = task ?? (tasks ?? []).find(candidate => candidate.id === pickedId) ?? null
-      const [form, setForm] = useState(() => defaultTimeForm(selected, timeZone))
+      const [form, setForm] = useState(() => defaultTimeForm(selected, timeZone, day))
       const [error, setError] = useState('')
       useEffect(() => {
-        setForm(defaultTimeForm(selected, timeZone))
-      }, [selected?.id])
+        setForm(defaultTimeForm(selected, timeZone, day))
+      }, [selected?.id, day])
       const dueResolution = useMemo(() => {
         if (!zoneValid || !form.date) return null
         return resolveWallTime(form.date, form.time || '00:00', timeZone)
@@ -1069,6 +1069,7 @@ window.__ModuleLoader__.load({
       },
       error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
       !zoneValid ? h('div', { className: 'zw-alert zw-alert-error' }, `工作空间时区「${timeZone}」不是可用的 IANA 时区；请先在设置中修正，避免时间被错误换算。`) : null,
+      day ? h('p', { className: 'zw-fineprint', 'data-testid': 'time-date-context' }, `来自日程日期列 ${day}（本机时区）。这里只设置任务完成日期，不创建分配、不移动锁定安排，也不会开始专注。没有已有截止的任务默认使用相同日期标签，按工作空间时区 ${timeZone} 解释，不是跨时区时刻换算；已有截止与最早开始限制保留，请核对后保存。`) : null,
       taskPicker,
       selected ? h(React.Fragment, null,
         h('div', { className: 'zw-grid2' },
@@ -4453,6 +4454,7 @@ window.__ModuleLoader__.load({
               const entries = agendaEntries(snapshot, day)
               return h('div', { className: `zw-day ${day === today ? 'zw-day-today' : ''}`, key: day },
                 h('div', { className: 'zw-day-head' }, h('strong', null, dateForLocal(`${day}T12:00:00`)), h('span', null, new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(new Date(`${day}T12:00:00`)))),
+                h(Button, { onClick: () => setModal({ type: 'time', day, task: null, tasks: activeTasks }), disabled: busy, testid: `schedule-task-date-${day}` }, '设置任务日期'),
                 h(Button, { onClick: () => setModal({ type: 'commitment', day }), disabled: busy, testid: `schedule-add-appointment-${day}` }, '新增预约'),
                 entries.map(entry => {
                   const { row, kind } = entry
@@ -4693,7 +4695,7 @@ window.__ModuleLoader__.load({
           case 'command': return h(CommandPalette, { onClose: closeModal, actions: commandActions })
           case 'capture': return h(CaptureEditor, { onClose: closeModal, send, busy })
           case 'task': return h(TaskEditor, { task: modal.task ?? null, projectId: modal.projectId, snapshot: { ...snapshot, projects: snapshot.projects, tasks: snapshot.tasks }, onClose: closeModal, send, busy })
-          case 'time': return h(TimeEditor, { task: modal.task ?? null, tasks: modal.tasks ?? snapshot.tasks, snapshot, onClose: closeModal, send, busy })
+          case 'time': return h(TimeEditor, { day: modal.day, task: modal.task ?? null, tasks: modal.tasks ?? snapshot.tasks, snapshot, onClose: closeModal, send, busy })
           case 'goal': return h(GoalEditor, { goal: modal.goal ?? null, onClose: closeModal, send, busy })
           case 'project': return h(ProjectEditor, { project: modal.project ?? null, goals: snapshot.goals, goalId: modal.goalId, onClose: closeModal, send, busy })
           case 'inbox-detail': return h(InboxDetail, { key: modal.entry.id, entry: modal.entry, onClose: closeModal, send, busy, setModal })
