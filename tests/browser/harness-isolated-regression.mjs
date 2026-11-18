@@ -319,6 +319,125 @@ try {
     } finally { page.off('request', recordWrite) }
   })
 
+  await check('Strict slot previews structured changes, then explicitly approves and commits without moving facts', async () => {
+    // All setup is synthetic and owned by this disposable fixture.
+    await nav('tasks')
+    await page.getByRole('button', { name: '新建任务', exact: true }).click()
+    const editor = page.getByRole('dialog', { name: '新建任务' })
+    await editor.getByLabel('标题', { exact: true }).fill('Fixture strict slot task')
+    await editor.getByLabel('预计分钟').fill('30')
+    await editor.getByTestId('task-save').click(); await editor.waitFor({ state: 'hidden' })
+    const initial = await snapshot()
+    assert.equal(initial.workspace.timezone ?? initial.workspace.settings?.timezone, 'Asia/Shanghai', 'fixture workspace and browser zone are explicit')
+    const task = initial.tasks.find(row => row.title === 'Fixture strict slot task')
+    const oldAllocation = initial.allocations.find(row => row.task_id === taskId)
+    const existingCapacity = initial.capacity_blocks.find(row => row.title === 'Fixture future capacity')
+    assert.ok(task && oldAllocation && existingCapacity)
+    const day = new Date(existingCapacity.start).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
+    await command('allocation.set_locked', { id: oldAllocation.id, locked: true })
+    await command('commitment.create', { commitment: {
+      title: 'Fixture preserved fixed appointment', start: `${day}T08:00:00+08:00`, end: `${day}T08:30:00+08:00`, locked: true,
+    } })
+    await page.reload({ waitUntil: 'domcontentloaded' }); await connected(); await nav('schedule')
+    await page.getByRole('button', { name: '增加容量', exact: true }).click()
+    const capacityEditor = page.getByRole('dialog', { name: '增加可用容量' })
+    await capacityEditor.getByLabel('名称').fill('Fixture strict slot capacity')
+    await capacityEditor.getByLabel('开始', { exact: true }).fill(`${day}T16:00`)
+    await capacityEditor.getByLabel('结束', { exact: true }).fill(`${day}T17:00`)
+    await capacityEditor.getByLabel('可用分钟').fill('60')
+    await capacityEditor.getByRole('button', { name: '保存', exact: true }).click()
+    await capacityEditor.waitFor({ state: 'hidden' })
+    const before = await snapshot()
+    const capacity = before.capacity_blocks.find(row => row.title === 'Fixture strict slot capacity')
+    assert.ok(capacity)
+    const unchanged = state => {
+      assert.deepEqual(state.tasks, before.tasks)
+      assert.deepEqual(state.capacity_blocks, before.capacity_blocks)
+      assert.deepEqual(state.commitments, before.commitments)
+      assert.deepEqual(state.calendar_events, before.calendar_events)
+      assert.deepEqual(state.focus_sessions, before.focus_sessions)
+      for (const old of before.allocations) assert.deepEqual(state.allocations.find(row => row.id === old.id), old)
+    }
+    const commands = []
+    const record = request => {
+      if (request.url().endsWith('/rpc') && request.method() === 'POST') {
+        const body = request.postDataJSON()
+        if (body?.kind === 'command') commands.push(body.envelope.operation)
+      }
+    }
+    let releaseCommit
+    const commitGate = new Promise(resolve => { releaseCommit = resolve })
+    const gate = async route => {
+      if (route.request().postDataJSON()?.envelope?.operation === 'changes.commit') await commitGate
+      return route.continue()
+    }
+    page.on('request', record)
+    await page.route('**/zodo-bridge/v1/rpc', gate)
+    try {
+      await page.getByTestId(`schedule-slot-${day}`).click()
+      const slot = page.getByRole('dialog', { name: '安排任务时段' })
+      await slot.getByTestId('schedule-slot-task').selectOption(task.id)
+      await slot.getByTestId('schedule-slot-capacity').selectOption(capacity.id)
+      await slot.getByLabel('开始（工作空间时区）').fill(`${day}T16:00`)
+      await slot.getByLabel('结束（工作空间时区）').fill(`${day}T16:30`)
+      assert.match(await slot.getByTestId('schedule-slot-utc').innerText(), new RegExp(`${day}T08:00:00.000Z`))
+      const proposed = page.waitForResponse(response => response.url().endsWith('/rpc') && response.request().postDataJSON()?.envelope?.operation === 'proposal.create')
+      await slot.getByTestId('schedule-slot-preview').click()
+      const proposalResponse = await proposed
+      assert.equal(proposalResponse.status(), 200)
+      const proposal = (await proposalResponse.json()).result.data.proposal
+      assert.equal(proposal.status, 'validated')
+      assert.equal(proposal.operations.length, 1)
+      const operation = proposal.operations[0]
+      assert.equal(operation.operation, 'allocation.schedule')
+      const reviewedAllocation = operation.payload.allocation
+      assert.deepEqual({ ...reviewedAllocation,
+        start: new Date(reviewedAllocation.start).toISOString(), end: new Date(reviewedAllocation.end).toISOString(),
+      }, {
+        task_id: task.id, expected_task_version: task.version, capacity_block_id: capacity.id,
+        start: `${day}T08:00:00.000Z`, end: `${day}T08:30:00.000Z`,
+      })
+      const review = page.getByRole('dialog', { name: '检查提案' })
+      await review.waitFor()
+      assert.match(await review.getByTestId('plan-intent').innerText(), /Fixture strict slot task/)
+      assert.match(await review.getByTestId('plan-change-summary').innerText(), /拟新增 1 项、修改 0 项、移除 0 项/)
+      assert.match(await review.getByTestId('plan-fixed-summary').innerText(), /不应用这些变更/)
+      const preview = await snapshot()
+      unchanged(preview)
+      assert.deepEqual(preview.allocations, before.allocations, 'preview cannot allocate')
+      assert.deepEqual(commands, ['proposal.create'], 'preview cannot approve, commit or use permissive allocation.create')
+      await screenshot('strict-slot-reviewed-preview')
+      const commitRequested = page.waitForRequest(request => request.url().endsWith('/rpc') && request.postDataJSON()?.envelope?.operation === 'changes.commit')
+      const committed = page.waitForResponse(response => response.url().endsWith('/rpc') && response.request().postDataJSON()?.envelope?.operation === 'changes.commit')
+      await review.getByTestId('plan-apply').click()
+      await commitRequested
+      // Pause only the owned synthetic commit request, not the Core or its clock.
+      const approved = await snapshot()
+      unchanged(approved)
+      assert.deepEqual(approved.allocations, before.allocations, 'approval alone cannot allocate')
+      releaseCommit()
+      assert.equal((await committed).status(), 200)
+      await review.waitFor({ state: 'hidden' })
+      const after = await snapshot()
+      unchanged(after)
+      const added = after.allocations.filter(row => !before.allocations.some(old => old.id === row.id))
+      assert.equal(added.length, 1)
+      assert.equal(added[0].task_id, task.id)
+      assert.equal(added[0].capacity_block_id, capacity.id)
+      assert.equal(Date.parse(added[0].start), Date.parse(`${day}T16:00:00+08:00`))
+      assert.equal(Date.parse(added[0].end), Date.parse(`${day}T16:30:00+08:00`))
+      assert.equal(added[0].minutes, 30)
+      assert.equal(after.proposals.find(row => row.id === proposal.id).status, 'applied')
+      assert.deepEqual(commands, ['proposal.create', 'proposal.approve', 'changes.commit'])
+      await page.getByTestId('time-allocation-' + added[0].id).waitFor()
+      await screenshot('strict-slot-committed')
+    } finally {
+      releaseCommit()
+      await page.unroute('**/zodo-bridge/v1/rpc', gate)
+      page.off('request', record)
+    }
+  })
+
   await check('Search resolves committed task', async () => {
     await nav('search')
     await page.getByPlaceholder('搜索任务、目标、项目…').fill('Fixture task edited')
