@@ -33,13 +33,47 @@ export async function startFixture({ binary = path.join(root, 'target/release/zo
   const childEnv = Object.fromEntries(['SystemRoot', 'WINDIR', 'PATH'].flatMap(key =>
     process.env[key] ? [[key, process.env[key]]] : []))
   Object.assign(childEnv, { HOME: dir, USERPROFILE: dir, LOCALAPPDATA: dir, APPDATA: dir, TEMP: dir, TMP: dir })
-  const core = spawn(binary, ['--data-dir', dir, 'serve', '--port', '0'], {
-    cwd: dir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv,
-  })
-  let coreFailure
-  core.on('error', error => { coreFailure = error })
-  // Consume logs without publishing any credentials or runtime.json contents.
-  core.stdout.resume(); core.stderr.resume()
+  let core, coreFailure, restarting
+  const launchCore = () => {
+    coreFailure = undefined
+    core = spawn(binary, ['--data-dir', dir, 'serve', '--host', '127.0.0.1', '--port', '0'], {
+      cwd: dir, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv,
+    })
+    core.on('error', error => { coreFailure = error })
+    // Consume logs without publishing credentials or runtime.json contents.
+    core.stdout.resume(); core.stderr.resume()
+  }
+  const stopCore = async () => {
+    if (core.exitCode !== null || core.signalCode !== null || coreFailure) return
+    const exited = once(core, 'exit')
+    core.kill()
+    await Promise.race([exited, pause(3000)])
+    if (core.exitCode === null && core.signalCode === null) {
+      core.kill('SIGKILL')
+      await Promise.race([exited, pause(3000)])
+      if (core.exitCode === null && core.signalCode === null) throw new Error('Owned fixture Core termination timeout')
+    }
+  }
+  const waitForCore = async previousInstance => {
+    const deadline = Date.now() + 25_000
+    while (Date.now() < deadline) {
+      if (coreFailure) throw new Error('Owned fixture Core failed to launch')
+      if (core.exitCode !== null || core.signalCode !== null) throw new Error('Fixture Core exited before ready')
+      try {
+        const info = JSON.parse(await readFile(path.join(dir, 'runtime.json'), 'utf8'))
+        // Never adopt a stale descriptor or any process except our new child.
+        if (info.pid === core.pid && info.host === '127.0.0.1' &&
+            Number.isInteger(info.port) && info.port > 0 && info.port <= 65535 &&
+            typeof info.instance_id === 'string' && info.instance_id && info.instance_id !== previousInstance) {
+          const health = await fetch('http://127.0.0.1:' + info.port + '/v1/health', { signal: AbortSignal.timeout(1000), redirect: 'error' })
+          if (health.ok && (await health.json()).instance_id === info.instance_id) return info.instance_id
+        }
+      } catch {}
+      await pause(100)
+    }
+    throw new Error('Owned fixture Core readiness timeout')
+  }
+  launchCore()
   const routes = [], effects = [], tools = new Map()
   const llmCalls = { streams: [], defaultSelections: 0 }
   let origin, server, stopped = false
@@ -48,30 +82,30 @@ export async function startFixture({ binary = path.join(root, 'target/release/zo
     stopped = true
     for (const dispose of effects.reverse()) { try { await dispose?.() } catch {} }
     if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
-    if (core.exitCode === null && core.signalCode === null && !coreFailure) {
-      const exited = once(core, 'exit')
-      core.kill()
-      await Promise.race([exited, pause(3000)])
-      if (core.exitCode === null && core.signalCode === null) { core.kill('SIGKILL'); await exited }
+    try {
+      if (restarting) await restarting.catch(() => {})
+      await stopCore()
+      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 })
+    } finally {
+      for (const [key, value] of Object.entries(envBefore)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value
+      }
     }
-    for (const [key, value] of Object.entries(envBefore)) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value
-    }
-    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 })
   }
   try {
-    let ready = false
-    for (let attempt = 0; attempt < 250; attempt++) {
-      if (coreFailure) throw coreFailure
-      if (core.exitCode !== null) throw new Error('Fixture Core exited before ready')
-      try {
-        const info = JSON.parse(await readFile(path.join(dir, 'runtime.json'), 'utf8'))
-        const health = await fetch('http://' + info.host + ':' + info.port + '/v1/health')
-        if (health.ok && (await health.json()).instance_id === info.instance_id) { ready = true; break }
-      } catch {}
-      await pause(100)
+    let instance = await waitForCore()
+    // Programmatic test lifecycle only: no user-supplied data path or restart route.
+    const restartCore = async () => {
+      if (stopped || restarting) throw new Error('Fixture is stopped or already restarting')
+      restarting = (async () => {
+        await stopCore()
+        if (stopped) throw new Error('Fixture stopped during restart')
+        launchCore()
+        instance = await waitForCore(instance)
+        return { restarted: true }
+      })()
+      try { return await restarting } finally { restarting = undefined }
     }
-    if (!ready) throw new Error('Fresh fixture Core readiness timeout')
     const assets = new Map([
       ['/react.js', await readFile(path.join(runtime, 'react/umd/react.production.min.js'))],
       ['/react-dom.js', await readFile(path.join(runtime, 'react-dom/umd/react-dom.production.min.js'))],
@@ -133,7 +167,7 @@ export async function startFixture({ binary = path.join(root, 'target/release/zo
     origin = 'http://127.0.0.1:' + server.address().port
     // Real Host registration may bind callbacks immediately and must see this exact origin.
     await (await import(pathToFileURL(path.join(plugin, 'index.js')))).apply(ctx)
-    return { url: origin, stop, tools, llmCalls, dataDirectory: dir, corePid: core.pid }
+    return { url: origin, stop, tools, llmCalls, dataDirectory: dir, get corePid() { return core.pid }, restartCore }
   } catch (error) { await stop(); throw error }
 }
 

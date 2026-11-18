@@ -12,10 +12,14 @@ const binaryHash = createHash('sha256').update(await readFile(process.env.ZODO_F
 const fixture = await startFixture({ binary: process.env.ZODO_FIXTURE_CORE_BIN })
 let passed = false
 try {
-  const session = await fetch(fixture.url + '/zodo-bridge/v1/session', { method: 'POST', headers: { Origin: fixture.url }, body: '{}' })
-  assert.equal(session.status, 200)
-  const cookie = session.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
-  assert.ok(cookie)
+  const acquireSession = async () => {
+    const session = await fetch(fixture.url + '/zodo-bridge/v1/session', { method: 'POST', headers: { Origin: fixture.url }, body: '{}' })
+    assert.equal(session.status, 200)
+    const cookie = session.headers.getSetCookie().map(value => value.split(';')[0]).join('; ')
+    assert.ok(cookie)
+    return cookie
+  }
+  let cookie = await acquireSession()
   const rpc = async (kind, name, payload = {}) => {
     const response = await fetch(fixture.url + '/zodo-bridge/v1/rpc', {
       method: 'POST', headers: { Origin: fixture.url, Cookie: cookie, 'Content-Type': 'application/json' },
@@ -72,10 +76,23 @@ try {
   for (const key of ['tasks', 'capacity_blocks', 'commitments', 'calendar_events', 'focus_sessions']) assert.deepEqual(state[key], before[key], key)
   assert.equal(state.proposals.find(row => row.id === proposal.id).status, 'applied')
   assert.equal(fixture.llmCalls.streams.length, 0)
+  assert.ok(state.allocations.some(row => row.locked), 'non-vacuous locked persistence check')
+  assert.ok(state.commitments.some(row => row.locked), 'non-vacuous fixed persistence check')
+  const persisted = state
+  assert.deepEqual(await fixture.restartCore(), { restarted: true })
+  // Reacquire via the real adapter, not copied runtime credentials or old cookies.
+  cookie = await acquireSession()
+  state = await snapshot()
+  assert.equal(state.workspace.revision, persisted.workspace.revision)
+  for (const key of ['tasks', 'allocations', 'commitments', 'capacity_blocks', 'calendar_events', 'focus_sessions', 'proposals']) {
+    assert.deepEqual(state[key], persisted[key], `${key} persisted across actual Core process restart`)
+  }
+  assert.equal(state.allocations.filter(row => row.task_id === task.id).length, 1)
+  assert.equal(fixture.llmCalls.streams.length, 0)
   passed = true
 } finally {
   await fixture.stop()
   const removed = !(await stat(fixture.dataDirectory).then(() => true, () => false))
   assert.equal(removed, true)
-  console.log(JSON.stringify({ test: 'strict-schedule-owned-http-bridge', status: passed ? 'passed' : 'failed', renderedUI: false, fullHost: false, coreSha256: binaryHash, dataRemoved: removed }))
+  console.log(JSON.stringify({ test: 'strict-schedule-owned-http-bridge', status: passed ? 'passed' : 'failed', renderedUI: false, fullHost: false, coreRestartPersistence: passed, coreSha256: binaryHash, dataRemoved: removed }))
 }
