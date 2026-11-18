@@ -319,7 +319,13 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
         unplaced,
         fixed_allocations,
         diagnostics,
-        replace_task_ids: replace_task_ids.clone(),
+        // This field authorizes deletion at apply time, not merely the planning scope.
+        // Retain mode is additive, including when every task is already fully scheduled.
+        replace_task_ids: if input.move_unlocked {
+            replace_task_ids
+        } else {
+            Vec::new()
+        },
     })
 }
 
