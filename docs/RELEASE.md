@@ -4,7 +4,7 @@ Updated 2026-11-17. Development builds support only the current configuration/sc
 
 ## Build
 
-Windows x64, Rust/Cargo and PowerShell are required. From the repository root:
+Windows x64, the Rust `x86_64-pc-windows-msvc` target and its MSVC linker, Cargo and PowerShell are required. From the repository root:
 
 ```powershell
 powershell -NoProfile -File scripts/build-release.ps1
@@ -13,6 +13,17 @@ powershell -NoProfile -File scripts/build-release.ps1
 The [build script](<../scripts/build-release.ps1>) builds the workspace with its lockfile and replaces only generated release output. It stages the current plugin, including its privacy module and Core binary. The deprecated probe crate/binary and old right-sidebar registration have been removed. It does not install, reload or modify a running Host.
 
 Generated output consists of the Core executable, non-UI native ABI library, plugin ZIP named from its package version, build metadata (including dirty-tree status), and SHA-256 checksums. No standalone UI bundle is built or distributed. Run the [regression runner](<../scripts/run-regression.ps1>) before packaging.
+
+## Verify a locally built plugin package
+
+From the same checkout, use Python 3 (standard library only). Substitute the ZIP filename printed by the build.
+
+```text
+python scripts/verify-plugin-package.py artifacts/release/zodo-harness-plugin-<version>.zip artifacts/release/zodo.exe
+python -B -m unittest discover -s tests/packaging
+```
+
+The validator checks archive members and exact source/Core bytes, and checks the Core PE header for Windows x64. Run it against a package and executable from the same build; it does not establish provenance, signing, execution, installability or Host compatibility. The validator's unit tests use temporary synthetic archives, not a Windows build.
 
 ## Verification limits
 
