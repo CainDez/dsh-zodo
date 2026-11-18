@@ -1,11 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHostGateway, readModelCatalog, requestCore } from './host-gateway.js'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { access, mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
-import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 
@@ -135,8 +135,17 @@ test('callback aborts on current authorization revocation and redacts all provid
 const binary = process.env.ZODO_CORE_TEST_BIN || fileURLToPath(new URL('../../../target/debug/' + (process.platform === 'win32' ? 'zodo.exe' : 'zodo'), import.meta.url))
 
 test('isolated real Core run -> Host llm ordinary/subscription mock -> proposal, never fallback or private context', { timeout: 45_000 }, async () => {
+  try {
+    if (!(await stat(binary)).isFile()) throw new Error('Not a file')
+    await access(binary, constants.X_OK)
+  } catch {
+    throw new Error('Test Core executable unavailable. Run cargo build -p zodo-runtime --locked or set ZODO_CORE_TEST_BIN to that build.')
+  }
   const dir = await mkdtemp(path.join(tmpdir(), 'zodo-host-contract-'))
   const proc = spawn(binary, ['--data-dir', dir, 'serve', '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+  let failedToSpawn = false
+  proc.on('error', () => { failedToSpawn = true })
+  const finished = new Promise(resolve => proc.once('close', resolve))
   let gateway
   let stdout = ''
   proc.stdout.on('data', chunk => { stdout = (stdout + chunk.toString()).slice(-16_384) })
@@ -146,7 +155,8 @@ test('isolated real Core run -> Host llm ordinary/subscription mock -> proposal,
     let runtime
     const end = Date.now() + 10_000
     while (!runtime && Date.now() < end) {
-      if (proc.exitCode !== null) throw new Error('Synthetic Core exited before readiness')
+      if (failedToSpawn) throw new Error('Could not start the test Core executable.')
+      if (proc.exitCode !== null || proc.signalCode !== null) throw new Error('Synthetic Core exited before readiness')
       for (const line of stdout.split(String.fromCharCode(10))) {
         try { const parsed = JSON.parse(line); if (parsed.protocol === 'zodo/1' && parsed.pid === proc.pid) runtime = parsed } catch {}
       }
@@ -253,9 +263,13 @@ test('isolated real Core run -> Host llm ordinary/subscription mock -> proposal,
     // Non-admin and browser calls cannot install even a loopback callback capability.
     assert.equal((await api('POST', '/v1/host/bind', { schema: 'zodo.host-binding/1', instance_id: runtime.instance_id, binding_id: 'a'.repeat(32), endpoint: 'http://127.0.0.1:1/zodo-host/v1/complete', token: 'b'.repeat(64), expires_at_ms: Date.now() + 1000, routes: [] }, runtime.tokens.agent)).status, 403)
   } finally {
-    if (gateway) await gateway.close()
-    if (proc.exitCode === null) { proc.kill(); await once(proc, 'exit') }
-    await rm(dir, { recursive: true, force: true })
+    try {
+      if (gateway) await gateway.close()
+    } finally {
+      if (proc.pid !== undefined && proc.exitCode === null && proc.signalCode === null) proc.kill()
+      await finished
+      await rm(dir, { recursive: true, force: true })
+    }
   }
 })
 
