@@ -6,6 +6,7 @@
 
 - 在 `6b2d625` 实际重跑的 Node 适配器和诊断：81/81（`node --test tests/adapter/*.test.mjs tests/browser/harness-isolated-diagnostics.test.mjs`）。
 - Core 最新代码对应 `078a865`：Rust workspace 159/159；该 Core 二进制在 `6b2d625` 成功通过合成数据的真实 HTTP bridge 排程冒烟，零模型调用、数据清理完成，未涉及渲染或完整 Host。
+- [整周 Core 合成回归](SCHEDULER_WEEK_CORE_QA.md)验证默认追加、预约变动引发的旧批准拒绝、重新排程和两次 SQLite 关闭重开；不代表桌面重启。
 - Host gateway 6/6：先用 `cargo build -p zodo-runtime --locked` 构建测试 Core，再运行 `node --test adapters/deepseek-harness/plugin/host-gateway.test.js`；自定义构建目录应先把 `ZODO_CORE_TEST_BIN` 指向该可执行文件。真实临时 Core 接入的是模拟 Host 供应商，不调用线上模型，也不是桌面集成。
 - 390px 单日布局、键盘操作和真实提交回执丢失的浏览器用例已写但没进断言。当前独立 Chromium 的进程 socket 不可用，应用内浏览器也无法连接该测试进程的 loopback。
 - 新的 Windows 打包脚本已有静态回归，ZIP 校验器有合成归档测试；没有实际 Windows 产物可核验。
