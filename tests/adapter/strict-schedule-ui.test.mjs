@@ -4,7 +4,7 @@ import {test} from 'node:test'
 import vm from 'node:vm'
 const source=readFileSync(new URL('../../adapters/deepseek-harness/plugin/client.js',import.meta.url),'utf8')
 const zones=source.slice(source.indexOf('    function workspaceTimezone'),source.indexOf('    function truncateText'))
-const code=source.slice(source.indexOf('    function QuickSchedule'),source.indexOf('    function CapacityEditor'))
+const code=source.slice(source.indexOf('    function scheduleRecovery'),source.indexOf('    function CapacityEditor'))
 function mount({form={},send,zone='Asia/Shanghai'}={}) {
   const writes=[],errors=[],closed=[],modals=[]
   const Component=vm.runInNewContext(`${zones}\n${code}\nQuickSchedule`,{
@@ -76,5 +76,72 @@ test('global receipt notice distinguishes proposal metadata from saved facts',()
     const notices=[]
     vm.runInNewContext(line,{operation,result:{revision:7,operation_id:'fixture-operation'},setNotice:value=>notices.push(value)})
     assert.ok(notices[0].startsWith(operation==='proposal.create'||operation==='plan.propose'?'提案已记录 · 尚未应用':'已保存'))
+  }
+})
+
+test('draft diagnostics produce actionable hints without reflecting arbitrary private values',async()=>{
+  const f=mount({send:async()=>({data:{proposal:{status:'draft',diagnostics:[
+    {code:'VALIDATION_FAILED',message:'allocation overlaps fixed commitment PRIVATE_SENTINEL'},
+    {code:'REVISION_CONFLICT',message:'task changed PRIVATE_SENTINEL'},
+  ]}}})})
+  await f.save()
+  const error=f.errors.at(-1)
+  assert.ok(error.includes('改选时段'))
+  assert.ok(error.includes('重新生成预览'))
+  assert.ok(error.includes('输入已保留'))
+  assert.equal(error.includes('PRIVATE_SENTINEL'),false)
+  assert.equal(f.modals.length,0)
+})
+
+test('recovery categories distinguish correcting constraints from blind retry',()=>{
+  const recovery=vm.runInNewContext(`${code}\nscheduleRecovery`)
+  for(const [failure,hint] of [
+    [{code:'NOT_FOUND'},'重新选择'],[{code:'PERMISSION_DENIED'},'权限'],
+    [{message:'scheduled interval must start in the future'},'未来时段'],
+    [{message:'predecessor work is not fully scheduled before this interval'},'前置工作'],
+    [{message:'only an unblocked leaf task can be scheduled'},'叶任务'],
+    [{message:'scheduled interval violates task time constraints'},'硬截止'],
+    [{message:'scheduled interval is outside workspace availability'},'工作窗口'],
+    [{message:'capacity block is already fully consumed'},'剩余预算'],
+    [{message:'allocation would exceed remaining work'},'剩余分钟'],
+    [{code:'STORAGE_FAILURE',message:'PRIVATE_SENTINEL'},'提案记录'],
+  ]) assert.ok(recovery(failure).includes(hint),hint)
+})
+
+test('in-flight form events cannot change the retained draft, then unlock after failure',async()=>{
+  let reject
+  const f=mount({send:()=>new Promise((_,fail)=>{reject=fail})})
+  const find=(node,id)=>node?.props?.['data-testid']===id?node:
+    (node?.children??[]).flat(Infinity).map(child=>find(child,id)).find(Boolean)
+  const picker=find(f.tree,'schedule-slot-task')
+  const pending=f.save()
+  const calls=f.errors.length
+  picker.props.onChange({target:{value:'different-task'}})
+  assert.equal(f.errors.length,calls,'no state setter invoked before busy re-render')
+  reject(new Error('network unavailable'))
+  await pending
+  picker.props.onChange({target:{value:'different-task'}})
+  assert.equal(f.errors.at(-1).task,'different-task','editing resumes only after request settles')
+})
+
+test('global send hides strict-preview raw failures but preserves refresh and other command behavior',async()=>{
+  const begin=source.indexOf('      const send = useCallback(async (operation, payload)')
+  const end=source.indexOf('      const reader',begin)
+  for(const [operation,payload,code,expectedRefresh,rawAllowed] of [
+    ['proposal.create',{operations:[{operation:'allocation.schedule'}]},'VALIDATION_FAILED',0,false],
+    ['proposal.create',{operations:[{operation:'allocation.schedule'}]},'REVISION_CONFLICT',1,false],
+    ['task.update',{},'VALIDATION_FAILED',0,true],
+    ['proposal.create',{operations:[{operation:'task.update'}]},'VALIDATION_FAILED',0,true],
+  ]) {
+    const errors=[],busy=[];let refreshed=0
+    const failure=Object.assign(new Error('PRIVATE_SENTINEL'),{code})
+    const send=vm.runInNewContext(`${source.slice(begin,end)}\nsend`,{
+      useCallback:fn=>fn,snapshot:{workspace:{revision:5}},setBusy:value=>busy.push(value),setError:value=>errors.push(value),setNotice:()=>{},
+      command:async()=>{throw failure},refresh:async()=>{refreshed++},
+    })
+    await assert.rejects(send(operation,payload),error=>error===failure)
+    assert.equal(errors.join(' ').includes('PRIVATE_SENTINEL'),rawAllowed)
+    assert.equal(refreshed,expectedRefresh)
+    assert.deepEqual(busy,[true,false])
   }
 })

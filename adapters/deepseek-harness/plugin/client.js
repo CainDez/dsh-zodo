@@ -1411,12 +1411,33 @@ window.__ModuleLoader__.load({
     }
 
     // Strict quick scheduling creates a candidate only; normal approval owns commit.
+    // Hints are presentation only. Core diagnostics remain authoritative; never
+    // reflect arbitrary diagnostic values (which may contain private titles).
+    function scheduleRecovery(failure = {}) {
+      const code = String(failure.code ?? '').toUpperCase()
+      const message = String(failure.message ?? '').toLowerCase()
+      if (code === 'UNSUPPORTED_OPERATION' || /unknown (operation|variant)|unsupported/.test(message)) return 'Core 不支持严格安排，请升级后重新生成预览；不会使用宽松接口。'
+      if (['REVISION_CONFLICT', 'POLICY_CHANGED', 'APPROVAL_EXPIRED'].includes(code) || /task changed/.test(message)) return '数据、策略或批准依据已变化；刷新数据并核对保留的输入，再重新生成预览，不能重用旧批准。'
+      if (code === 'PERMISSION_DENIED') return '当前权限不足；检查授权后再生成预览，不会绕过权限。'
+      if (code === 'NOT_FOUND') return '所选任务或容量已不存在；刷新后重新选择，再生成预览。'
+      if (/start in the future/.test(message)) return '开始时间已到或已过；选择未来时段，再生成预览。'
+      if (/predecessor|dependency/.test(message)) return '前置工作未满足；先核实依赖完成情况或安排前置工作，再重新生成预览。'
+      if (/unblocked leaf|closed or archived/.test(message)) return '请选择未关闭、未归档且未手动阻塞的叶任务；不会替你解除阻塞。'
+      if (/task time constraints/.test(message)) return '所选时间违反最早开始或硬截止；调整时段，不会自动放宽任务限制。'
+      if (/workspace availability|timezone/.test(message)) return '检查工作空间时区、硬工作窗口与周末规则，选择允许的时段后重新预览。'
+      if (/overlap|external busy/.test(message)) return '所选时段与已有安排或忙碌区间冲突；改选时段，不会移动已有安排。'
+      if (/capacity/.test(message)) return '检查所选容量块的时间范围和剩余预算；换一个已有容量块或缩短时段。'
+      if (/remaining|estimate_minutes/.test(message)) return '检查任务剩余分钟及已有分配；补齐估时或缩短安排后重新预览。'
+      return '未得到有效严格预览。输入已保留；请核实 Core 状态与提案记录，再手动重新生成预览。不会自动重试或提交。'
+    }
+
     function QuickSchedule({ day, snapshot, send, busy, onClose, setModal }) {
       const timeZone = workspaceTimezone(snapshot)
       const zoneValid = isKnownTimezone(timeZone)
       const pending = useRef(false)
       const [form, setForm] = useState({ task: '', capacity: '', start: `${day}T09:00`, end: `${day}T10:00`, startChoice: null, endChoice: null })
       const [error, setError] = useState('')
+      const updateForm = next => { if (!pending.current && !busy) setForm(next) }
       const tasks = (snapshot.tasks ?? []).filter(task => !task.archived && !['done', 'cancelled'].includes(task.status))
       const selected = tasks.find(task => task.id === form.task)
       const capacity = (snapshot.capacity_blocks ?? []).find(block => block.id === form.capacity)
@@ -1444,30 +1465,34 @@ window.__ModuleLoader__.load({
           })
           const proposal = result.data?.proposal
           if (!proposal || proposal.status !== 'validated') {
-            setError('Core 未返回有效的严格安排提案。请检查提案诊断或升级 Core；未安排任何时间，不会退回手工接口。')
+            const hints = (proposal?.diagnostics ?? []).slice(0, 4).map(scheduleRecovery)
+            setError(`Core 未返回有效的严格安排提案，未安排任何时间。${[...new Set(hints.length ? hints : [scheduleRecovery()])].join(' ')} 输入已保留，修改后请生成新预览；不会使用宽松接口。`)
             return
           }
           setModal({ type: 'plan', proposal, plan: null, grant: null })
         } catch (failure) {
-          setError(`严格安排预览失败：${failure.message}。若 Core 不支持 allocation.schedule，请升级后重试；不会使用宽松接口。`)
+          setError(`严格安排预览失败。${scheduleRecovery(failure)} 输入已保留。`)
         } finally { pending.current = false }
       }
       return h(Modal, { title: '安排任务时段', onClose: close, wide: true,
         footer: h(React.Fragment, null,
           h(Button, { onClick: close, disabled: busy }, COPY.cancel),
           h(Button, { onClick: propose, disabled: busy, testid: 'schedule-slot-preview' }, '生成严格预览')) },
-        error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
+        error ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert' }, error) : null,
         busy ? h('p', { role: 'status' }, '正在生成预览，请等待后关闭。') : null,
         h('p', { className: 'zw-fineprint' }, `所选日期标签 ${day} 来自本机日程；下面所有日期与钟点按工作空间时区 ${timeZone} 解释，不自动猜测跨时区对应时刻。请核对 UTC 预览。`),
-        h(Field, { label: '任务' }, h('select', { value: form.task, onChange: event => setForm({ ...form, task: event.target.value }), 'data-testid': 'schedule-slot-task' },
+        h('fieldset', { disabled: busy, style: { border: 0, padding: 0, margin: 0, minWidth: 0 } },
+        h('legend', { className: 'zw-fineprint' }, '修改输入后须重新生成预览；保存中输入受保护'),
+        h(Field, { label: '任务' }, h('select', { value: form.task, onChange: event => updateForm({ ...form, task: event.target.value }), 'data-testid': 'schedule-slot-task' },
           h('option', { value: '' }, '选择任务'), tasks.map(task => h('option', { key: task.id, value: task.id }, task.title)))),
-        h(Field, { label: '已有容量块' }, h('select', { value: form.capacity, onChange: event => setForm({ ...form, capacity: event.target.value }), 'data-testid': 'schedule-slot-capacity' },
+        h(Field, { label: '已有容量块' }, h('select', { value: form.capacity, onChange: event => updateForm({ ...form, capacity: event.target.value }), 'data-testid': 'schedule-slot-capacity' },
           h('option', { value: '' }, '选择容量块'), (snapshot.capacity_blocks ?? []).map(block => h('option', { key: block.id, value: block.id }, `${block.title} · ${zoneValid ? wallClockText(Date.parse(block.start), timeZone) : block.start} 至 ${zoneValid ? wallClockText(Date.parse(block.end), timeZone) : block.end}`)))),
         ['start', 'end'].map(key => h(Field, { key, label: key === 'start' ? '开始（工作空间时区）' : '结束（工作空间时区）' },
-          h('input', { type: 'datetime-local', value: form[key], onChange: event => setForm({ ...form, [key]: event.target.value, [`${key}Choice`]: null }) }),
-          resolved[key].instants.length > 1 ? h('select', { value: form[`${key}Choice`] ?? '', onChange: event => setForm({ ...form, [`${key}Choice`]: event.target.value === '' ? null : Number(event.target.value) }) },
+          h('input', { type: 'datetime-local', value: form[key], onChange: event => updateForm({ ...form, [key]: event.target.value, [`${key}Choice`]: null }) }),
+          resolved[key].instants.length > 1 ? h('select', { value: form[`${key}Choice`] ?? '', onChange: event => updateForm({ ...form, [`${key}Choice`]: event.target.value === '' ? null : Number(event.target.value) }) },
             h('option', { value: '' }, '钟点重复，请选择 UTC 时刻'), resolved[key].instants.map(value => h('option', { key: value, value }, new Date(value).toISOString()))) : null,
         )),
+        ),
         h('p', { 'data-testid': 'schedule-slot-utc' }, `UTC：${start == null ? '待确认' : new Date(start).toISOString()} 至 ${end == null ? '待确认' : new Date(end).toISOString()}`),
         h('p', { className: 'zw-fineprint' }, '生成预览可能保存提案元数据，但不会分配时间。只有检查后批准并收到 Core 提交成功回执才保存安排。严格检查任务、依赖、容量和冲突；不移动已有安排、不开始专注、不写外部日历。忙碌快照可能过期，不能保证实时外部可用性。'),
       )
@@ -4030,7 +4055,8 @@ window.__ModuleLoader__.load({
             setError('数据已改变，当前页面需要刷新；不会覆盖新状态。')
             await refresh()
           } else {
-            setError(failure.message)
+            const strictPreview = operation === 'proposal.create' && payload?.operations?.some(item => item.operation === 'allocation.schedule')
+            setError(strictPreview ? '严格安排预览失败；请查看弹窗中的处理建议，输入已保留。' : failure.message)
           }
           throw failure
         } finally {
