@@ -502,19 +502,21 @@ window.__ModuleLoader__.load({
       return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : null
     }
 
-    function agendaShift(value, days) {
+    function agendaShift(value, days, length = 7) {
+      const maximum = length === 1 ? '9999-12-31' : AGENDA_MAX
       const date = agendaDate(value)
       if (!date || !Number.isSafeInteger(days)) return AGENDA_MIN
       date.setUTCDate(date.getUTCDate() + days)
-      if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() > 9999) return days < 0 ? AGENDA_MIN : AGENDA_MAX
+      if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() > 9999) return days < 0 ? AGENDA_MIN : maximum
       if (date.getUTCFullYear() < 1) return AGENDA_MIN
       const result = date.toISOString().slice(0, 10)
-      return result < AGENDA_MIN ? AGENDA_MIN : result > AGENDA_MAX ? AGENDA_MAX : result
+      return result < AGENDA_MIN ? AGENDA_MIN : result > maximum ? maximum : result
     }
 
-    function agendaDays(start) {
-      const date = agendaDate(agendaShift(start, 0))
-      return Array.from({ length: 7 }, (_, index) => {
+    function agendaDays(start, length = 7) {
+      const count = length === 1 ? 1 : 7
+      const date = agendaDate(agendaShift(start, 0, count))
+      return Array.from({ length: count }, (_, index) => {
         const day = new Date(date.getTime())
         day.setUTCDate(day.getUTCDate() + index)
         return day.toISOString().slice(0, 10)
@@ -3939,6 +3941,7 @@ window.__ModuleLoader__.load({
       const [runsLoading, setRunsLoading] = useState(false)
       const [taskFilter, setTaskFilter] = useState({ text: '', status: '', tag: '', overdue: false })
       const [selectedTaskIds, setSelectedTaskIds] = useState([])
+      const [scheduleLength, setScheduleLength] = useState(7)
       const [scheduleStart, setScheduleStart] = useState(() => agendaShift(todayIso(), 0))
       const settledRuns = useRef(new Set())
       stateSnapshotRef.current = snapshot
@@ -4516,7 +4519,7 @@ window.__ModuleLoader__.load({
       }
 
       const renderSchedule = () => {
-        const days = agendaDays(scheduleStart)
+        const days = agendaDays(scheduleStart, scheduleLength)
         const unplacedList = outstanding.rows
         return h('div', { className: 'zw-page' },
           h('header', { className: 'zw-page-head' },
@@ -4533,16 +4536,24 @@ window.__ModuleLoader__.load({
             ),
           ),
           h('div', { className: 'zw-head-actions', role: 'group', 'aria-label': '日程日期导航' },
-            h(Button, { onClick: () => setScheduleStart(value => agendaShift(value, -7)), disabled: scheduleStart <= AGENDA_MIN, testid: 'schedule-previous' }, '前 7 天'),
-            h(Button, { onClick: () => setScheduleStart(agendaShift(today, 0)), testid: 'schedule-today' }, '今天'),
-            h(Button, { onClick: () => setScheduleStart(value => agendaShift(value, 7)), disabled: scheduleStart >= AGENDA_MAX, testid: 'schedule-next' }, '后 7 天'),
-            h('span', { 'aria-live': 'polite', 'data-testid': 'schedule-range' }, `${days[0]} 至 ${days[6]}`),
+            h('label', null, '视图 ', h('select', { value: scheduleLength, 'aria-label': '日程视图', 'data-testid': 'schedule-mode', onChange: event => {
+              const length = event.target.value === '1' ? 1 : 7
+              setScheduleLength(length)
+              setScheduleStart(value => agendaShift(value, 0, length))
+            } }, h('option', { value: 7 }, '7 天'), h('option', { value: 1 }, '单日（适合窄面板）'))),
+            h('label', null, '起始日期 ', h('input', { type: 'date', value: scheduleStart, min: AGENDA_MIN,
+              max: scheduleLength === 1 ? '9999-12-31' : AGENDA_MAX, 'aria-label': '日程起始日期', 'data-testid': 'schedule-date',
+              onChange: event => { if (agendaDate(event.target.value)) setScheduleStart(agendaShift(event.target.value, 0, scheduleLength)) } })),
+            h(Button, { onClick: () => setScheduleStart(value => agendaShift(value, -scheduleLength, scheduleLength)), disabled: scheduleStart <= AGENDA_MIN, testid: 'schedule-previous' }, scheduleLength === 1 ? '前一天' : '前 7 天'),
+            h(Button, { onClick: () => setScheduleStart(agendaShift(today, 0, scheduleLength)), testid: 'schedule-today' }, '今天'),
+            h(Button, { onClick: () => setScheduleStart(value => agendaShift(value, scheduleLength, scheduleLength)), disabled: scheduleStart >= (scheduleLength === 1 ? '9999-12-31' : AGENDA_MAX), testid: 'schedule-next' }, scheduleLength === 1 ? '后一天' : '后 7 天'),
+            h('span', { 'aria-live': 'polite', 'data-testid': 'schedule-range' }, scheduleLength === 1 ? days[0] : `${days[0]} 至 ${days[6]}`),
           ),
           h('p', { className: 'zw-fineprint' }, '按本机时区显示；跨日安排分段展示，详情保留完整时间。外部日历仅显示只读忙碌区间；空白不代表可预约，来源缺失、未知或过期时请先核实日历。'),
-          h('div', { className: 'zw-week' },
+          h('div', { className: `zw-week ${scheduleLength === 1 ? 'zw-single' : ''}` },
             days.map(day => {
               const entries = agendaEntries(snapshot, day)
-              return h('div', { className: `zw-day ${day === today ? 'zw-day-today' : ''}`, key: day },
+              return h('div', { className: `zw-day ${day === today ? 'zw-day-today' : ''}`, key: day, 'data-testid': `schedule-day-${day}` },
                 h('div', { className: 'zw-day-head' }, h('strong', null, dateForLocal(`${day}T12:00:00`)), h('span', null, new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(new Date(`${day}T12:00:00`)))),
                 h(Button, { onClick: () => setModal({ type: 'quick-schedule', day }), disabled: busy, testid: `schedule-slot-${day}` }, '安排任务时段'),
                 h(Button, { onClick: () => setModal({ type: 'time', day, task: null, tasks: activeTasks }), disabled: busy, testid: `schedule-task-date-${day}` }, '设置任务日期'),
@@ -5206,6 +5217,10 @@ window.__ModuleLoader__.load({
       .zw-list-row:last-child { border-bottom:0; }
       .zw-toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
       .zw-week { display:grid; grid-template-columns:repeat(7,minmax(96px,1fr)); gap:6px; overflow:auto; padding-bottom:4px; }
+      .zw-week.zw-single { grid-template-columns:minmax(0,1fr); overflow:visible; min-width:0; }
+      .zw-single .zw-day { min-width:0; overflow-wrap:anywhere; }
+      .zw-single .zw-day-head { flex-wrap:wrap; gap:4px; }
+      .zw-single .zw-slot, .zw-single button { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
       .zw-day { min-height:250px; background:var(--zw-surface); border:1px solid var(--zw-divider); border-radius:10px; padding:8px; }
       .zw-day-today { border-color:#A8CFC9; box-shadow:inset 0 0 0 1px #A8CFC9; }
       .zw-day-head { display:flex; justify-content:space-between; align-items:baseline; padding-bottom:7px; margin-bottom:5px; border-bottom:1px solid #F0F3F2; }

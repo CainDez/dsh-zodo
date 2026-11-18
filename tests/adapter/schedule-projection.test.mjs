@@ -244,3 +244,55 @@ test('invalid or missing outstanding data is unknown, never a fabricated complet
   assert.ok(source.includes('const outstanding = outstandingWork(snapshot, todayCheckedAt)'))
   assert.ok(source.includes('const unplacedList = outstanding.rows'))
 })
+
+test('single-day and seven-day windows preserve bounded civil-date navigation',()=>{
+  assert.deepEqual(Array.from(api.agendaDays('2026-11-30',1)),['2026-11-30'])
+  assert.equal(api.agendaShift('2026-11-30',1,1),'2026-12-01')
+  assert.equal(api.agendaShift('2026-12-01',-1,1),'2026-11-30')
+  assert.equal(api.agendaShift('9999-12-31',1,1),'9999-12-31')
+  assert.equal(api.agendaShift('0001-01-01',-1,1),'0001-01-01')
+  assert.equal(api.agendaShift('9999-12-31',0,7),'9999-12-25')
+  assert.equal(api.agendaDays('9999-12-31',1).length,1)
+  assert.equal(api.agendaDays('2026-11-30',7).length,7)
+})
+
+test('native mode/date controls rerender navigation without commands and retain current date',()=>{
+  const begin=source.indexOf("h('div', { className: 'zw-head-actions', role: 'group', 'aria-label': '日程日期导航' }")
+  const end=source.indexOf("h('p', { className: 'zw-fineprint' }, '按本机时区显示",begin)
+  const expression=source.slice(begin,end).trim().replace(/,$/,'')
+  let length=7,start='2026-11-30'
+  const render=()=>vm.runInNewContext(expression,{
+    ...api,agendaDate:value=>/^\d{4}-\d{2}-\d{2}$/.test(value),AGENDA_MIN:'0001-01-01',AGENDA_MAX:'9999-12-25',
+    h:(tag,props,...children)=>({tag,props,children}),Button:'Button',scheduleLength:length,scheduleStart:start,today:'2026-11-18',days:api.agendaDays(start,length),
+    setScheduleLength:value=>{length=value},setScheduleStart:value=>{start=typeof value==='function'?value(start):value},
+  })
+  const find=(node,id)=>node?.props?.['data-testid']===id||node?.props?.testid===id?node:
+    (node?.children??[]).flat(Infinity).map(child=>find(child,id)).find(Boolean)
+  let tree=render()
+  assert.equal(find(tree,'schedule-next').children[0],'后 7 天')
+  find(tree,'schedule-mode').props.onChange({target:{value:'1'}})
+  assert.equal(start,'2026-11-30')
+  tree=render()
+  assert.equal(find(tree,'schedule-mode').props['aria-label'],'日程视图')
+  assert.equal(find(tree,'schedule-date').props['aria-label'],'日程起始日期')
+  assert.equal(find(tree,'schedule-next').children[0],'后一天')
+  find(tree,'schedule-next').props.onClick()
+  assert.equal(start,'2026-12-01')
+  find(render(),'schedule-previous').props.onClick()
+  assert.equal(start,'2026-11-30')
+  find(render(),'schedule-date').props.onChange({target:{value:'2026-12-15'}})
+  assert.equal(start,'2026-12-15')
+  find(render(),'schedule-mode').props.onChange({target:{value:'7'}})
+  assert.equal(start,'2026-12-15')
+  find(render(),'schedule-next').props.onClick()
+  assert.equal(start,'2026-12-22')
+  find(render(),'schedule-today').props.onClick()
+  assert.equal(start,'2026-11-18')
+})
+
+test('single-day CSS overrides responsive seven-column rules and date action hooks stay stable',()=>{
+  assert.ok(source.includes('.zw-week.zw-single { grid-template-columns:minmax(0,1fr);'))
+  assert.ok(source.includes('.zw-single .zw-slot, .zw-single button { max-width:100%; white-space:normal;'))
+  for(const hook of ['schedule-day-${day}','schedule-slot-${day}','schedule-task-date-${day}','schedule-add-appointment-${day}','time-${kind}-${row.id}']) assert.ok(source.includes(hook),hook)
+  assert.ok(source.includes('const [scheduleLength, setScheduleLength] = useState(7)'))
+})
