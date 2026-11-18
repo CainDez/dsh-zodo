@@ -567,6 +567,43 @@ window.__ModuleLoader__.load({
       if (scheduled) return { ...scheduled, kind: scheduled.entry.start <= now ? 'scheduled-now' : 'scheduled-next' }
       return suggestion ? { kind: 'suggestion', task: suggestion } : null
     }
+    function outstandingWork(snapshot, now) {
+      const unknown = { rows: [], minutes: 0, unknown: true }
+      if (!Number.isFinite(now) || !Array.isArray(snapshot?.tasks) || !Array.isArray(snapshot?.allocations)) return unknown
+      const tasks = snapshot.tasks
+      if (tasks.some(task => !task || typeof task.id !== 'string')) return unknown
+      const rows = []
+      let hasUnknown = false
+      const validMinutes = value => Number.isSafeInteger(value) && value >= 0
+      const parents = new Set(tasks.filter(task => !task.archived).map(task => task.parent_id))
+      const reservations = new Map()
+      let malformedAllocation = false
+      for (const allocation of snapshot.allocations) {
+        if (!allocation || typeof allocation.task_id !== 'string') { malformedAllocation = true; continue }
+        const reserved = reservations.get(allocation.task_id) ?? { minutes: 0, invalid: false }
+        const start = typeof allocation.start === 'string' ? Date.parse(allocation.start) : NaN
+        const end = typeof allocation.end === 'string' ? Date.parse(allocation.end) : NaN
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !validMinutes(allocation.minutes)) {
+          reserved.invalid = true
+        } else if (end > now) {
+          // Core reserves the whole allocation until its end, including straddling
+          // intervals. Elapsed time is not evidence of task completion.
+          reserved.minutes += allocation.minutes
+        }
+        reservations.set(allocation.task_id, reserved)
+      }
+      for (const task of tasks) {
+        if (task.archived || task.status === 'done' || task.status === 'cancelled' || parents.has(task.id)) continue
+        const remaining = task.remaining_minutes ?? task.estimate_minutes
+        if (!validMinutes(remaining)) { hasUnknown = true; continue }
+        const reserved = reservations.get(task.id) ?? { minutes: 0, invalid: false }
+        if (malformedAllocation || reserved.invalid || !Number.isSafeInteger(reserved.minutes)) { hasUnknown = true; continue }
+        const minutes = Math.max(0, remaining - reserved.minutes)
+        if (minutes > 0) rows.push({ task, minutes })
+      }
+      const minutes = rows.reduce((sum, row) => sum + row.minutes, 0)
+      return Number.isSafeInteger(minutes) ? { rows, minutes, unknown: hasUnknown } : unknown
+    }
     // END PURE AGENDA PROJECTION
 
     function statusLabel(status) {
@@ -3954,11 +3991,8 @@ window.__ModuleLoader__.load({
       const todayCheckedAt = Date.now()
       const todayAction = todayNextAction(todayEntries, activeTasks, nextTask, todayCheckedAt)
       const todayAllocations = todayEntries.filter(entry => entry.kind === 'allocation').map(entry => entry.row)
-      const unplacedMinutes = activeTasks.reduce((sum, task) => {
-        const remaining = task.remaining_minutes ?? task.estimate_minutes ?? 0
-        const allocated = (snapshot?.allocations ?? []).filter(row => row.task_id === task.id).reduce((value, row) => value + row.minutes, 0)
-        return sum + Math.max(0, remaining - allocated)
-      }, 0)
+      const outstanding = outstandingWork(snapshot, todayCheckedAt)
+      const unplacedMinutes = outstanding.minutes
 
       const openTask = id => {
         setSelectedTaskId(id)
@@ -4176,7 +4210,8 @@ window.__ModuleLoader__.load({
             ) : h(Empty, null, '没有待办。可以从收集箱开始。'),
           ),
           h(Section, { title: '风险与未排入' },
-            unplacedMinutes > 0 ? h('div', { className: 'zw-alert zw-alert-warn' }, `还有 ${unplacedMinutes} 分钟工作量未排入。计划会如实报告缺口。`) : h('p', { className: 'zw-muted' }, '当前工作量都在容量内。'),
+            unplacedMinutes > 0 ? h('div', { className: 'zw-alert zw-alert-warn' }, `已知任务中有 ${unplacedMinutes} 分钟尚无未结束分配；这不是规划可行性结论。`) : h('p', { className: 'zw-muted' }, '已知任务未发现尚待分配分钟；不代表容量、依赖或日历约束均满足。'),
+            h('p', { className: 'zw-fineprint' }, `截至 ${dateTimeFor(new Date(todayCheckedAt).toISOString())}；只统计开放叶任务和未结束分配。${outstanding.unknown ? '部分数据缺失或无效，无法给出完整总量；请刷新并检查 Core 结果。' : '已结束分配不抵扣剩余工作。'}`),
             (snapshot.proposals ?? []).some(proposal => proposal.status === 'validated')
               ? h('div', { className: 'zw-proposal-banner', onClick: () => setView('proposals'), role: 'button', tabIndex: 0 },
                 h('strong', null, '有提案待你确认'),
@@ -4391,10 +4426,7 @@ window.__ModuleLoader__.load({
 
       const renderSchedule = () => {
         const days = agendaDays(scheduleStart)
-        const unplacedList = snapshot.tasks.filter(task => !task.archived && task.status !== 'done' && task.status !== 'cancelled').map(task => {
-          const allocation = snapshot.allocations.filter(row => row.task_id === task.id).reduce((sum, row) => sum + row.minutes, 0)
-          return { task, minutes: Math.max(0, (task.remaining_minutes ?? task.estimate_minutes ?? 0) - allocation) }
-        }).filter(row => row.minutes > 0)
+        const unplacedList = outstanding.rows
         return h('div', { className: 'zw-page' },
           h('header', { className: 'zw-page-head' },
             h('div', null, h('div', { className: 'zw-kicker' }, '容量、预约与任务分配'), h('h1', null, '日程')),
@@ -4446,9 +4478,10 @@ window.__ModuleLoader__.load({
           ),
           h('div', { className: 'zw-schedule-foot' },
             h(Section, { title: '未排入工作' },
+              h('p', { className: 'zw-fineprint' }, `截至 ${dateTimeFor(new Date(todayCheckedAt).toISOString())}；开放叶任务按未结束分配计算。${outstanding.unknown ? '部分数据缺失或无效，以下仅为已知项，无法给出完整总量。' : '已结束分配不抵扣剩余工作。'} 最终以 Core 规划结果为准。`),
               unplacedList.length ? unplacedList.map(row => h('div', { className: 'zw-list-row', key: row.task.id },
                 h('span', null, row.task.title), h(Badge, { tone: 'warn' }, `${row.minutes} 分钟`),
-              )) : h(Empty, null, '已安排或无需安排。'),
+              )) : h(Empty, null, '已知项未发现尚待分配分钟；不代表规划可行。'),
             ),
             h(Section, { title: '日历新鲜度' },
               snapshot.calendar_sources?.length ? snapshot.calendar_sources.map(source => {

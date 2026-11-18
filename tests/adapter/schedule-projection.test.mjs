@@ -9,7 +9,7 @@ const source = readFileSync(new URL('../../adapters/deepseek-harness/plugin/clie
 const start = source.indexOf('    // BEGIN PURE AGENDA PROJECTION')
 const end = source.indexOf('    // END PURE AGENDA PROJECTION')
 assert.ok(start >= 0 && end > start)
-const api = vm.runInNewContext(`${source.slice(start, end)}\n({ agendaDays, agendaShift, agendaEntries, calendarFreshness, todayNextAction })`)
+const api = vm.runInNewContext(`${source.slice(start, end)}\n({ agendaDays, agendaShift, agendaEntries, calendarFreshness, todayNextAction, outstandingWork })`)
 const row = (id, start, end) => ({ id, start, end })
 const ids = entries => Array.from(entries, entry => `${entry.kind}:${entry.row.id}`)
 function inZone(zone, run) {
@@ -212,4 +212,35 @@ test('Today default card opens task; focus is explicit and does not bubble; time
   button.props.onClick({stopPropagation:()=>{stopped=true}})
   assert.equal(stopped, true)
   assert.deepEqual(focused, ['task'])
+})
+
+test('outstanding leaf work uses full not-ended reservations and one as-of instant', () => {
+  const now=Date.parse('2026-11-18T10:00Z')
+  const snapshot={tasks:[{id:'parent',remaining_minutes:100},{id:'leaf',parent_id:'parent',remaining_minutes:60},{id:'done',status:'done',remaining_minutes:90}],allocations:[
+    {...row('ended','2026-11-18T09:00Z','2026-11-18T10:00Z'),task_id:'leaf',minutes:30},
+    {...row('straddling','2026-11-18T09:45Z','2026-11-18T10:15Z'),task_id:'leaf',minutes:30},
+  ]}
+  const before=JSON.stringify(snapshot)
+  const result=api.outstandingWork(snapshot,now)
+  assert.equal(result.minutes,30)
+  assert.equal(result.rows.length,1)
+  assert.equal(result.rows[0].task.id,'leaf')
+  assert.equal(result.unknown,false)
+  assert.equal(api.outstandingWork(snapshot,Date.parse('2026-11-18T10:15Z')).minutes,60)
+  assert.equal(JSON.stringify(snapshot),before)
+})
+
+test('invalid or missing outstanding data is unknown, never a fabricated complete total', () => {
+  const now=Date.parse('2026-11-18T10:00Z')
+  for(const snapshot of [{},{tasks:[],allocations:null},{tasks:[null],allocations:[]},
+    {tasks:[{id:'x'}],allocations:[]},
+    {tasks:[{id:'x',remaining_minutes:30}],allocations:[{task_id:'x',start:'invalid',end:'invalid',minutes:30}]},
+    {tasks:[{id:'x',remaining_minutes:'30'}],allocations:[]},
+  ]) assert.equal(api.outstandingWork(snapshot,now).unknown,true)
+  const partial=api.outstandingWork({tasks:[{id:'unknown'},{id:'known',estimate_minutes:20}],allocations:[]},now)
+  assert.equal(partial.minutes,20)
+  assert.equal(partial.unknown,true)
+  assert.equal(api.outstandingWork({tasks:[],allocations:[]},NaN).unknown,true)
+  assert.ok(source.includes('const outstanding = outstandingWork(snapshot, todayCheckedAt)'))
+  assert.ok(source.includes('const unplacedList = outstanding.rows'))
 })
