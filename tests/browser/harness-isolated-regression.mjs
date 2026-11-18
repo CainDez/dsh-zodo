@@ -438,6 +438,145 @@ try {
     }
   })
 
+  await check('390px single-day agenda navigates without writes and keeps day workflows accessible', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await nav('schedule')
+    const before = await snapshot()
+    const existing = before.capacity_blocks.find(row => row.title === 'Fixture strict slot capacity')
+    assert.ok(existing)
+    const day = new Date(existing.start).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
+    const commands = []
+    const record = request => {
+      if (request.url().endsWith('/rpc') && request.method() === 'POST') {
+        const body = request.postDataJSON()
+        if (body?.kind === 'command') commands.push(body.envelope.operation)
+      }
+    }
+    const waitDay = expected => page.waitForFunction(value => document.querySelector('[data-testid="schedule-range"]')?.textContent === value, expected)
+    const noOverflow = async () => {
+      const dimensions = await page.evaluate(() => {
+        const grid = document.querySelector('.zw-single')
+        return { viewport: innerWidth, document: document.documentElement.scrollWidth, grid: grid.clientWidth, content: grid.scrollWidth }
+      })
+      assert.ok(dimensions.document <= dimensions.viewport + 1, JSON.stringify(dimensions))
+      assert.ok(dimensions.content <= dimensions.grid + 1, JSON.stringify(dimensions))
+    }
+    page.on('request', record)
+    try {
+      await page.getByTestId('schedule-mode').selectOption('1')
+      await page.getByTestId('schedule-date').fill(day); await waitDay(day)
+      assert.equal(await page.locator('.zw-day').count(), 1)
+      await page.getByTestId(`schedule-day-${day}`).waitFor()
+      await noOverflow()
+      const next = new Date(`${day}T12:00:00Z`); next.setUTCDate(next.getUTCDate() + 1)
+      await page.getByTestId('schedule-next').click(); await waitDay(next.toISOString().slice(0, 10))
+      assert.equal(await page.locator('.zw-day').count(), 1)
+      await page.getByTestId('schedule-previous').click(); await waitDay(day)
+      await page.getByTestId('schedule-today').click()
+      const today = await page.evaluate(() => new Date().toLocaleDateString('en-CA'))
+      await waitDay(today)
+      await page.getByTestId('schedule-date').fill(day); await waitDay(day)
+      // Open/cancel each flow only: selecting a date must not create facts.
+      await page.getByTestId(`schedule-slot-${day}`).click()
+      const slot = page.getByRole('dialog', { name: '安排任务时段' })
+      await slot.getByTestId('schedule-slot-task').waitFor()
+      await slot.getByTestId('schedule-slot-capacity').waitFor()
+      assert.equal(await slot.getByTestId('schedule-slot-preview').isEnabled(), true)
+      await slot.getByRole('button', { name: '取消', exact: true }).click()
+      await slot.waitFor({ state: 'hidden' })
+      for (const hook of [`schedule-task-date-${day}`, `schedule-add-appointment-${day}`]) {
+        await page.getByTestId(hook).click()
+        await page.getByRole('dialog').waitFor()
+        await page.keyboard.press('Escape')
+        await page.getByRole('dialog').waitFor({ state: 'hidden' })
+      }
+      await page.getByTestId('time-capacity-' + existing.id).click()
+      const detail = page.getByRole('dialog', { name: '时间对象详情' })
+      await detail.waitFor()
+      assert.match(await detail.innerText(), /Fixture strict slot capacity/)
+      await detail.getByRole('button', { name: '关闭', exact: true }).last().click()
+      await detail.waitFor({ state: 'hidden' })
+      await noOverflow()
+      await screenshot('single-day-agenda-390px')
+      assert.deepEqual(commands, [], 'view, dates, navigation and canceled dialogs are read-only')
+      const after = await snapshot()
+      assert.equal(after.workspace.revision, before.workspace.revision)
+      for (const key of ['tasks', 'allocations', 'capacity_blocks', 'commitments']) assert.deepEqual(after[key], before[key], key)
+    } finally {
+      page.off('request', record)
+      await page.getByTestId('schedule-mode').selectOption('7')
+      await page.getByTestId('schedule-today').click()
+      await page.setViewportSize({ width: 1440, height: 1000 })
+    }
+  })
+
+  await check('Lost commit receipt blocks resubmit while refresh reconciles the single saved allocation', async () => {
+    // The actual owned Core commits once; only its response to the browser is lost.
+    // No second commit or fabricated success response is submitted.
+    await command('task.create', { task: { title: 'Fixture lost receipt task', estimate_minutes: 30 } })
+    const setup = await snapshot()
+    const task = setup.tasks.find(row => row.title === 'Fixture lost receipt task')
+    const capacity = setup.capacity_blocks.find(row => row.title === 'Fixture strict slot capacity')
+    assert.ok(task && capacity)
+    const day = new Date(capacity.start).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
+    const intent = 'Fixture intentionally lost commit receipt'
+    const { proposal } = await command('proposal.create', { intent, operations: [{ operation: 'allocation.schedule', payload: { allocation: {
+      task_id: task.id, expected_task_version: task.version, capacity_block_id: capacity.id,
+      start: `${day}T16:30:00+08:00`, end: `${day}T17:00:00+08:00`,
+    } } }] })
+    assert.equal(proposal.status, 'validated')
+    const before = await snapshot()
+    assert.equal(before.allocations.filter(row => row.task_id === task.id).length, 0)
+    await page.reload({ waitUntil: 'domcontentloaded' }); await connected(); await nav('proposals')
+    const card = page.locator('article').filter({ has: page.getByRole('heading', { name: intent, exact: true }) })
+    await card.getByRole('button', { name: '检查并批准', exact: true }).click()
+    const review = page.getByRole('dialog', { name: '检查提案' })
+    await review.waitFor()
+    let commitRequests = 0
+    let upstreamStatus
+    const loseReceipt = async route => {
+      if (route.request().postDataJSON()?.envelope?.operation !== 'changes.commit') return route.continue()
+      commitRequests += 1
+      // No transport retry/redirect can accidentally repeat this non-idempotent test step.
+      const result = await route.fetch({ maxRetries: 0, maxRedirects: 0 })
+      upstreamStatus = result.status()
+      await result.dispose()
+      await route.abort('failed')
+    }
+    await page.route('**/zodo-bridge/v1/rpc', loseReceipt)
+    try {
+      await review.getByTestId('plan-apply').click()
+      await review.getByText(/本次批准或提交结果不确定，可能已经生效/).waitFor()
+      assert.equal(upstreamStatus, 200, 'the owned Core really committed before the receipt was lost')
+      assert.equal(commitRequests, 1)
+      assert.equal(await review.getByTestId('plan-apply').isDisabled(), true)
+      assert.equal(await review.getByRole('button', { name: '重试提交', exact: true }).count(), 0)
+      const after = await snapshot()
+      const added = after.allocations.filter(row => row.task_id === task.id)
+      assert.equal(added.length, 1)
+      assert.equal(added[0].minutes, 30)
+      assert.equal(Date.parse(added[0].start), Date.parse(`${day}T16:30:00+08:00`))
+      assert.equal(Date.parse(added[0].end), Date.parse(`${day}T17:00:00+08:00`))
+      for (const old of before.allocations) assert.deepEqual(after.allocations.find(row => row.id === old.id), old)
+      for (const key of ['tasks', 'commitments', 'capacity_blocks', 'calendar_events', 'focus_sessions']) assert.deepEqual(after[key], before[key], key)
+      assert.equal(after.proposals.find(row => row.id === proposal.id).status, 'applied')
+      await screenshot('commit-uncertain-not-retryable')
+      await review.getByRole('button', { name: '放弃预览', exact: true }).click()
+      await review.waitFor({ state: 'hidden' })
+      await page.reload({ waitUntil: 'domcontentloaded' }); await connected(); await nav('schedule')
+      await page.getByTestId('schedule-mode').selectOption('1')
+      await page.getByTestId('schedule-date').fill(day)
+      await page.getByTestId('time-allocation-' + added[0].id).waitFor()
+      assert.equal((await snapshot()).allocations.filter(row => row.task_id === task.id).length, 1)
+      assert.equal(commitRequests, 1, 'reconciliation must not resubmit')
+    } finally {
+      await page.unroute('**/zodo-bridge/v1/rpc', loseReceipt)
+      await nav('schedule')
+      await page.getByTestId('schedule-mode').selectOption('7')
+      await page.getByTestId('schedule-today').click()
+    }
+  })
+
   await check('Search resolves committed task', async () => {
     await nav('search')
     await page.getByPlaceholder('搜索任务、目标、项目…').fill('Fixture task edited')
