@@ -2004,6 +2004,26 @@ window.__ModuleLoader__.load({
 
     function PlanModal({ proposal, plan, snapshotRevision, onClose, onApprove, busy, error, grant }) {
       const [localError, setLocalError] = useState('')
+      const [blocked, setBlocked] = useState('')
+      const attempt = useRef({ pending: false, outcome: '' })
+      const closeIfIdle = () => { if (!attempt.current.pending && !busy) onClose() }
+      const approveOnce = async () => {
+        if (attempt.current.pending || attempt.current.outcome || busy || stale || grant) return
+        attempt.current.pending = true
+        setLocalError('')
+        try {
+          await onApprove()
+          attempt.current.outcome = 'complete'
+        } catch (failure) {
+          const regenerate = ['VALIDATION_FAILED', 'REVISION_CONFLICT', 'POLICY_CHANGED', 'APPROVAL_EXPIRED', 'APPROVAL_REQUIRED', 'PERMISSION_DENIED', 'NOT_FOUND'].includes(failure.code)
+          const outcome = regenerate ? 'regenerate' : 'uncertain'
+          attempt.current.outcome = outcome
+          setBlocked(outcome)
+          setLocalError(regenerate
+            ? 'Core 拒绝了本次操作。请核对提案状态、时间、版本和权限；修正后重新生成预览并批准，不能重试旧批准。'
+            : '本次批准或提交结果不确定，可能已经生效。请关闭后刷新提案与日程核实结果；核实前不要重新提交或创建重复安排。')
+        } finally { attempt.current.pending = false }
+      }
       const stale = proposal.base_revision !== snapshotRevision
       const unplaced = plan?.unplaced ?? []
       const assignments = plan?.assignments ?? []
@@ -2014,27 +2034,21 @@ window.__ModuleLoader__.load({
       return h(Modal, {
         title: plan ? '检查计划建议' : '检查提案',
         subtitle: '这是尚未应用的候选；批准只是发起提交，收到 Core 成功回执后才算已保存。',
-        onClose,
+        onClose: closeIfIdle,
         wide: true,
         footer: h(React.Fragment, null,
-          h(Button, { onClick: onClose }, '放弃预览'),
+          h(Button, { onClick: closeIfIdle, disabled: busy || attempt.current.pending }, blocked || grant ? '关闭并核实状态' : '放弃预览'),
           h(Button, {
             tone: 'primary',
-            onClick: async () => {
-              setLocalError('')
-              try {
-                await onApprove()
-              } catch (failure) {
-                setLocalError(failure.message)
-              }
-            },
-            disabled: busy || stale,
+            onClick: approveOnce,
+            disabled: busy || stale || Boolean(grant) || Boolean(blocked) || attempt.current.pending,
             testid: 'plan-apply',
-          }, stale ? '计划依据已变化' : (grant ? '重试提交' : COPY.approve)),
+          }, stale ? '计划依据已变化' : blocked === 'regenerate' ? '需要重新生成预览' : blocked || grant ? '先核实提交状态' : COPY.approve),
         ),
       },
       h('p', { className: 'zw-fineprint', 'data-testid': 'plan-intent' }, proposal.intent),
-      (error || localError) ? h('div', { className: 'zw-alert zw-alert-error' }, error || localError) : null,
+      grant && !attempt.current.pending && !blocked ? h('p', { className: 'zw-alert zw-alert-warn', role: 'alert' }, '已有批准记录，但不能仅凭旧批准判断提交结果。请关闭并刷新提案与日程核实，不直接重试。') : null,
+      (error || localError) ? h('div', { className: 'zw-alert zw-alert-error' }, localError || error) : null,
       stale ? h('div', { className: 'zw-alert zw-alert-warn' },
         '计划依据已变化，请刷新后重新检查。旧批准不能用于新内容。') : null,
       h('div', { className: 'zw-plan-summary' },
