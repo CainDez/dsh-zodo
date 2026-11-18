@@ -4,15 +4,16 @@ import {test} from 'node:test'
 import vm from 'node:vm'
 const source=readFileSync(new URL('../../adapters/deepseek-harness/plugin/client.js',import.meta.url),'utf8')
 const zones=source.slice(source.indexOf('    function workspaceTimezone'),source.indexOf('    function truncateText'))
+const dateCode=source.slice(source.indexOf('    function agendaDate'),source.indexOf('    function agendaShift'))
 const code=source.slice(source.indexOf('    function scheduleRecovery'),source.indexOf('    function CapacityEditor'))
-function mount({form={},send,zone='Asia/Shanghai'}={}) {
+function mount({form={},send,zone='Asia/Shanghai',capacityStart='2026-11-24T00:00Z',capacityEnd='2026-11-24T12:00Z'}={}) {
   const writes=[],errors=[],closed=[],modals=[]
-  const Component=vm.runInNewContext(`${zones}\n${code}\nQuickSchedule`,{
+  const Component=vm.runInNewContext(`${zones}\n${dateCode}\n${code}\nQuickSchedule`,{
     Modal:'Modal',Button:'Button',Field:'Field',React:{Fragment:'Fragment'},COPY:{cancel:'取消'},
     h:(tag,props,...children)=>({tag,props,children}),useRef:value=>({current:value}),
     useState:initial=>[typeof initial==='object'?{...initial,task:'t',capacity:'c',...form}:initial,value=>errors.push(value)],
   })
-  const tree=Component({day:'2026-11-24',snapshot:{workspace:{timezone:zone},tasks:[{id:'t',version:3,title:'Task'}],capacity_blocks:[{id:'c',title:'Capacity',start:'2026-11-24T00:00Z',end:'2026-11-24T12:00Z'}]},busy:false,
+  const tree=Component({day:'2026-11-24',snapshot:{workspace:{timezone:zone},tasks:[{id:'t',version:3,title:'Task'}],capacity_blocks:[{id:'c',title:'Capacity',start:capacityStart,end:capacityEnd}]},busy:false,
     send:async(...args)=>{writes.push(args);return send?send(...args):{data:{proposal:{id:'p',status:'validated',intent:'Core candidate'}}}},onClose:()=>closed.push(true),setModal:value=>modals.push(value)})
   return {tree,writes,errors,closed,modals,save:tree.props.footer.children[1].props.onClick}
 }
@@ -65,7 +66,7 @@ test('missing capacity, DST missing/repeated clock, bad zone and reversed interv
     {zone:'America/New_York',form:{start:'2026-11-01T01:30',end:'2026-11-01T02:30'}},
     {form:{start:'2026-11-24T11:00',end:'2026-11-24T10:00'}},
   ]) {const f=mount(options);await f.save();assert.equal(f.writes.length,0);assert.ok(f.errors.at(-1))}
-  const f=mount({zone:'America/New_York',form:{start:'2026-11-01T01:30',end:'2026-11-01T02:30',startChoice:Date.parse('2026-11-01T06:30Z')}})
+  const f=mount({zone:'America/New_York',capacityStart:'2026-11-01T00:00Z',capacityEnd:'2026-11-02T00:00Z',form:{start:'2026-11-01T01:30',end:'2026-11-01T02:30',startChoice:Date.parse('2026-11-01T06:30Z')}})
   await f.save()
   assert.equal(f.writes[0][1].operations[0].payload.allocation.start,'2026-11-01T06:30:00.000Z')
 })
@@ -144,4 +145,34 @@ test('global send hides strict-preview raw failures but preserves refresh and ot
     assert.equal(refreshed,expectedRefresh)
     assert.deepEqual(busy,[true,false])
   }
+})
+
+test('picker uses workspace civil-day overlap, keeps cross-midnight capacities and only open unblocked leaves',()=>{
+  const options=vm.runInNewContext(`${zones}\n${dateCode}\n${code}\nschedulePickerOptions`)
+  const snapshot={tasks:[{id:'parent'},{id:'child',parent_id:'parent'},{id:'blocked',blocked_manual:true},{id:'done',status:'done'},{id:'archived',archived:true}],capacity_blocks:[
+    {id:'cross',start:'2026-11-23T15:30Z',end:'2026-11-23T17:00Z'},
+    {id:'ends',start:'2026-11-23T14:00Z',end:'2026-11-23T16:00Z'},
+    {id:'future',start:'2026-11-25T01:00Z',end:'2026-11-25T02:00Z'},
+  ]}
+  const form={start:'2026-11-24T00:15',end:'2026-11-24T00:45'}
+  const result=options(snapshot,form,'Asia/Shanghai')
+  assert.deepEqual(Array.from(result.tasks,x=>x.id),['child'])
+  assert.deepEqual(Array.from(result.capacities,x=>x.id),['cross'])
+  assert.equal(options(snapshot,{...form,start:''},'Asia/Shanghai').capacities.length,3)
+  assert.equal(options(snapshot,{...form,end:'2026-11-25T10:00'},'Asia/Shanghai').capacities.length,2)
+})
+test('date changes clear only a definitively non-overlapping capacity; incomplete date retains draft',()=>{
+  const f=mount()
+  const findInputs=node=>[...(node?.tag==='input'&&node.props.type==='datetime-local'?[node]:[]),...(node?.children??[]).flat(Infinity).flatMap(child=>findInputs(child))]
+  const [start,end]=findInputs(f.tree)
+  start.props.onChange({target:{value:''}})
+  assert.equal(f.errors.at(-1).capacity,'c')
+  // Move end first (overlap still exists), then simulate a form with both dates
+  // moved by mounting the earlier field state, as React would rerender it.
+  end.props.onChange({target:{value:'2026-11-25T10:00'}})
+  assert.equal(f.errors.at(-1).capacity,'c')
+  const later=mount({form:{end:'2026-11-25T10:00'}})
+  findInputs(later.tree)[0].props.onChange({target:{value:'2026-11-25T09:00'}})
+  assert.equal(later.errors.at(-1).capacity,'')
+  assert.equal(later.writes.length,0)
 })

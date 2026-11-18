@@ -1433,16 +1433,43 @@ window.__ModuleLoader__.load({
       return '未得到有效严格预览。输入已保留；请核实 Core 状态与提案记录，再手动重新生成预览。不会自动重试或提交。'
     }
 
+    function schedulePickerOptions(snapshot, form, timeZone) {
+      const allTasks = snapshot.tasks ?? []
+      const parents = new Set(allTasks.filter(task => !task.archived).map(task => task.parent_id))
+      const tasks = allTasks.filter(task => !task.archived && !task.blocked_manual &&
+        !['done', 'cancelled'].includes(task.status) && !parents.has(task.id))
+      const first = String(form.start ?? '').slice(0, 10)
+      const last = String(form.end ?? '').slice(0, 10)
+      const dateKnown = Boolean(agendaDate(first) && agendaDate(last) && first <= last && isKnownTimezone(timeZone))
+      const capacities = (snapshot.capacity_blocks ?? []).filter(block => {
+        const start = typeof block.start === 'string' ? Date.parse(block.start) : NaN
+        const end = typeof block.end === 'string' ? Date.parse(block.end) : NaN
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return false
+        if (!dateKnown) return true // Do not clear a selection while the date is incomplete.
+        // Compare workspace civil dates, not browser-local dates or UTC prefixes.
+        // end - 1 preserves half-open midnight endings; multi-day blocks remain visible.
+        return wallClockInput(start, timeZone).slice(0, 10) <= last &&
+          wallClockInput(end - 1, timeZone).slice(0, 10) >= first
+      })
+      return { tasks, capacities, dateKnown }
+    }
+
     function QuickSchedule({ day, snapshot, send, busy, onClose, setModal }) {
       const timeZone = workspaceTimezone(snapshot)
       const zoneValid = isKnownTimezone(timeZone)
       const pending = useRef(false)
       const [form, setForm] = useState({ task: '', capacity: '', start: `${day}T09:00`, end: `${day}T10:00`, startChoice: null, endChoice: null })
       const [error, setError] = useState('')
-      const updateForm = next => { if (!pending.current && !busy) setForm(next) }
-      const tasks = (snapshot.tasks ?? []).filter(task => !task.archived && !['done', 'cancelled'].includes(task.status))
+      const updateForm = next => {
+        if (pending.current || busy) return
+        const options = schedulePickerOptions(snapshot, next, timeZone)
+        const datesChanged = next.start.slice(0, 10) !== form.start.slice(0, 10) || next.end.slice(0, 10) !== form.end.slice(0, 10)
+        setForm(datesChanged && options.dateKnown && next.capacity && !options.capacities.some(block => block.id === next.capacity)
+          ? { ...next, capacity: '' } : next)
+      }
+      const { tasks, capacities, dateKnown } = schedulePickerOptions(snapshot, form, timeZone)
       const selected = tasks.find(task => task.id === form.task)
-      const capacity = (snapshot.capacity_blocks ?? []).find(block => block.id === form.capacity)
+      const capacity = capacities.find(block => block.id === form.capacity)
       const resolved = Object.fromEntries(['start', 'end'].map(key => [key, zoneValid && form[key]
         ? resolveWallTime(form[key].slice(0, 10), form[key].slice(11, 16), timeZone) : { instants: [] }]))
       const instant = key => resolved[key].instants.length === 1 ? resolved[key].instants[0]
@@ -1488,7 +1515,12 @@ window.__ModuleLoader__.load({
         h(Field, { label: '任务' }, h('select', { value: form.task, onChange: event => updateForm({ ...form, task: event.target.value }), 'data-testid': 'schedule-slot-task' },
           h('option', { value: '' }, '选择任务'), tasks.map(task => h('option', { key: task.id, value: task.id }, task.title)))),
         h(Field, { label: '已有容量块' }, h('select', { value: form.capacity, onChange: event => updateForm({ ...form, capacity: event.target.value }), 'data-testid': 'schedule-slot-capacity' },
-          h('option', { value: '' }, '选择容量块'), (snapshot.capacity_blocks ?? []).map(block => h('option', { key: block.id, value: block.id }, `${block.title} · ${zoneValid ? wallClockText(Date.parse(block.start), timeZone) : block.start} 至 ${zoneValid ? wallClockText(Date.parse(block.end), timeZone) : block.end}`)))),
+          h('option', { value: '' }, '选择容量块'), capacities.map(block => h('option', { key: block.id, value: block.id }, `${block.title} · ${zoneValid ? wallClockText(Date.parse(block.start), timeZone) : block.start} 至 ${zoneValid ? wallClockText(Date.parse(block.end), timeZone) : block.end}`)))),
+        !tasks.length ? h('p', { role: 'status' }, '没有可选的开放叶任务；请先创建叶任务，或在任务详情检查归档、完成和手动阻塞状态。') : null,
+        !capacities.length ? h('p', { role: 'status' }, `所选工作空间日期范围没有候选容量块。请调整日期，或关闭此表单先创建容量，再回来选择。`) : null,
+        h('p', { className: 'zw-fineprint', 'data-testid': 'schedule-picker-scope' }, dateKnown
+          ? `容量候选按输入的开始至结束日期（${timeZone}）筛选，跨午夜容量保留；日期变化后不相交的选择会清空。候选不代表预算、依赖或冲突检查已通过。`
+          : '日期或时区尚未完整，暂不按日期缩小容量候选；请补齐后选择。'),
         ['start', 'end'].map(key => h(Field, { key, label: key === 'start' ? '开始（工作空间时区）' : '结束（工作空间时区）' },
           h('input', { type: 'datetime-local', value: form[key], onChange: event => updateForm({ ...form, [key]: event.target.value, [`${key}Choice`]: null }) }),
           resolved[key].instants.length > 1 ? h('select', { value: form[`${key}Choice`] ?? '', onChange: event => updateForm({ ...form, [`${key}Choice`]: event.target.value === '' ? null : Number(event.target.value) }) },
