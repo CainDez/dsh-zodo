@@ -1285,43 +1285,86 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function CommitmentEditor({ onClose, send, busy }) {
-      const now = new Date()
-      const start = new Date(now.getTime() + 60 * 60 * 1000)
-      start.setMinutes(0, 0, 0)
-      const end = new Date(start.getTime() + 60 * 60 * 1000)
-      const [form, setForm] = useState({
+    // BEGIN APPOINTMENT DEFAULTS
+    function appointmentDefaults(day, timeZone, displayZone, now = Date.now()) {
+      let start
+      let end
+      if (day) {
+        const first = resolveWallTime(day, '09:00', displayZone)
+        const last = resolveWallTime(day, '10:00', displayZone)
+        // Never guess on missing or repeated display-zone clocks.
+        if (first.instants.length !== 1 || last.instants.length !== 1) return { start: '', end: '' }
+        start = first.instants[0]
+        end = last.instants[0]
+      } else {
+        const next = new Date(now + 60 * 60 * 1000)
+        next.setMinutes(0, 0, 0)
+        start = next.getTime()
+        end = start + 60 * 60 * 1000
+      }
+      return { start: wallClockInput(start, timeZone), end: wallClockInput(end, timeZone) }
+    }
+    // END APPOINTMENT DEFAULTS
+
+    function CommitmentEditor({ day, snapshot, onClose, send, busy }) {
+      const timeZone = workspaceTimezone(snapshot)
+      const displayZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      const zoneValid = isKnownTimezone(timeZone)
+      const [form, setForm] = useState(() => ({
         title: '固定预约',
-        start: localDateTimeInput(start),
-        end: localDateTimeInput(end),
-        locked: true,
-      })
+        ...(zoneValid ? appointmentDefaults(day, timeZone, displayZone) : { start: '', end: '' }),
+        startChoice: null, endChoice: null, locked: true,
+      }))
+      const resolutions = Object.fromEntries(['start', 'end'].map(key => [key,
+        zoneValid && form[key] ? resolveWallTime(form[key].slice(0, 10), form[key].slice(11, 16), timeZone) : { instants: [] },
+      ]))
+      const submitting = useRef(false)
+      const closeIfIdle = () => { if (!submitting.current && !busy) onClose() }
       const [error, setError] = useState('')
       const submit = async () => {
+        if (submitting.current || busy) return
         if (!form.title.trim()) return setError('请填写标题')
+        if (!zoneValid) return setError('请先修正工作空间 IANA 时区')
+        for (const key of ['start', 'end']) {
+          if (!resolutions[key].instants.length) return setError('开始或结束时间缺失或在此时区不存在，请重新选择')
+          if (resolutions[key].instants.length > 1 && !resolutions[key].instants.includes(form[`${key}Choice`])) return setError('当地钟点重复，请明确选择 UTC 时刻')
+        }
+        const startInstant = form.startChoice ?? resolutions.start.instants[0]
+        const endInstant = form.endChoice ?? resolutions.end.instants[0]
+        if (endInstant <= startInstant) return setError('结束时间必须晚于开始时间')
+        submitting.current = true
         try {
           await send('commitment.create', { commitment: {
             title: form.title.trim(),
-            start: toIso(form.start),
-            end: toIso(form.end),
+            start: new Date(startInstant).toISOString(),
+            end: new Date(endInstant).toISOString(),
             locked: form.locked,
           } })
           onClose()
         } catch (failure) {
           setError(failure.message)
+        } finally {
+          submitting.current = false
         }
       }
-      return h(Modal, { title: '新建固定预约', onClose,
+      return h(Modal, { title: '新建固定预约', onClose: closeIfIdle,
         footer: h(React.Fragment, null,
-          h(Button, { onClick: onClose }, COPY.cancel),
+          h(Button, { onClick: closeIfIdle, disabled: busy }, COPY.cancel),
           h(Button, { tone: 'primary', onClick: submit, disabled: busy }, COPY.save)) },
+        busy ? h('p', { className: 'zw-fineprint', role: 'status' }, '保存中，请等待完成后关闭。') : null,
         error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
+        h('p', { className: 'zw-fineprint' }, `输入时区：${timeZone}。日程显示时区：${displayZone}。${day ? `由所选日 ${day} 的本机 09:00–10:00 转换为初值，可编辑；不代表该时段可预约。` : '确认时间后保存，不会自动创建。'}`),
+        ['start', 'end'].map(key => resolutions[key].instants.length > 1 ? h(Field, { key, label: `${key === 'start' ? '开始' : '结束'}钟点重复，请选择 UTC 时刻` },
+          h('select', { value: form[`${key}Choice`] ?? '', onChange: event => setForm({ ...form, [`${key}Choice`]: event.target.value === '' ? null : Number(event.target.value) }) },
+            h('option', { value: '' }, '请选择'),
+            resolutions[key].instants.map(instant => h('option', { key: instant, value: instant }, new Date(instant).toISOString())),
+          )) : null),
         h(Field, { label: '标题', wide: true }, h('input', { value: form.title,
           onChange: event => setForm({ ...form, title: event.target.value }) })),
         h(Field, { label: '开始' }, h('input', { type: 'datetime-local', value: form.start,
-          onChange: event => setForm({ ...form, start: event.target.value }) })),
+          onChange: event => setForm({ ...form, start: event.target.value, startChoice: null }) })),
         h(Field, { label: '结束' }, h('input', { type: 'datetime-local', value: form.end,
-          onChange: event => setForm({ ...form, end: event.target.value }) })),
+          onChange: event => setForm({ ...form, end: event.target.value, endChoice: null }) })),
         h('label', { className: 'zw-check-line' },
           h('input', { type: 'checkbox', checked: form.locked, onChange: event => setForm({ ...form, locked: event.target.checked }) }),
           '锁定，不被自动移动',
@@ -4360,6 +4403,7 @@ window.__ModuleLoader__.load({
               const entries = agendaEntries(snapshot, day)
               return h('div', { className: `zw-day ${day === today ? 'zw-day-today' : ''}`, key: day },
                 h('div', { className: 'zw-day-head' }, h('strong', null, dateForLocal(`${day}T12:00:00`)), h('span', null, new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(new Date(`${day}T12:00:00`)))),
+                h(Button, { onClick: () => setModal({ type: 'commitment', day }), disabled: busy, testid: `schedule-add-appointment-${day}` }, '新增预约'),
                 entries.map(entry => {
                   const { row, kind } = entry
                   if (kind === 'busy') return h('div', { className: 'zw-slot zw-slot-fixed', key: row.id, 'data-testid': 'time-busy' },
@@ -4607,7 +4651,7 @@ window.__ModuleLoader__.load({
           case 'dependency': return h(DependencyEditor, { task: modal.task, snapshot, onClose: closeModal, send, busy })
           case 'reminder': return h(ReminderEditor, { task: modal.task, onClose: closeModal, send, busy })
           case 'blocked': return h(BlockedEditor, { task: modal.task, onClose: closeModal, send, busy })
-          case 'commitment': return h(CommitmentEditor, { onClose: closeModal, send, busy })
+          case 'commitment': return h(CommitmentEditor, { day: modal.day, snapshot, onClose: closeModal, send, busy })
           case 'capacity': return h(CapacityEditor, { onClose: closeModal, send, busy })
           case 'capacity-candidates': return h(CapacitySuggestions, { onClose: closeModal, send, busy })
           case 'meeting-propose': return h(MeetingProposal, { onClose: closeModal, send, busy, setView, report: setNotice })
