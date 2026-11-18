@@ -1845,7 +1845,7 @@ impl<'a> Application<'a> {
                 "capacity_blocks": world.capacity_blocks.iter().filter(|item| item.start < *end && item.end > *start).collect::<Vec<_>>(),
                 "allocations": world.allocations.iter().filter(|item| item.start < *end && item.end > *start).collect::<Vec<_>>(),
                 "calendar_events": world.calendar_events.iter().filter(|item| item.start < *end && item.end > *start).collect::<Vec<_>>(),
-                "unplaced": unplaced_summary(world),
+                "unplaced": unplaced_summary(world, self.clock.now()),
                 "calendar_freshness": world.calendar_sources,
             })),
             QueryPayload::CapacityCandidates {
@@ -3242,19 +3242,14 @@ fn derived_blocked(world: &World, task: &crate::model::Task) -> bool {
         })
 }
 
-fn unplaced_summary(world: &World) -> Vec<Value> {
+fn unplaced_summary(world: &World, now: DateTime<Utc>) -> Vec<Value> {
     let mut result = Vec::new();
     for task in world.open_leaf_tasks() {
         let remaining = task
             .remaining_minutes
             .or(task.estimate_minutes)
             .unwrap_or(0);
-        let allocated: u32 = world
-            .allocations
-            .iter()
-            .filter(|allocation| allocation.task_id == task.id)
-            .map(|allocation| allocation.minutes)
-            .sum();
+        let allocated = world.allocation_minutes_for_task(&task.id, Some(now));
         if remaining > allocated {
             result.push(json!({
                 "task_id": task.id,
@@ -3270,7 +3265,7 @@ fn build_review_facts(
     world: &World,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-    _now: DateTime<Utc>,
+    now: DateTime<Utc>,
     tz: Tz,
 ) -> ReviewFacts {
     let mut facts = ReviewFacts::empty();
@@ -3380,7 +3375,7 @@ fn build_review_facts(
             .unwrap_or(0)
             .min(100)
     };
-    facts.unplaced_minutes = unplaced_summary(world)
+    facts.unplaced_minutes = unplaced_summary(world, now)
         .iter()
         .filter_map(|value| value.get("unplaced_minutes").and_then(Value::as_u64))
         .sum::<u64>() as u32;

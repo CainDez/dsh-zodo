@@ -100,7 +100,7 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
             continue;
         }
         fixed_allocations.push(allocation.id.clone());
-        if allocation.end > now {
+        if allocation.reserves_work_at(now) {
             *fixed_minutes.entry(allocation.task_id.clone()).or_default() += allocation.minutes;
             fixed_end
                 .entry(allocation.task_id.clone())

@@ -497,6 +497,15 @@ pub struct Allocation {
     pub updated_at: DateTime<Utc>,
 }
 
+impl Allocation {
+    /// Whether this interval still reserves outstanding task work at the supplied instant.
+    /// Elapsed schedule history is not evidence of execution; straddling intervals retain
+    /// their full reservation. Capacity-block accounting remains independent of this rule.
+    pub fn reserves_work_at(&self, now: DateTime<Utc>) -> bool {
+        self.end > now
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProposalStatus {
@@ -1107,7 +1116,7 @@ impl World {
         self.allocations
             .iter()
             .filter(|allocation| allocation.task_id == task_id)
-            .filter(|allocation| after.is_none_or(|time| allocation.end > time))
+            .filter(|allocation| after.is_none_or(|time| allocation.reserves_work_at(time)))
             .map(|allocation| allocation.minutes)
             .sum()
     }

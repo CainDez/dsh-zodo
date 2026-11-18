@@ -961,7 +961,7 @@ fn create_allocation(
     now: DateTime<Utc>,
     ids: &dyn IdSource,
 ) -> Result<String> {
-    validate_allocation(world, draft, None)?;
+    validate_allocation(world, draft, None, now)?;
     let id = draft.id.clone().unwrap_or_else(|| ids.next("alc"));
     world.allocations.push(Allocation {
         id: id.clone(),
@@ -998,7 +998,7 @@ fn update_allocation(
             "locked or started allocations need an explicit unlock and a new plan",
         ));
     }
-    validate_allocation(world, draft, Some(id))?;
+    validate_allocation(world, draft, Some(id), now)?;
     let allocation = world
         .allocations
         .iter_mut()
@@ -1018,6 +1018,7 @@ fn validate_allocation(
     world: &World,
     draft: &AllocationDraft,
     ignore_id: Option<&str>,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     draft.validate()?;
     let task = world
@@ -1045,7 +1046,11 @@ fn validate_allocation(
         .allocations
         .iter()
         .filter(|allocation| {
-            allocation.task_id == draft.task_id && Some(allocation.id.as_str()) != ignore_id
+            allocation.task_id == draft.task_id
+                && Some(allocation.id.as_str()) != ignore_id
+                // Current/future reservations are bounded by outstanding work, not schedule
+                // history. Explicit historical writes retain their existing all-time bound.
+                && (draft.end <= now || allocation.reserves_work_at(now))
         })
         .map(|allocation| allocation.minutes)
         .sum();
