@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'
 import { startFixture } from './harness-isolated-fixture.mjs'
+import { fixtureFailure, fixtureSummary } from './harness-isolated-diagnostics.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const output = path.join(here, 'harness-fixture-runtime/results', new Date().toISOString().replace(/[:.]/g, '-'))
@@ -16,6 +17,8 @@ const report = { fixture: 'real Core + real index.js bridge + real client.js + R
   exclusions: ['DSH authentication/login', 'DSH router and sidebar composition', 'live model dispatch', 'native desktop shell'],
   cases: [], navigation: [], pageErrors: [], unexpectedNetwork: [] }
 let browser, fixture, page
+let stage = 'artifacts'
+report.runtime = { node: process.version, platform: process.platform, arch: process.arch, timezone: 'Asia/Shanghai' }
 const check = async (name, run) => {
   const start = Date.now()
   try { await run(); report.cases.push({ name, passed: true, ms: Date.now() - start }) }
@@ -92,8 +95,12 @@ try {
     bridgeSha256: await hash(path.join(root, 'adapters/deepseek-harness/plugin/index.js')),
     clientSha256: await hash(path.join(root, 'adapters/deepseek-harness/plugin/client.js')),
   }
+  stage = 'fixture-start'
   fixture = await startFixture({ binary: process.env.ZODO_FIXTURE_CORE_BIN })
+  stage = 'browser-launch'
   browser = await chromium.launch({ executablePath: process.env.ZODO_CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
+  report.runtime.browser = browser.version()
+  stage = 'browser-context'
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, timezoneId: 'Asia/Shanghai' })
   // A new browser context contains no real Host cookies/sign-ins or persistent localStorage.
   await context.route('**/*', route => {
@@ -107,6 +114,7 @@ try {
   page.setDefaultTimeout(8000)
   page.on('pageerror', error => report.pageErrors.push(String(error)))
 
+  stage = 'cases'
   await check('BFF unauthenticated and cross-origin gates', async () => {
     let response = await fetch(fixture.url + '/zodo-bridge/v1/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
     assert.equal(response.status, 401)
@@ -755,16 +763,26 @@ try {
     assert.equal(fixture.llmCalls.streams.length, 0, 'settings/navigation never dispatch mock or paid model calls')
     assert.equal(fixture.llmCalls.defaultSelections, 0, 'the current chat selection is never read')
   })
+} catch (error) {
+  report.fatal = fixtureFailure(stage, error)
+  throw error
 } finally {
-  await browser?.close()
-  if (fixture) {
-    await fixture.stop()
-    report.cleanup = { coreStopped: true, serverStopped: true, dataRemoved: !(await stat(fixture.dataDirectory).then(() => true, () => false)) }
-    assert.equal(report.cleanup.dataRemoved, true)
+  // Attempt both cleanup steps even if one fails, and preserve startup evidence.
+  try { await browser?.close() } catch (error) {
+    report.cleanupFailure = fixtureFailure('browser-cleanup', error)
   }
-  report.passed = report.cases.filter(row => row.passed).length
-  report.failed = report.cases.filter(row => !row.passed).length
+  if (fixture) {
+    try {
+      await fixture.stop()
+      report.cleanup = { coreStopped: true, serverStopped: true, dataRemoved: !(await stat(fixture.dataDirectory).then(() => true, () => false)) }
+      assert.equal(report.cleanup.dataRemoved, true)
+    } catch (error) {
+      report.cleanupFailure = fixtureFailure('fixture-cleanup', error)
+    }
+  }
+  report.fatal ??= report.cleanupFailure
+  Object.assign(report, fixtureSummary(report.cases, report.fatal))
   await writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n')
-  console.log(JSON.stringify({ passed: report.passed, failed: report.failed, navigation: report.navigation.length, output, cleanup: report.cleanup, failures: report.cases.filter(row => !row.passed) }))
+  console.log(JSON.stringify({ status: report.status, executed: report.executed, fatal: report.fatal, passed: report.passed, failed: report.failed, navigation: report.navigation.length, output, cleanup: report.cleanup, failures: report.cases.filter(row => !row.passed) }))
 }
-if (report.failed) process.exitCode = 1
+if (report.status !== 'passed') process.exitCode = 1
