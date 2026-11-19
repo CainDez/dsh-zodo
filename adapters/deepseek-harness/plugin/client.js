@@ -1433,11 +1433,38 @@ window.__ModuleLoader__.load({
       return '未得到有效严格预览。输入已保留；请核实 Core 状态与提案记录，再手动重新生成预览。不会自动重试或提交。'
     }
 
-    function schedulePickerOptions(snapshot, form, timeZone) {
+    // BEGIN PURE FIRST-SCHEDULE GUIDANCE
+    function manualScheduleTasks(snapshot) {
       const allTasks = snapshot.tasks ?? []
       const parents = new Set(allTasks.filter(task => !task.archived).map(task => task.parent_id))
-      const tasks = allTasks.filter(task => !task.archived && !task.blocked_manual &&
+      return allTasks.filter(task => !task.archived && !task.blocked_manual &&
         !['done', 'cancelled'].includes(task.status) && !parents.has(task.id))
+    }
+    function firstScheduleStep(snapshot, now, timeZone) {
+      if (!Array.isArray(snapshot?.allocations) || snapshot.allocations.length ||
+          !Array.isArray(snapshot.tasks) || !Array.isArray(snapshot.capacity_blocks) ||
+          !Number.isFinite(now)) return null
+      const tasks = manualScheduleTasks(snapshot)
+      if (!tasks.some(task => (task.remaining_minutes ?? task.estimate_minutes ?? 0) > 0)) {
+        const needsEstimate = tasks.find(task => task.remaining_minutes == null && task.estimate_minutes == null)
+        return needsEstimate ? { kind: 'estimate', task: needsEstimate } : { kind: 'task' }
+      }
+      const next = snapshot.capacity_blocks.reduce((best, block) => {
+        const start = typeof block.start === 'string' ? Date.parse(block.start) : NaN
+        const end = typeof block.end === 'string' ? Date.parse(block.end) : NaN
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= Math.max(now, start) ||
+            !(block.capacity_minutes > 0)) return best
+        return Math.min(best, Math.max(start, now))
+      }, Infinity)
+      if (!Number.isFinite(next)) return { kind: 'capacity' }
+      if (!isKnownTimezone(timeZone)) return { kind: 'timezone' }
+      const day = wallClockInput(next, timeZone).slice(0, 10)
+      return agendaDate(day) ? { kind: 'schedule', day } : { kind: 'timezone' }
+    }
+    // END PURE FIRST-SCHEDULE GUIDANCE
+
+    function schedulePickerOptions(snapshot, form, timeZone) {
+      const tasks = manualScheduleTasks(snapshot)
       const first = String(form.start ?? '').slice(0, 10)
       const last = String(form.end ?? '').slice(0, 10)
       const dateKnown = Boolean(agendaDate(first) && agendaDate(last) && first <= last && isKnownTimezone(timeZone))
@@ -4301,6 +4328,23 @@ window.__ModuleLoader__.load({
           tasks.map(task => h(TaskRow, { key: task.id, snapshot, task, onSelect: openTask })))
       }
 
+      const renderFirstSchedule = () => {
+        const step = firstScheduleStep(snapshot, todayCheckedAt, workspaceTimezone(snapshot))
+        if (!step) return null
+        const actions = {
+          task: ['先建一个可以安排的任务，并填入预计分钟；不用先建项目或连接模型。', '新建任务', () => setModal({ type: 'task', task: null })],
+          estimate: ['已有任务。给任务填入预计分钟，才能为它安排时段。', '补充任务估时', () => setModal({ type: 'task', task: step.task })],
+          capacity: ['已有带估时的任务。先标出一段你愿意用来做任务的时间，也就是「容量」。日历空白不是容量。', '添加可用时间', () => setModal({ type: 'capacity' })],
+          timezone: ['已录入任务和容量，但无法识别工作空间时区。请先检查时区设置。', '查看工作空间设置', () => setView('settings')],
+          schedule: ['已有带估时的任务和未来容量。选择任务、容量和具体时段，先检查预览，再批准保存；是否可安排以 Core 检查为准。', '打开时段安排', () => setModal({ type: 'quick-schedule', day: step.day })],
+        }
+        const [description, label, open] = actions[step.kind]
+        return h(Section, { title: '安排第一项任务', testid: 'first-schedule-guide' },
+          h('p', null, description),
+          h(Button, { onClick: open, disabled: busy, testid: 'first-schedule-action' }, label),
+        )
+      }
+
       const renderToday = () => {
         const emptyWorkspace = !snapshot.tasks.length && !snapshot.goals.length && !snapshot.inbox.length && !snapshot.habits.length
         return h('div', { className: 'zw-page' },
@@ -4316,15 +4360,8 @@ window.__ModuleLoader__.load({
           ),
         ),
         error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
-        emptyWorkspace ? h(Section, { title: '第一次使用 Zodo' },
-          h('p', null, '先收集一句原文，或直接创建一个目标。所有操作都可以在没有模型时完成；模型只提出候选。'),
-          h('div', { className: 'zw-action-row' },
-            h(Button, { tone: 'primary', onClick: () => setModal({ type: 'capture' }) }, '收集第一句'),
-            h(Button, { onClick: () => setModal({ type: 'goal' }) }, '创建第一个目标'),
-            h(Button, { onClick: () => setModal({ type: 'task', task: null }) }, '创建一个任务'),
-          ),
-          h('p', { className: 'zw-fineprint' }, 'Core 是唯一事实源；这个工作台不会用样例数据伪装成你的工作。'),
-        ) : null,
+        renderFirstSchedule(),
+        emptyWorkspace ? h('p', { className: 'zw-fineprint' }, '也可以先用「收集」记录一句原文，再决定怎样处理。') : null,
         h('div', { className: 'zw-today-grid' },
           h(Section, { title: '承诺与容量', className: 'zw-span2' },
             h('div', { className: 'zw-agenda' },
@@ -4586,6 +4623,7 @@ window.__ModuleLoader__.load({
             h(Button, { onClick: () => openPlan('replan'), disabled: busy, title: '从现在 5 分钟后起规划 7 天，允许重排未来未锁定、未开始分配；固定预约、锁定、已开始和过去事实保持不变，需预览批准' }, '重新规划'),
             ),
           ),
+          renderFirstSchedule(),
           h('div', { className: 'zw-head-actions', role: 'group', 'aria-label': '日程日期导航' },
             h('label', null, '视图 ', h('select', { value: scheduleLength, 'aria-label': '日程视图', 'data-testid': 'schedule-mode', onChange: event => {
               const length = event.target.value === '1' ? 1 : 7

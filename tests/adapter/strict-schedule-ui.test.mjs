@@ -176,3 +176,62 @@ test('date changes clear only a definitively non-overlapping capacity; incomplet
   assert.equal(later.errors.at(-1).capacity,'')
   assert.equal(later.writes.length,0)
 })
+
+test('first schedule guide advances through prerequisites and never treats history as first run', () => {
+  const pick = vm.runInNewContext(`${zones}\n${dateCode}\n${code}\nfirstScheduleStep`)
+  const now = Date.parse('2026-11-23T15:55Z')
+  const snapshot = { tasks: [], capacity_blocks: [], allocations: [] }
+  const run = zone => pick(snapshot, now, zone ?? 'Asia/Shanghai')
+  assert.equal(run().kind, 'task')
+  snapshot.tasks = [
+    { id: 'parent', estimate_minutes: 60 },
+    { id: 'child', parent_id: 'parent' },
+    { id: 'done', status: 'done', estimate_minutes: 30 },
+    { id: 'blocked', blocked_manual: true, estimate_minutes: 30 },
+  ]
+  assert.equal(run().kind, 'estimate')
+  assert.equal(run().task.id, 'child')
+  snapshot.tasks[1].estimate_minutes = 30
+  snapshot.capacity_blocks = [
+    { start: '2026-11-23T14:00Z', end: '2026-11-23T15:55Z', capacity_minutes: 90 },
+    { start: '2026-11-23T15:00Z', end: '2026-11-23T18:00Z', capacity_minutes: 0 },
+    { start: '2026-11-23T21:00Z', end: '2026-11-23T19:00Z', capacity_minutes: 90 },
+  ]
+  assert.equal(run().kind, 'capacity', 'expired, invalid and zero-minute blocks are not usable evidence')
+  snapshot.capacity_blocks.push(
+    { start: '2026-11-25T09:00Z', end: '2026-11-25T10:00Z', capacity_minutes: 60 },
+    { start: '2026-11-23T16:30Z', end: '2026-11-23T17:30Z', capacity_minutes: 60 },
+  )
+  const before = JSON.stringify(snapshot)
+  assert.equal(run().kind, 'schedule')
+  assert.equal(run().day, '2026-11-24', 'earliest usable day is in workspace time')
+  assert.equal(run('Not/AZone').kind, 'timezone')
+  assert.equal(JSON.stringify(snapshot), before, 'guidance is read-only')
+  snapshot.allocations.push({ id: 'saved' })
+  assert.equal(run(), null)
+})
+
+test('first schedule CTA only opens existing editors or settings', () => {
+  const start = source.indexOf('      const renderFirstSchedule =')
+  const end = source.indexOf('      const renderToday =', start)
+  const clean = (value) => JSON.parse(JSON.stringify(value))
+  const task = { id: 'saved-task' }
+  for (const [step, expected] of [
+    [{ kind: 'task' }, { type: 'task', task: null }],
+    [{ kind: 'estimate', task }, { type: 'task', task }],
+    [{ kind: 'capacity' }, { type: 'capacity' }],
+    [{ kind: 'schedule', day: '2026-11-24' }, { type: 'quick-schedule', day: '2026-11-24' }],
+    [{ kind: 'timezone' }, 'settings'],
+  ]) {
+    const calls = []
+    const tree = vm.runInNewContext(`${source.slice(start, end)}\nrenderFirstSchedule()`, {
+      snapshot: {}, todayCheckedAt: 0, workspaceTimezone: () => 'Asia/Shanghai', firstScheduleStep: () => step,
+      h: (tag, props, ...children) => ({ tag, props, children }), Section: 'Section', Button: 'Button', busy: false,
+      setModal: data => calls.push(data), setView: data => calls.push(data),
+    })
+    assert.equal(tree.props.testid, 'first-schedule-guide')
+    assert.deepEqual(calls, [], 'render is read-only')
+    tree.children[1].props.onClick()
+    assert.deepEqual(clean(calls), [expected])
+  }
+})

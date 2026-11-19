@@ -137,6 +137,28 @@ try {
     await screenshot('desktop-today-empty')
   })
 
+  await check('First schedule guidance exposes task creation on Today and Schedule without writing', async () => {
+    const baseline = await snapshot()
+    for (const view of ['today', 'schedule']) {
+      await nav(view)
+      const guide = page.getByTestId('first-schedule-guide')
+      const action = guide.getByTestId('first-schedule-action')
+      assert.equal(await action.innerText(), '新建任务')
+      await action.focus()
+      await page.keyboard.press('Enter')
+      const dialog = page.getByRole('dialog', { name: '新建任务' })
+      await dialog.waitFor()
+      await page.keyboard.press('Escape')
+      await dialog.waitFor({ state: 'hidden' })
+      assert.equal(await action.evaluate(element => element === document.activeElement), true)
+    }
+    const after = await snapshot()
+    assert.equal(after.workspace.revision, baseline.workspace.revision)
+    assert.equal(after.tasks.length, 0)
+    assert.equal(after.capacity_blocks.length, 0)
+    assert.equal(after.allocations.length, 0)
+  })
+
   await check('21 navigation surfaces mount without JS errors', async () => {
     const ids = ['today','inbox','goals','schedule','review','tasks','projects','habits','views','automation','focus','proposals','runs','search','models','data','sync','settings','privacy','agents','audit']
     assert.equal(await page.locator('[data-testid^="nav-"]').count(), ids.length)
@@ -237,7 +259,9 @@ try {
   await check('Capacity + plan preview + explicit approval/commit', async () => {
     assert.ok(taskId, 'create task prerequisite')
     await nav('schedule')
-    await page.getByRole('button', { name: '增加容量', exact: true }).click()
+    const action = page.getByTestId('first-schedule-action')
+    assert.equal(await action.innerText(), '添加可用时间')
+    await action.click()
     const dialog = page.getByRole('dialog', { name: '增加可用容量' })
     const future = new Date(Date.now() + 86400000)
     while (['Sat', 'Sun'].includes(future.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Shanghai' }))) future.setDate(future.getDate() + 1)
@@ -249,6 +273,15 @@ try {
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })
     const before = await snapshot()
+    assert.equal(await action.innerText(), '打开时段安排')
+    await action.click()
+    const schedule = page.getByRole('dialog', { name: '安排任务时段' })
+    await schedule.waitFor()
+    assert.ok((await schedule.locator('input[type=datetime-local]').first().inputValue()).startsWith(tomorrow))
+    assert.equal((await snapshot()).workspace.revision, before.workspace.revision)
+    await page.keyboard.press('Escape')
+    await schedule.waitFor({ state: 'hidden' })
+    assert.equal((await snapshot()).workspace.revision, before.workspace.revision)
     await page.getByRole('button', { name: '生成计划', exact: true }).first().click()
     const plan = page.getByRole('dialog', { name: '检查计划建议' })
     await plan.waitFor()
@@ -260,6 +293,7 @@ try {
     assert.ok(after.proposals.some(row => row.status === 'applied'))
     assert.ok(after.allocations.length > before.allocations.length, 'committed plan allocates task')
     assert.ok(after.workspace.revision > before.workspace.revision, 'commit advances authoritative revision')
+    await page.getByTestId('first-schedule-guide').waitFor({ state: 'hidden' })
   })
 
   await check('Agenda date navigation and row details are local-only under Asia/Shanghai', async () => {
