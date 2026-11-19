@@ -575,6 +575,91 @@ try {
       await page.unroute(rpc, holdCommit)
       page.off('request', observe)
     }
+
+    // A real responsive host drawer, not the fixture's standalone workbench.
+    phase = 'official-narrow-viewport'
+    const narrowBaseline = await snapshot()
+    commands.length = 0
+    page.on('request', observe)
+    try {
+      await page.setViewportSize({ width: 390, height: 844 })
+      const drawer = page.locator('[data-sidebar-drawer]')
+      const drawerToggle = drawer.locator('button[data-sidebar-toggle]')
+      const opener = page.locator('button[data-sidebar-opener]')
+      const collapsed = page.locator('[data-sidebar-drawer][data-sidebar-collapsed]')
+      await collapsed.waitFor()
+      phase = 'official-narrow-host-drawer'
+      await opener.click()
+      const zodoEntry = drawer.getByRole('button', { name: 'Zodo', exact: true })
+      await zodoEntry.waitFor()
+      await drawerToggle.click()
+      await collapsed.waitFor()
+      await opener.click()
+      await zodoEntry.click()
+      await collapsed.waitFor()
+      await ensureHostInteractive()
+      await workbench.getByTestId('nav-schedule').click()
+      await heading('日程').waitFor()
+      console.log('PASS official-narrow-drawer-zodo-entry')
+
+      phase = 'official-narrow-day-navigation'
+      const testId = id => workbench.getByTestId(id)
+      const waitDay = async expected => {
+        const shown = await page.waitForFunction(value => document.querySelector(
+          '[data-zodo-workbench="a2"] [data-testid="schedule-range"]')?.textContent === value,
+        expected, { timeout: 4500 })
+        await shown.dispose()
+      }
+      const adjacent = offset => new Date(Date.parse(day + 'T12:00:00Z') + offset * 86400000).toISOString().slice(0, 10)
+      await testId('schedule-mode').selectOption('1')
+      await testId('schedule-date').fill(day)
+      await waitDay(day)
+      assert.equal(await workbench.locator('.zw-day').count(), 1)
+      await testId('schedule-previous').click()
+      await waitDay(adjacent(-1))
+      await testId('schedule-next').click()
+      await waitDay(day)
+      await testId('schedule-next').click()
+      await waitDay(adjacent(1))
+      const today = await page.evaluate(() => new Date().toLocaleDateString('en-CA'))
+      await testId('schedule-today').click()
+      await waitDay(today)
+      await testId('schedule-date').fill(day)
+      await waitDay(day)
+      await testId('time-allocation-' + narrowBaseline.allocations[0].id).waitFor()
+      assert.equal(await workbench.locator('.zw-day').count(), 1)
+      assert(await workbench.locator('.zw-single').evaluate(grid =>
+        grid.clientWidth > 0 && grid.scrollWidth <= grid.clientWidth + 1))
+      console.log('PASS official-narrow-single-day-navigation')
+
+      phase = 'official-narrow-keyboard-cancel'
+      const trigger = await testId(`schedule-slot-${day}`).elementHandle()
+      try {
+        await trigger.focus()
+        assert(await trigger.evaluate(node => document.activeElement === node))
+        await page.keyboard.press('Enter')
+        const slot = workbench.getByRole('dialog', { name: '安排任务时段', exact: true })
+        const modal = await slot.elementHandle()
+        try {
+          const active = await page.waitForFunction(node => node.contains(document.activeElement), modal, { timeout: 3000 })
+          await active.dispose()
+        } finally {
+          await modal.dispose()
+        }
+        await page.keyboard.press('Escape')
+        await slot.waitFor({ state: 'hidden' })
+        const restored = await page.waitForFunction(node => document.activeElement === node, trigger, { timeout: 3000 })
+        await restored.dispose()
+      } finally {
+        await trigger.dispose()
+      }
+      phase = 'official-narrow-unchanged-facts'
+      assert.deepEqual(commands, [])
+      assert.deepEqual(await snapshot(), narrowBaseline)
+      console.log('PASS official-narrow-escape-focus-and-no-write')
+    } finally {
+      page.off('request', observe)
+    }
   }
 } catch (error) {
   reportFailure(phase, error)
