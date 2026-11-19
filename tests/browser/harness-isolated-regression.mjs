@@ -691,6 +691,113 @@ try {
     }
   })
 
+  await check('Move a future allocation with a structural preview and reconcile one lost commit receipt', async () => {
+    const setup = await snapshot()
+    const priorCapacity = setup.capacity_blocks.find(block => block.title === 'Fixture future capacity')
+    assert.ok(priorCapacity)
+    const day = new Date(priorCapacity.start).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
+    const start = time => `${day}T${time}:00+08:00`
+    await command('task.create', { task: { title: 'Fixture strict move task', estimate_minutes: 30 } })
+    await command('capacity.create', { capacity: {
+      title: 'Fixture move capacity', start: start('17:00'), end: start('19:00'), capacity_minutes: 30,
+    } })
+    const seeded = await snapshot()
+    const task = seeded.tasks.find(row => row.title === 'Fixture strict move task')
+    const capacity = seeded.capacity_blocks.find(row => row.title === 'Fixture move capacity')
+    assert.ok(task && capacity)
+    await command('allocation.create', { allocation: {
+      task_id: task.id, capacity_block_id: capacity.id, start: start('17:00'), end: start('17:30'), minutes: 30,
+    } })
+    const before = await snapshot()
+    const original = before.allocations.find(row => row.task_id === task.id)
+    assert.ok(original)
+    const locate = async () => {
+      await page.reload({ waitUntil: 'domcontentloaded' }); await connected(); await nav('schedule')
+      await page.getByTestId('schedule-mode').selectOption('1')
+      await page.getByTestId('schedule-date').fill(day)
+    }
+    await locate()
+    const row = page.getByTestId('time-allocation-' + original.id)
+    const detail = page.getByRole('dialog', { name: '时间对象详情' })
+    const editor = page.getByRole('dialog', { name: '移动任务时段' })
+    const review = page.getByRole('dialog', { name: '检查提案' })
+    let upstreamStatus
+    const operations = []
+    const loseCommit = async route => {
+      const envelope = route.request().postDataJSON()?.envelope
+      if (envelope?.operation !== 'changes.commit') return route.continue()
+      const result = await route.fetch({ maxRetries: 0, maxRedirects: 0 })
+      upstreamStatus = result.status()
+      await result.dispose()
+      await route.abort('failed')
+    }
+    const record = request => {
+      if (!request.url().endsWith('/rpc') || request.method() !== 'POST') return
+      const body = request.postDataJSON()
+      if (body?.kind === 'command') operations.push(body.envelope)
+    }
+    page.on('request', record)
+    try {
+      await row.click()
+      await detail.getByTestId('time-detail-move').click()
+      await editor.getByTestId('move-slot-start').fill(`${day}T17:10`)
+      await editor.getByRole('button', { name: '取消', exact: true }).click()
+      await editor.waitFor({ state: 'hidden' })
+      assert.equal((await snapshot()).workspace.revision, before.workspace.revision)
+      assert.deepEqual(operations, [])
+
+      await row.click()
+      await detail.getByTestId('time-detail-move').click()
+      assert.equal(await editor.getByTestId('move-slot-capacity').inputValue(), capacity.id)
+      await editor.getByTestId('move-slot-start').fill(`${day}T17:10`)
+      await editor.getByText(`新结束（保持原时长）：${day} 17:40`, { exact: true }).waitFor()
+      await editor.getByTestId('move-slot-preview').click()
+      await review.getByTestId('plan-move-before').waitFor()
+      assert.match(await review.getByTestId('plan-move-before').innerText(), /Fixture move capacity.*17:00.*17:30/s)
+      assert.match(await review.getByTestId('plan-move-after').innerText(), /Fixture move capacity.*17:10.*17:40/s)
+      assert.deepEqual(operations.map(item => item.operation), ['proposal.create'])
+      assert.deepEqual(operations[0].payload.operations, [{ operation: 'allocation.move', payload: {
+        id: original.id, expected_task_version: task.version, capacity_block_id: capacity.id,
+        start: new Date(start('17:10')).toISOString(), end: new Date(start('17:40')).toISOString(),
+      } }])
+      const previewed = await snapshot()
+      assert.equal(previewed.workspace.revision, before.workspace.revision)
+      assert.deepEqual(previewed.allocations, before.allocations)
+
+      await page.route('**/zodo-bridge/v1/rpc', loseCommit)
+      await review.getByTestId('plan-apply').click()
+      await review.getByText(/本次批准或提交结果不确定，可能已经生效/).waitFor()
+      assert.equal(upstreamStatus, 200)
+      assert.equal(await review.getByTestId('plan-apply').isDisabled(), true)
+      assert.equal(await review.getByTestId('plan-edit-move').count(), 0)
+      await review.getByRole('button', { name: '关闭并核实状态', exact: true }).click()
+      await review.waitFor({ state: 'hidden' })
+      await locate()
+      await row.waitFor()
+      const settled = await snapshot()
+      const moved = settled.allocations.find(candidate => candidate.id === original.id)
+      assert.ok(moved)
+      assert.equal(Date.parse(moved.start), Date.parse(start('17:10')))
+      assert.equal(Date.parse(moved.end), Date.parse(start('17:40')))
+      const expected = before.allocations.map(allocation => allocation.id === original.id
+        ? { ...allocation, start: moved.start, end: moved.end, updated_at: moved.updated_at }
+        : allocation)
+      assert.deepEqual(settled.allocations, expected)
+      for (const key of ['tasks', 'commitments', 'capacity_blocks', 'calendar_events', 'focus_sessions']) {
+        assert.deepEqual(settled[key], before[key], key)
+      }
+      assert.deepEqual(operations.map(item => item.operation), ['proposal.create', 'proposal.approve', 'changes.commit'])
+      assert.equal(settled.workspace.revision, before.workspace.revision + 1)
+      assert.equal(settled.proposals.find(proposal => proposal.id === operations[2].payload.proposal_id)?.status, 'applied')
+    } finally {
+      page.off('request', record)
+      await page.unroute('**/zodo-bridge/v1/rpc', loseCommit)
+      await nav('schedule')
+      await page.getByTestId('schedule-mode').selectOption('7')
+      await page.getByTestId('schedule-today').click()
+    }
+  })
+
   await check('Search resolves committed task', async () => {
     await nav('search')
     await page.getByPlaceholder('搜索任务、目标、项目…').fill('Fixture task edited')

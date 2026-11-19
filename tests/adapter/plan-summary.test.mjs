@@ -3,7 +3,8 @@ import {readFileSync} from 'node:fs'
 import {test} from 'node:test'
 import vm from 'node:vm'
 const source=readFileSync(new URL('../../adapters/deepseek-harness/plugin/client.js',import.meta.url),'utf8')
-const code=source.slice(source.indexOf('    function PlanModal'),source.indexOf('    function entityFactRows'))
+const moveHelpers=source.slice(source.indexOf('    function allocationMoveOperation'),source.indexOf('    function moveDraftSlot'))
+const code=moveHelpers+'\n'+source.slice(source.indexOf('    function PlanModal'),source.indexOf('    function entityFactRows'))
 function render(overrides={}) {
   const approvals=[],closed=[],errors=[]
   const Component=vm.runInNewContext(`${code}\nPlanModal`,{

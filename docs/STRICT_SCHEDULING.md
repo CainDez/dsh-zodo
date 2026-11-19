@@ -90,4 +90,7 @@ and overlaps again at commit; it excludes the original slot from destination
 accounting. If the move would make a retained successor interval invalid, Core
 rejects the move without changing either allocation. Preview and approval do
 not change the schedule. The preview shows a single changed allocation, not a
-deletion and recreation. The DSH calendar move control is not implemented yet.
+deletion and recreation. From an eligible schedule row, the DSH action
+**移动时段** opens a fixed-duration editor and presents the original and new
+intervals for approval. If a receipt is lost, refresh the proposal and schedule
+to verify the outcome; do not resend the same proposal.

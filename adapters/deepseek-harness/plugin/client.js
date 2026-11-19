@@ -107,7 +107,7 @@ window.__ModuleLoader__.load({
       return sessionPromise
     }
 
-    async function bridgeRpc(kind, envelope, retried = false) {
+    async function bridgeRpc(kind, envelope, retrySession = true) {
       await ensureSession()
       const response = await fetch(`${BRIDGE}/rpc`, {
         method: 'POST',
@@ -116,11 +116,11 @@ window.__ModuleLoader__.load({
         body: JSON.stringify({ kind, envelope }),
       })
       const body = await response.json().catch(() => undefined)
-      if (response.status === 401 && !retried) {
+      if (response.status === 401) {
         sessionPromise = null
         uiSession = null
         bridgeToken = null
-        return bridgeRpc(kind, envelope, true)
+        if (retrySession) return bridgeRpc(kind, envelope, false)
       }
       if (!response.ok || !body?.ok) {
         const error = new Error(body?.error?.message ?? `Zodo 请求失败 (${response.status})`)
@@ -143,7 +143,7 @@ window.__ModuleLoader__.load({
       })
     }
 
-    async function command(name, payload, baseRevision, key) {
+    async function command(name, payload, baseRevision, key, retrySession = true) {
       await ensureSession()
       const workspaceId = uiSession?.core?.workspace_id ?? 'ws_local'
       return bridgeRpc('command', {
@@ -155,7 +155,7 @@ window.__ModuleLoader__.load({
         operation_version: 1,
         base_revision: baseRevision ?? null,
         payload,
-      })
+      }, retrySession)
     }
 
     async function bridgeJson(pathname, options = {}, retried = false) {
@@ -1862,10 +1862,162 @@ window.__ModuleLoader__.load({
       return start <= now ? '此时段已到开始时间，不能删除。' : ''
     }
 
+    function moveRecovery(failure = {}) {
+      const message = String(failure.message ?? '').toLowerCase()
+      if (/retained successor/.test(message)) return '新时段会影响已安排的后继任务。请选在后继任务开始前，或先检查其依赖和安排。'
+      if (/preserve its duration|destination is unchanged/.test(message)) return '请选择不同的目标，移动时必须保留原时长。'
+      if (/only unlocked planned/.test(message)) return '原分配已锁定、到达开始时间或状态已变。请刷新核对。'
+      if (/capacity/.test(message)) return '检查目标容量的时间和预算；请选择能容纳原时长的已有容量。'
+      if (/remaining|estimate_minutes/.test(message)) return '任务剩余时间或估时已变化；请刷新核对原分配和任务，不会缩短时段。'
+      return scheduleRecovery(failure)
+    }
+
+    function allocationMoveOperation(proposal) {
+      const operations = Array.isArray(proposal?.operations) ? proposal.operations : []
+      return operations.find(item => item?.operation === 'allocation.move')
+    }
+
+    // Approve a move only when the Core shows exactly the requested in-place change.
+    // Settlement/review uses this diff, not the user-editable intent text.
+    function allocationMoveDiff(proposal) {
+      const operation = allocationMoveOperation(proposal)
+      const diff = proposal?.preview?.diff ?? proposal?.preview
+      if (!operation || proposal.operations.length !== 1 ||
+          !Array.isArray(diff?.added) || diff.added.length !== 0 ||
+          !Array.isArray(diff?.removed) || diff.removed.length !== 0 ||
+          !Array.isArray(diff?.changed) || diff.changed.length !== 1) return null
+      const row = diff.changed[0]
+      const { id, start, end, capacity_block_id: capacity } = operation.payload ?? {}
+      const before = row?.before, after = row?.after
+      const times = [before?.start, before?.end, after?.start, after?.end, start, end].map(value => Date.parse(value))
+      if (row?.kind !== 'allocation' || typeof id !== 'string' || !id || row.id !== id ||
+          before?.id !== id || after?.id !== id ||
+          typeof before.task_id !== 'string' || before.task_id !== after.task_id ||
+          !Number.isSafeInteger(before.minutes) || before.minutes < 1 || before.minutes > 1440 ||
+          before.minutes !== after.minutes || !times.every(Number.isFinite) ||
+          after.capacity_block_id !== capacity || typeof capacity !== 'string' || !capacity ||
+          times[2] !== times[4] || times[3] !== times[5] ||
+          times[1] - times[0] !== before.minutes * 60_000 || times[3] - times[2] !== before.minutes * 60_000 ||
+          before.locked !== false || after.locked !== false || before.state !== 'planned' || after.state !== 'planned' ||
+          before.workspace_id !== after.workspace_id || before.created_at !== after.created_at ||
+          ['kind', 'id', 'actor_id'].some(key => before.source?.[key] !== after.source?.[key]) ||
+          (before.capacity_block_id === after.capacity_block_id && times[0] === times[2] && times[1] === times[3])) return null
+      return { before, after }
+    }
+
+    function moveDraftSlot(form, timeZone, minutes) {
+      const wall = form.start
+      if (!isKnownTimezone(timeZone) || typeof wall !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(wall) ||
+          !agendaDate(wall.slice(0, 10))) return { instants: [], start: null, end: null }
+      const { instants } = resolveWallTime(wall.slice(0, 10), wall.slice(11, 16), timeZone)
+      const start = instants.length === 1 ? instants[0] : instants.includes(form.startChoice) ? form.startChoice : null
+      return { instants, start, end: start === null ? null : start + minutes * 60_000 }
+    }
+
+    function moveSourceIssue(original, snapshot, now = Date.now()) {
+      const row = (snapshot.allocations ?? []).find(item => item.id === original.row.id)
+      const task = manualScheduleTasks(snapshot).find(item => item.id === original.row.task_id)
+      if (!row || ['id', 'task_id', 'start', 'end', 'minutes', 'capacity_block_id', 'updated_at'].some(key => row[key] !== original.row[key]) ||
+          task?.version !== original.taskVersion || !Number.isSafeInteger(task?.version) || task.version < 1 ||
+          workspaceTimezone(snapshot) !== original.timeZone) return '原分配、任务或时区已变化。输入仍保留，请关闭后从当前日程重新打开原分配核对。'
+      if (allocationRemovalReason(row, now)) return '原分配已锁定、到达开始时间或状态已变，不能移动。'
+      const minutes = row.minutes
+      if (!Number.isSafeInteger(minutes) || minutes < 1 || minutes > 1440 ||
+          Date.parse(row.end) - Date.parse(row.start) !== minutes * 60_000) return '原分配没有可保留的整分钟时长，不能移动。'
+      if (!isKnownTimezone(original.timeZone)) return '工作空间时区无效。请先检查设置，不能猜测时区。'
+      return ''
+    }
+
+    function MoveAllocation({ original, savedForm, snapshot, send, busy, onClose, setModal }) {
+      const [form, setForm] = useState(savedForm ?? { capacity: original.row.capacity_block_id ?? '', start: '', startChoice: null })
+      const [error, setError] = useState('')
+      const pending = useRef(false)
+      const now = Date.now()
+      const timeZone = original.timeZone
+      const { row, taskVersion } = original
+      const sourceIssue = moveSourceIssue(original, snapshot, now)
+      const draft = moveDraftSlot(form, timeZone, Number.isSafeInteger(row.minutes) ? row.minutes : 0)
+      const blocks = (snapshot.capacity_blocks ?? []).filter(block => typeof block.id === 'string' &&
+        Number.isFinite(Date.parse(block.start)) && Date.parse(block.end) > Math.max(Date.parse(block.start), now))
+      const capacity = blocks.find(block => block.id === form.capacity)
+      const setDraft = next => { if (!pending.current && !busy) setForm(next) }
+      const close = () => { if (!pending.current && !busy) onClose() }
+      const propose = async () => {
+        if (pending.current || busy) return
+        setError('')
+        const issue = moveSourceIssue(original, snapshot)
+        if (issue) return setError(issue)
+        if (!capacity) return setError('请选择已有容量；不会自动创建容量。')
+        if (draft.start === null) return setError('请填入有效开始时间；夏令时重复的钟点必须选定 UTC 时刻，不存在的钟点请改选。')
+        if (draft.start <= Date.now()) return setError('请选择严格晚于当前的未来开始时间。')
+        if (draft.start < Date.parse(capacity.start) || draft.end > Date.parse(capacity.end)) return setError('结束由原时长推算；整个新时段必须处于所选容量内。')
+        if (row.capacity_block_id === capacity.id && Date.parse(row.start) === draft.start) return setError('目标和原时段相同。请改变开始时间或容量。')
+        pending.current = true
+        try {
+          const result = await send('proposal.create', {
+            intent: `移动任务「${taskTitle(snapshot, row.task_id)}」的已安排时段`,
+            operations: [{ operation: 'allocation.move', payload: {
+              id: row.id, expected_task_version: taskVersion, capacity_block_id: capacity.id,
+              start: new Date(draft.start).toISOString(), end: new Date(draft.end).toISOString(),
+            } }],
+          })
+          const proposal = result.data?.proposal
+          if (proposal?.status !== 'validated') {
+            const hints = proposal?.diagnostics?.slice(0, 4).map(moveRecovery) ?? []
+            return setError(`移动预览无效，原分配未改。 ${[...new Set(hints)].join(' ') || moveRecovery()} 输入已保留。`)
+          }
+          const diff = allocationMoveDiff(proposal)
+          if (!diff || diff.before.id !== row.id || diff.before.task_id !== row.task_id ||
+              Date.parse(diff.before.start) !== Date.parse(row.start) || Date.parse(diff.before.end) !== Date.parse(row.end) ||
+              (diff.before.capacity_block_id ?? null) !== (row.capacity_block_id ?? null) ||
+              diff.after.capacity_block_id !== capacity.id || Date.parse(diff.after.start) !== draft.start || Date.parse(diff.after.end) !== draft.end) {
+            return setError('Core 返回的差异不能确认是所选移动，不允许批准。输入已保留，请核对提案与日程。')
+          }
+          setModal({ type: 'plan', proposal, plan: null, grant: null, moveEditor: { original, savedForm: form } })
+        } catch (failure) {
+          setError(`未能生成移动预览。 ${moveRecovery(failure)} 输入已保留。`)
+        } finally { pending.current = false }
+      }
+      const validZone = isKnownTimezone(timeZone)
+      const show = ms => validZone && Number.isFinite(ms) ? wallClockText(ms, timeZone) : '待确认'
+      return h(Modal, { title: '移动任务时段', subtitle: taskTitle(snapshot, row.task_id), onClose: close, wide: true,
+        footer: h(React.Fragment, null,
+          h(Button, { onClick: close, disabled: busy }, COPY.cancel),
+          h(Button, { onClick: propose, disabled: busy || Boolean(sourceIssue), testid: 'move-slot-preview' }, '生成移动预览')) },
+        (sourceIssue || error) ? h('p', { className: 'zw-alert zw-alert-error', role: 'alert' }, sourceIssue || error) : null,
+        h('p', { className: 'zw-fineprint' }, `保持原任务和 ${row.minutes} 分钟时长。输入时区：${timeZone}。只有确认差异并收到 Core 提交回执才算移动成功。`),
+        h('p', { 'data-testid': 'move-slot-original' }, `原时间：${show(Date.parse(row.start))} 至 ${show(Date.parse(row.end))}`),
+        h('fieldset', { disabled: busy, style: { border: 0, padding: 0, margin: 0, minWidth: 0 } },
+          h(Field, { label: '目标容量' }, h('select', { value: capacity?.id ?? '', 'data-testid': 'move-slot-capacity',
+            onChange: event => setDraft({ ...form, capacity: event.target.value }) },
+            h('option', { value: '' }, '选择已有容量'),
+            blocks.map(block => h('option', { key: block.id, value: block.id }, `${block.title} · ${show(Date.parse(block.start))} 至 ${show(Date.parse(block.end))}`)))),
+          h(Field, { label: '新开始（工作空间时区）' }, h('input', { type: 'datetime-local', value: form.start, 'data-testid': 'move-slot-start',
+            onChange: event => setDraft({ ...form, start: event.target.value, startChoice: null }) })),
+          draft.instants.length > 1 ? h(Field, { label: '钟点重复，请选 UTC 时刻' },
+            h('select', { value: form.startChoice ?? '', 'data-testid': 'move-slot-fold',
+              onChange: event => setDraft({ ...form, startChoice: event.target.value === '' ? null : Number(event.target.value) }) },
+            h('option', { value: '' }, '请选择'),
+            draft.instants.map(value => h('option', { key: value, value }, new Date(value).toISOString())))) : null,
+        ),
+        h('p', { 'data-testid': 'move-slot-end' }, `新结束（保持原时长）：${show(draft.end)}`),
+        h('p', { 'data-testid': 'move-slot-utc' }, draft.start === null || !Number.isFinite(draft.end) ? 'UTC：待确认' : `UTC：${new Date(draft.start).toISOString()} 至 ${new Date(draft.end).toISOString()}`),
+      )
+    }
+
     function TimeDetail({ kind, row, snapshot, onClose, send, busy, setModal }) {
       const title = kind === 'allocation' ? taskTitle(snapshot, row.task_id) : row.title
       const [removeError, setRemoveError] = useState('')
       const removalReason = kind === 'allocation' ? allocationRemovalReason(row) : ''
+      const original = kind === 'allocation' ? {
+        row,
+        timeZone: workspaceTimezone(snapshot),
+        taskVersion: (snapshot.tasks ?? []).find(task => task.id === row.task_id)?.version,
+      } : null
+      const moveIssue = original ? moveSourceIssue(original, snapshot) : ''
+      const openMove = () => {
+        if (!busy && original && !moveSourceIssue(original, snapshot)) setModal({ type: 'allocation-move', original })
+      }
       const remove = async () => {
         if (kind === 'allocation') {
           const reason = allocationRemovalReason(row)
@@ -1900,6 +2052,7 @@ window.__ModuleLoader__.load({
             disabled: busy,
             testid: 'time-detail-task-time',
           }, '任务时间') : null,
+          original ? h(Button, { onClick: openMove, title: moveIssue || undefined, disabled: busy || Boolean(moveIssue), testid: 'time-detail-move' }, '移动时段') : null,
           kind === 'allocation' ? h(Button, { onClick: toggleLock, disabled: busy }, row.locked ? '解除锁定' : '锁定分配') : null,
           h(Button, { tone: 'danger', onClick: remove, disabled: busy || Boolean(removalReason) }, '删除'),
         ) },
@@ -2129,13 +2282,21 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function PlanModal({ proposal, plan, snapshotRevision, onClose, onApprove, busy, error, grant }) {
+    function PlanModal({ proposal, plan, snapshotRevision, onClose, onApprove, busy, error, grant, moveUncertain, onEditMove, onUncertainMove }) {
       const [localError, setLocalError] = useState('')
       const [blocked, setBlocked] = useState('')
       const attempt = useRef({ pending: false, outcome: '' })
       const closeIfIdle = () => { if (!attempt.current.pending && !busy) onClose() }
+      const isMove = Boolean(allocationMoveOperation(proposal))
+      const move = isMove ? allocationMoveDiff(proposal) : null
+      const unverifiedMove = isMove && !move
+      const settlementLocked = Boolean(grant || moveUncertain)
+      const editMove = () => {
+        if (onEditMove && !attempt.current.pending && !busy &&
+            (attempt.current.outcome === 'regenerate' || (!attempt.current.outcome && !settlementLocked))) onEditMove()
+      }
       const approveOnce = async () => {
-        if (attempt.current.pending || attempt.current.outcome || busy || stale || grant) return
+        if (attempt.current.pending || attempt.current.outcome || busy || stale || settlementLocked || unverifiedMove) return
         attempt.current.pending = true
         setLocalError('')
         try {
@@ -2145,6 +2306,7 @@ window.__ModuleLoader__.load({
           const regenerate = ['VALIDATION_FAILED', 'REVISION_CONFLICT', 'POLICY_CHANGED', 'APPROVAL_EXPIRED', 'APPROVAL_REQUIRED', 'PERMISSION_DENIED', 'NOT_FOUND'].includes(failure.code)
           const outcome = regenerate ? 'regenerate' : 'uncertain'
           attempt.current.outcome = outcome
+          if (isMove && outcome === 'uncertain') onUncertainMove?.()
           setBlocked(outcome)
           setLocalError(regenerate
             ? 'Core 拒绝了本次操作。请核对提案状态、时间、版本和权限；修正后重新生成预览并批准，不能重试旧批准。'
@@ -2158,23 +2320,47 @@ window.__ModuleLoader__.load({
       const changes = diff.changed ?? []
       const added = diff.added ?? []
       const removed = diff.removed ?? []
+      const previewSnapshot = stateSnapshotRef.current
+      const timeZone = isMove ? workspaceTimezone(previewSnapshot) : null
+      const timeLabel = value => isKnownTimezone(timeZone)
+        ? `${wallClockText(Date.parse(value), timeZone)}（UTC ${value}）`
+        : `UTC ${value}`
+      const capacityLabel = id => id == null ? '原分配未绑定容量'
+        : (previewSnapshot?.capacity_blocks ?? []).find(block => block.id === id)?.title ?? id
       return h(Modal, {
         title: plan ? '检查计划建议' : '检查提案',
         subtitle: '这是尚未应用的候选；批准只是发起提交，收到 Core 成功回执后才算已保存。',
         onClose: closeIfIdle,
         wide: true,
         footer: h(React.Fragment, null,
-          h(Button, { onClick: closeIfIdle, disabled: busy || attempt.current.pending }, blocked || grant ? '关闭并核实状态' : '放弃预览'),
+          h(Button, { onClick: closeIfIdle, disabled: busy || attempt.current.pending }, blocked || settlementLocked ? '关闭并核实状态' : '放弃预览'),
           h(Button, {
             tone: 'primary',
             onClick: approveOnce,
-            disabled: busy || stale || Boolean(grant) || Boolean(blocked) || attempt.current.pending,
+            disabled: busy || stale || settlementLocked || Boolean(blocked) || unverifiedMove || attempt.current.pending,
             testid: 'plan-apply',
-          }, stale ? '计划依据已变化' : blocked === 'regenerate' ? '需要重新生成预览' : blocked || grant ? '先核实提交状态' : COPY.approve),
+          }, stale ? '计划依据已变化' : blocked === 'regenerate' ? '需要重新生成预览' : blocked || settlementLocked ? '先核实提交状态' : unverifiedMove ? '无法核实移动差异' : COPY.approve),
+          onEditMove && (blocked === 'regenerate' || (!settlementLocked && !blocked)) ? h(Button, {
+            onClick: editMove, disabled: busy || attempt.current.pending, testid: 'plan-edit-move',
+          }, '返回修改时段') : null,
         ),
       },
       h('p', { className: 'zw-fineprint', 'data-testid': 'plan-intent' }, proposal.intent),
-      grant && !attempt.current.pending && !blocked ? h('p', { className: 'zw-alert zw-alert-warn', role: 'alert' }, '已有批准记录，但不能仅凭旧批准判断提交结果。请关闭并刷新提案与日程核实，不直接重试。') : null,
+      unverifiedMove ? h('p', { className: 'zw-alert zw-alert-error', role: 'alert' }, 'Core 未提供一个可核实的原分配与目标差异，不能在这里批准移动。') : null,
+      move ? h(Section, { title: '核对原时段与新时段', testid: 'plan-move-diff' },
+        h('p', null, `${taskTitle(previewSnapshot, move.before.task_id)} · 保持 ${move.before.minutes} 分钟${isKnownTimezone(timeZone) ? ` · ${timeZone}` : ''}`),
+        h('dl', { className: 'zw-kv' },
+          ...[['修改前', move.before, 'before'], ['修改后', move.after, 'after']].flatMap(([label, row, key]) => [
+            h('dt', { key: key + '-label' }, label),
+            h('dd', { key, 'data-testid': 'plan-move-' + key },
+              h('strong', null, capacityLabel(row.capacity_block_id)),
+              h('p', null, `${timeLabel(row.start)} 至 ${timeLabel(row.end)}`)),
+          ]),
+        ),
+      ) : null,
+      settlementLocked && !attempt.current.pending && !blocked ? h('p', { className: 'zw-alert zw-alert-warn', role: 'alert' },
+        grant ? '已有批准记录，但不能仅凭旧批准判断提交结果。请关闭并刷新提案与日程核实，不直接重试。'
+          : '此前批准或提交结果还未核实。请关闭并刷新提案与日程；不要重新提交这个提案。') : null,
       (error || localError) ? h('div', { className: 'zw-alert zw-alert-error' }, localError || error) : null,
       stale ? h('div', { className: 'zw-alert zw-alert-warn' },
         '计划依据已变化，请刷新后重新检查。旧批准不能用于新内容。') : null,
@@ -4085,6 +4271,7 @@ window.__ModuleLoader__.load({
       const [scheduleLength, setScheduleLength] = useState(7)
       const [scheduleStart, setScheduleStart] = useState(() => agendaShift(todayIso(), 0))
       const settledRuns = useRef(new Set())
+      const uncertainMoves = useRef(new Set())
       stateSnapshotRef.current = snapshot
 
       useEffect(() => {
@@ -4186,11 +4373,11 @@ window.__ModuleLoader__.load({
       }, [runsActive, loadRuns])
 
       const baseRevision = snapshot?.workspace?.revision
-      const send = useCallback(async (operation, payload) => {
+      const send = useCallback(async (operation, payload, guardedMoveSettlement = false) => {
         setBusy(true)
         setError('')
         try {
-          const result = await command(operation, payload, snapshot?.workspace?.revision)
+          const result = await command(operation, payload, snapshot?.workspace?.revision, undefined, !guardedMoveSettlement)
           setNotice(`${['proposal.create', 'plan.propose'].includes(operation) ? '提案已记录 · 尚未应用' : '已保存'} · r${result.revision} · ${result.operation_id.slice(0, 12)}`)
           if (operation !== 'proposal.approve') await refresh()
           return result
@@ -4199,8 +4386,9 @@ window.__ModuleLoader__.load({
             setError('数据已改变，当前页面需要刷新；不会覆盖新状态。')
             await refresh()
           } else {
-            const strictPreview = operation === 'proposal.create' && payload?.operations?.some(item => item.operation === 'allocation.schedule')
-            setError(strictPreview ? '严格安排预览失败；请查看弹窗中的处理建议，输入已保留。' : failure.message)
+            const strictPreview = operation === 'proposal.create' && payload?.operations?.some(item => ['allocation.schedule', 'allocation.move'].includes(item.operation))
+            setError(strictPreview ? '严格排程预览失败；请查看弹窗中的处理建议，输入已保留。'
+              : guardedMoveSettlement ? '移动提交未确认；请查看提案核对说明。' : failure.message)
           }
           throw failure
         } finally {
@@ -4297,15 +4485,16 @@ window.__ModuleLoader__.load({
       const approvePlan = async () => {
         const proposal = modal?.proposal
         if (!proposal) return
+        const isMove = Boolean(allocationMoveOperation(proposal))
         let grantId = modal.grant
         if (!grantId) {
-          const approved = await send('proposal.approve', { proposal_id: proposal.id })
+          const approved = await send('proposal.approve', { proposal_id: proposal.id }, isMove)
           grantId = approved.data.approval.id
           setModal({ ...modal, grant: grantId })
         }
-        const committed = await send('changes.commit', { proposal_id: proposal.id, approval_grant: grantId })
+        const committed = await send('changes.commit', { proposal_id: proposal.id, approval_grant: grantId }, isMove)
         setModal(null)
-        setNotice(`计划已应用 · ${committed.data.change_set_id} · r${committed.revision}`)
+        setNotice(`${isMove ? '时段已移动' : '计划已应用'} · ${committed.data.change_set_id} · r${committed.revision}`)
         await refresh()
       }
 
@@ -4966,6 +5155,7 @@ window.__ModuleLoader__.load({
           case 'blocked': return h(BlockedEditor, { task: modal.task, onClose: closeModal, send, busy })
           case 'commitment': return h(CommitmentEditor, { day: modal.day, snapshot, onClose: closeModal, send, busy })
           case 'quick-schedule': return h(QuickSchedule, { day: modal.day, guidedDraft: modal.guidedDraft, snapshot, send, busy, onClose: closeModal, setModal })
+          case 'allocation-move': return h(MoveAllocation, { original: modal.original, savedForm: modal.savedForm, snapshot, send, busy, onClose: closeModal, setModal })
           case 'capacity': return h(CapacityEditor, { onClose: closeModal, send, busy })
           case 'capacity-candidates': return h(CapacitySuggestions, { onClose: closeModal, send, busy })
           case 'meeting-propose': return h(MeetingProposal, { onClose: closeModal, send, busy, setView, report: setNotice })
@@ -4980,7 +5170,11 @@ window.__ModuleLoader__.load({
             onApprove: approvePlan,
             busy,
             error,
-            grant: modal.grant,
+            grant: modal.grant || (Boolean(allocationMoveOperation(modal.proposal)) &&
+              (snapshot.approval_grants ?? []).some(grant => grant.proposal_id === modal.proposal.id)),
+            moveUncertain: uncertainMoves.current.has(modal.proposal.id),
+            onEditMove: modal.moveEditor ? () => setModal({ type: 'allocation-move', ...modal.moveEditor }) : undefined,
+            onUncertainMove: () => uncertainMoves.current.add(modal.proposal.id),
           })
           case 'occurrence-move': return h(OccurrenceMove, { occurrence: modal.occurrence, task: modal.task, onClose: closeModal, send, busy })
           case 'recurrence-scope': return h(RecurrenceScopeDialog, { task: modal.task, snapshot, onClose: closeModal, send, busy, setModal })

@@ -126,21 +126,26 @@ test('in-flight form events cannot change the retained draft, then unlock after 
 })
 
 test('global send hides strict-preview raw failures but preserves refresh and other command behavior',async()=>{
-  const begin=source.indexOf('      const send = useCallback(async (operation, payload)')
+  const begin=source.indexOf('      const send = useCallback(async (operation, payload, guardedMoveSettlement')
   const end=source.indexOf('      const reader',begin)
-  for(const [operation,payload,code,expectedRefresh,rawAllowed] of [
+  for(const [operation,payload,code,expectedRefresh,rawAllowed,guardedMoveSettlement] of [
     ['proposal.create',{operations:[{operation:'allocation.schedule'}]},'VALIDATION_FAILED',0,false],
     ['proposal.create',{operations:[{operation:'allocation.schedule'}]},'REVISION_CONFLICT',1,false],
+    ['proposal.create',{operations:[{operation:'allocation.move'}]},'VALIDATION_FAILED',0,false],
+    ['proposal.create',{operations:[{operation:'allocation.move'}]},'REVISION_CONFLICT',1,false],
+    ['changes.commit',{proposal_id:'move'},'STORAGE_FAILURE',0,false,true],
+    ['proposal.approve',{proposal_id:'move'},'STORAGE_FAILURE',0,false,true],
     ['task.update',{},'VALIDATION_FAILED',0,true],
     ['proposal.create',{operations:[{operation:'task.update'}]},'VALIDATION_FAILED',0,true],
   ]) {
-    const errors=[],busy=[];let refreshed=0
+    const errors=[],busy=[],retries=[];let refreshed=0
     const failure=Object.assign(new Error('PRIVATE_SENTINEL'),{code})
     const send=vm.runInNewContext(`${source.slice(begin,end)}\nsend`,{
       useCallback:fn=>fn,snapshot:{workspace:{revision:5}},setBusy:value=>busy.push(value),setError:value=>errors.push(value),setNotice:()=>{},
-      command:async()=>{throw failure},refresh:async()=>{refreshed++},
+      command:async(_op,_payload,_version,_key,retrySession)=>{retries.push(retrySession);throw failure},refresh:async()=>{refreshed++},
     })
-    await assert.rejects(send(operation,payload),error=>error===failure)
+    await assert.rejects(send(operation,payload,guardedMoveSettlement),error=>error===failure)
+    assert.deepEqual(retries,[!guardedMoveSettlement])
     assert.equal(errors.join(' ').includes('PRIVATE_SENTINEL'),rawAllowed)
     assert.equal(refreshed,expectedRefresh)
     assert.deepEqual(busy,[true,false])
@@ -327,6 +332,7 @@ test('time details protect only ineligible allocations and recheck the clock bef
     h: (tag, props, ...children) => ({ tag, props, children }),
     useState: value => [value, next => alerts.push(next)],
     Date: { now: () => clock, parse: Date.parse }, taskTitle: () => 'Task', dateTimeFor: s => s,
+    workspaceTimezone: () => 'UTC', manualScheduleTasks: snapshot => snapshot.tasks ?? [],
   })
   const primary = { id: 'same', state: 'planned', locked: false, start: '2026-11-20T00:01:00Z' }
   const button = (kind, overrides = {}) => TimeDetail({
