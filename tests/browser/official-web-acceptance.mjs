@@ -97,11 +97,12 @@ try {
   ].map(([id, name, action]) => ({ id, dialog: page.getByRole('dialog', { name }), action }))
   const [preview, account, model] = onboarding
   const completedOnboarding = new Set()
-  const ensureHostInteractive = async (observePreview = false) => {
+  const ensureHostInteractive = async (observeOnboarding = false, afterReload = false) => {
     phase = 'official-host-onboarding'
-    if (observePreview) {
+    if (observeOnboarding) {
       // Settings/session readiness can arrive after the sidebar first renders.
-      await preview.dialog.waitFor({ timeout: 5500 }).catch(error => {
+      const expected = afterReload ? preview.dialog.or(account.dialog).or(model.dialog).first() : preview.dialog
+      await expected.waitFor({ timeout: 5500 }).catch(error => {
         if (error.name !== 'TimeoutError') throw error
       })
     }
@@ -170,12 +171,12 @@ try {
     const body = await response.json()
     if (!response.ok || !body.ok) throw new Error('snapshot failed')
     const { workspace, tasks, capacity_blocks, allocations } = body.result.data
-    return { revision: workspace.revision, tasks: tasks.length,
+    return { revision: workspace.revision, tasks: tasks.map(({ id, title, estimate_minutes }) => ({ id, title, estimate_minutes })),
       capacity: capacity_blocks.length, allocations: allocations.length }
   })
   phase = 'clean-core-baseline'
   const before = await snapshot()
-  assert.equal(before.tasks + before.capacity + before.allocations, 0)
+  assert.equal(before.tasks.length + before.capacity + before.allocations, 0)
   assert(Number.isInteger(before.revision))
   console.log('PASS clean-core-baseline')
   const taskDialog = { name: '新建任务', exact: true }
@@ -298,6 +299,62 @@ try {
       if (!interactionFailed) throw error
       reportFailure(phase, error)
     }
+  }
+
+  // Only the real UI may mutate the disposable workspace, and only after
+  // the keyboard/cancellation check proved the baseline stayed unchanged.
+  if (!process.exitCode) {
+    const title = 'Official Web acceptance task'
+    const estimate = 37
+    const showTasks = async () => {
+      phase = 'official-save-tasks-navigation'
+      await workbench.getByTestId('nav-tasks').click()
+      await heading('任务').waitFor()
+    }
+    const checkRow = async (id) => {
+      const row = workbench.getByTestId('task-row-' + id)
+      await row.getByText(title, { exact: true }).waitFor()
+      await row.getByText(`${estimate} 分钟`, { exact: true }).waitFor()
+    }
+    phase = 'official-save-open-first-use'
+    await workbench.getByTestId('first-schedule-guide').getByTestId('first-schedule-action').click()
+    await inWorkbench.waitFor()
+    phase = 'official-save-fill'
+    await inWorkbench.getByLabel('标题', { exact: true }).fill(title)
+    await inWorkbench.getByLabel('预计分钟', { exact: true }).fill(String(estimate))
+    phase = 'official-save-submit'
+    await inWorkbench.getByTestId('task-save').click()
+    await inWorkbench.waitFor({ state: 'hidden' })
+
+    phase = 'official-save-exact-core-record'
+    const saved = await snapshot()
+    assert.equal(saved.tasks.length, 1)
+    const [task] = saved.tasks
+    assert(typeof task.id === 'string' && task.id.length > 0)
+    assert.deepEqual(saved, { ...before, revision: before.revision + 1,
+      tasks: [{ id: task.id, title, estimate_minutes: estimate }] })
+    await showTasks()
+    phase = 'official-save-visible-task'
+    await checkRow(task.id)
+    console.log('PASS official-ui-created-one-core-task')
+
+    phase = 'official-save-browser-reload'
+    const refreshed = await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 })
+    assert.equal(refreshed?.status(), 200)
+    assert.equal(new URL(page.url()).origin, origin)
+    // Optional account prompts are session-scoped; the Preview Notice was
+    // persisted by the real host and must not require acknowledgement again.
+    completedOnboarding.delete('optional-account')
+    completedOnboarding.delete('optional-model')
+    await ensureHostInteractive(true, true)
+    phase = 'official-save-reopen-zodo'
+    await page.getByRole('button', { name: 'Zodo', exact: true }).click({ timeout: 12000 })
+    await workbench.getByText('Core 已连接', { exact: true }).waitFor()
+    await showTasks()
+    phase = 'official-save-same-task-after-reload'
+    await checkRow(task.id)
+    assert.deepEqual(await snapshot(), saved)
+    console.log('PASS official-ui-reload-same-task-no-duplicate')
   }
 } catch (error) {
   reportFailure(phase, error)
