@@ -414,11 +414,7 @@ pub fn apply_change(
                 .position(|value| value.id == *id)
                 .ok_or_else(|| ZodoError::not_found("allocation", id))?;
             let allocation = world.allocations[position].clone();
-            if allocation.locked || allocation.state != AllocationState::Planned {
-                return Err(ZodoError::validation(
-                    "locked or started allocations cannot be removed by a plan",
-                ));
-            }
+            require_manual_allocation_editable(&allocation, now)?;
             world.allocations.remove(position);
             outcome.record("allocation", id, "removed");
         }
@@ -1079,6 +1075,19 @@ fn create_allocation(
     Ok(id)
 }
 
+// Keep past and in-progress allocation facts immutable for manual changes, even
+// if their persisted state remains Planned. Planner replacement has its own
+// preview/replay boundary and is intentionally not changed here.
+fn require_manual_allocation_editable(allocation: &Allocation, now: DateTime<Utc>) -> Result<()> {
+    if allocation.locked || allocation.state != AllocationState::Planned || allocation.start <= now
+    {
+        return Err(ZodoError::validation(
+            "only unlocked planned allocations starting in the future can be updated or removed",
+        ));
+    }
+    Ok(())
+}
+
 fn update_allocation(
     world: &mut World,
     id: &str,
@@ -1092,9 +1101,10 @@ fn update_allocation(
         .find(|value| value.id == id)
         .ok_or_else(|| ZodoError::not_found("allocation", id))?
         .clone();
-    if existing.locked || existing.state == AllocationState::Started {
+    require_manual_allocation_editable(&existing, now)?;
+    if draft.start <= now {
         return Err(ZodoError::validation(
-            "locked or started allocations need an explicit unlock and a new plan",
+            "new allocation start must be in the future",
         ));
     }
     validate_allocation(world, draft, Some(id), now)?;

@@ -7,10 +7,12 @@
 - 正式 Windows Desktop 暂缓，不阻塞开发。当前版用隔离 Linux x64 和合成数据验证干净安装、使用、同版本重启与卸载。不要求旧版迁移或跨版本兼容；旧证据留作历史。
 - Debian 13 上完成 Linux x64 Rust release 和插件 ZIP 打包。包内 ELF 与构建产物逐字节核对，解包后 Core 权限为 0755。Python 打包校验 11/11，适配器与诊断 86/86。真实宿主实测的 ZIP SHA-256 为 `c73d7e519c161f3fa45f1c12d41e98eeeccd17df2078be78be5ca0fa4f275166`，其中 Core 构建基线为 `17a32653`，SHA-256 为 `4b6155aeac84f4ebbf92518accddf65e5f501be0bb9b6cafdbbb1128adced605`；这一轮改包不改 Core 与插件运行代码。
 - 用官方 npm `@deepseek-ai/dsh@0.2.2-rc.5`，在专用 `DSH_HOME`、`HOME`、`ZODO_DATA_DIR` 中，把校验后解包目录以 `dsh plugin --profile web add file:<目录>` 装入 Web profile。以 `dsh web --no-open --host 127.0.0.1 --port 0` 运行，走 Host 本地引导、插件会话和 bridge。未覆盖 Electron。确认从空库录入任务及容量，预览和批准不增加分配，提交恰好一条；分别重启 Web Host 与 Core 后记录及 revision 一致，卸载插件并再启动 Host 后 bridge 返回 404。未登录、未调用模型，无真实日历。
-- 上述是官方 Linux Web Host 的 HTTP/生命周期冒烟，不是渲染或原生 Desktop 验收；Linux Chromium 夹具被环境限制拦在启动前。后续优先验证真实界面，并完善首次使用场景，不因 Windows 或跨版本兼容停工。
+- 上述是官方 Linux Web Host 的 HTTP/生命周期冒烟，不是渲染或原生 Desktop 验收。官方 DSH Web 的实际界面交互仍未验收；隔离 Linux 浏览器回归证据另列如下。
 
 ## 当前证据
 
+- 使用 `4608af1` 的插件界面和经验证的同源 Linux Core 包，在官方 DSH Web 0.2.2-rc.5 的隔离本地实例检查了 HTML 启动清单：发现 `@zodo/harness-plugin`，能从同源读取独立及合并模块，两者包含 Zodo 侧栏注册和首次排程入口代码。此检查只验证宿主发现与资源分发，未执行客户端代码或点击侧栏。
+- Ubuntu 22.04 x64 的 [Linux 浏览器夹具](https://github.com/CainDez/dsh-zodo/actions/runs/44578095744/job/135750978195) 在精确源码 `4608af10816f68e3873abae61b0b5df7f1e18433` 校验 Linux 包和锁定依赖，并以启用沙箱的 Chromium 实际运行 **33/33**。覆盖「今天／日程」键盘新建后按 Esc 归还原按钮焦点且不写入、手工排程预览与确认、窄屏日期导航、丢失回执后的恢复。Core、服务和合成数据清理均通过。使用真实 Core、插件界面和 bridge，但使用合成 Host，不等于官方 Web 界面或原生 Desktop。
 - 在 `6b2d625` 实际重跑的 Node 适配器和诊断：81/81（`node --test tests/adapter/*.test.mjs tests/browser/harness-isolated-diagnostics.test.mjs`）。
 - 历史 Core 检查点 `078a865`：Rust workspace 159/159；该 Core 二进制在 `6b2d625` 成功通过合成数据的真实 HTTP bridge 排程冒烟，零模型调用、数据清理完成，未涉及渲染或完整 Host。
 - 真实 HTTP 合成冒烟也验证了重启临时 Core 进程：重新建立适配器会话后，排程、锁定和固定记录、提案及 revision 均保持不变，零模型调用；这是 Core 重启，不是 DSH 桌面重启。

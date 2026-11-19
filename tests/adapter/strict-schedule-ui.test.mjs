@@ -316,3 +316,37 @@ test('guided task editor restores the explicit trigger after child autofocus and
   timers[0]()
   assert.deepEqual(focused, ['guide'])
 })
+
+test('time details protect only ineligible allocations and recheck the clock before removal', async () => {
+  const start = source.indexOf('    function allocationRemovalReason')
+  const end = source.indexOf('    function DuplicateSuggestions', start)
+  let clock = +new Date('2026-11-20T00:00:00Z')
+  const writes = [], alerts = []
+  const TimeDetail = vm.runInNewContext(`${source.slice(start, end)}\nTimeDetail`, {
+    Modal: 'Modal', Button: 'Button', React: { Fragment: 'Fragment' }, COPY: { close: '关闭' },
+    h: (tag, props, ...children) => ({ tag, props, children }),
+    useState: value => [value, next => alerts.push(next)],
+    Date: { now: () => clock, parse: Date.parse }, taskTitle: () => 'Task', dateTimeFor: s => s,
+  })
+  const primary = { id: 'same', state: 'planned', locked: false, start: '2026-11-20T00:01:00Z' }
+  const button = (kind, overrides = {}) => TimeDetail({
+    kind, row: { ...primary, ...overrides }, snapshot: {}, onClose: () => {}, busy: false,
+    send: async operation => writes.push(operation),
+  }).props.footer.children.at(-1)
+  for (const override of [
+    { locked: true }, { state: 'started' }, { state: 'done' },
+    { start: '2026-11-19T23:59:00Z' }, { start: '2026-11-20T00:00:00Z' }, { start: 'invalid' },
+  ]) assert.equal(button('allocation', override).props.disabled, true)
+  const remove = button('allocation')
+  assert.equal(remove.props.disabled, false)
+  await remove.props.onClick()
+  clock = +new Date('2026-11-20T00:01:00Z')
+  await remove.props.onClick()
+  assert.match(alerts.at(-1), /已到开始时间/)
+  for (const kind of ['commitment', 'capacity']) {
+    const control = button(kind)
+    assert.equal(control.props.disabled, false)
+    await control.props.onClick()
+  }
+  assert.deepEqual(writes, ['allocation.remove', 'commitment.remove', 'capacity.remove'])
+})

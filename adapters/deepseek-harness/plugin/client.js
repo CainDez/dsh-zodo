@@ -1854,14 +1854,30 @@ window.__ModuleLoader__.load({
       )
     }
 
+    function allocationRemovalReason(row, now = Date.now()) {
+      if (row.locked !== false) return '此分配已锁定，不能删除。'
+      if (row.state !== 'planned') return '只有尚未开始的计划分配可以删除。'
+      const start = typeof row.start === 'string' ? Date.parse(row.start) : NaN
+      if (!Number.isFinite(start)) return '无法确认分配开始时间，请刷新后重试。'
+      return start <= now ? '此时段已到开始时间，不能删除。' : ''
+    }
+
     function TimeDetail({ kind, row, snapshot, onClose, send, busy, setModal }) {
       const title = kind === 'allocation' ? taskTitle(snapshot, row.task_id) : row.title
+      const [removeError, setRemoveError] = useState('')
+      const removalReason = kind === 'allocation' ? allocationRemovalReason(row) : ''
       const remove = async () => {
+        if (kind === 'allocation') {
+          const reason = allocationRemovalReason(row)
+          if (reason) return setRemoveError(reason)
+          setRemoveError('')
+        }
         try {
           await send(kind === 'commitment' ? 'commitment.remove' : kind === 'capacity' ? 'capacity.remove' : 'allocation.remove', { id: row.id })
           onClose()
         } catch {
-          /* global error surface */
+          if (kind === 'allocation') setRemoveError('Core 未能删除此分配。请刷新并核对时段与锁定状态。')
+          // Other objects keep their existing global error surface.
         }
       }
       const toggleLock = async () => {
@@ -1885,7 +1901,7 @@ window.__ModuleLoader__.load({
             testid: 'time-detail-task-time',
           }, '任务时间') : null,
           kind === 'allocation' ? h(Button, { onClick: toggleLock, disabled: busy }, row.locked ? '解除锁定' : '锁定分配') : null,
-          h(Button, { tone: 'danger', onClick: remove, disabled: busy }, '删除'),
+          h(Button, { tone: 'danger', onClick: remove, disabled: busy || Boolean(removalReason) }, '删除'),
         ) },
         h('dl', { className: 'zw-kv' },
           h('dt', null, '类型'), h('dd', null, kind === 'commitment' ? '固定预约' : kind === 'capacity' ? '容量块' : '任务分配'),
@@ -1894,7 +1910,9 @@ window.__ModuleLoader__.load({
           h('dt', null, '说明'), h('dd', null, kind === 'capacity' ? `${row.capacity_minutes} 分钟容量` : kind === 'allocation' ? `${row.minutes} 分钟` : row.title),
           kind === 'allocation' ? h(React.Fragment, null, h('dt', null, '锁定'), h('dd', null, row.locked ? '已锁定' : '可调整')) : null,
         ),
-        h('p', { className: 'zw-fineprint' }, '删除只影响未来安排；已经开始的分配不会被计划器自动移动。'),
+        kind === 'allocation' ? h('p', { className: 'zw-fineprint' },
+          removalReason || '只能删除未锁定且尚未到开始时间的计划分配。') : null,
+        removeError ? h('p', { role: 'alert', className: 'zw-alert zw-alert-error' }, removeError) : null,
       )
     }
 

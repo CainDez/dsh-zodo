@@ -2,8 +2,8 @@ use chrono::{TimeZone, Utc};
 use serde_json::{Value, json};
 use zodo_kernel::app::Application;
 use zodo_kernel::commands::{CommandEnvelope, CommandResult, QueryEnvelope};
-use zodo_kernel::model::{CommandContext, PrincipalKind, Workspace};
-use zodo_kernel::ports::{Clock, FixedClock, SequentialIds, Store};
+use zodo_kernel::model::{AllocationState, CommandContext, PrincipalKind, Workspace};
+use zodo_kernel::ports::{Clock, FixedClock, SaveOptions, SequentialIds, Store};
 use zodo_runtime::SqliteStore;
 
 struct Fixture {
@@ -398,4 +398,193 @@ fn commit_rechecks_reservations_at_its_clock_without_rewriting_approved_plan() {
     assert!(after.allocations.contains(&before.allocations[0]));
     assert_eq!(after.allocations.len(), 2);
     assert_eq!(f.schedule()["unplaced"][0]["unplaced_minutes"], 30);
+}
+
+#[test]
+fn manual_allocation_edit_requires_unlocked_planned_strictly_future_source_and_target() {
+    let mut f = Fixture::new();
+    let task = f.task(360);
+    let now = f.clock.now();
+    let cases = [
+        (-20, false, AllocationState::Planned), // elapsed
+        (-10, false, AllocationState::Planned), // ends now
+        (0, false, AllocationState::Planned),   // starts now
+        (10, true, AllocationState::Planned),
+        (20, false, AllocationState::Started),
+        (30, false, AllocationState::Done),
+        (40, false, AllocationState::Planned), // editable control
+    ];
+    let mut slots = Vec::new();
+    for (offset, locked, state) in cases {
+        let start = now + chrono::Duration::minutes(offset);
+        let end = start + chrono::Duration::minutes(10);
+        let id = f.allocation(
+            &task,
+            None,
+            &start.to_rfc3339(),
+            &end.to_rfc3339(),
+            10,
+            locked,
+        );
+        slots.push((id, state));
+    }
+    let (future, _) = slots.pop().unwrap();
+    let protected = slots;
+    let mut world = f.world();
+    for (id, state) in &protected {
+        world
+            .allocations
+            .iter_mut()
+            .find(|row| &row.id == id)
+            .unwrap()
+            .state = state.clone();
+    }
+    f.store
+        .save(
+            &world,
+            SaveOptions {
+                expected_revision: world.workspace.revision,
+                bump_revision: false,
+            },
+            None,
+            &[],
+            &[],
+            &[],
+        )
+        .unwrap();
+
+    let before = f.world();
+    let replacement = json!({"task_id": task, "start": "2026-10-24T05:00:00Z",
+        "end": "2026-10-24T05:20:00Z", "minutes": 20});
+    for (id, _) in &protected {
+        for (op, payload) in [
+            ("allocation.remove", json!({"id": id})),
+            (
+                "allocation.update",
+                json!({"id": id, "allocation": replacement}),
+            ),
+        ] {
+            let error = f.execute(op, payload).unwrap_err();
+            assert_eq!(error.code, zodo_kernel::ErrorCode::ValidationFailed);
+            assert!(error.message.contains("only unlocked planned allocations"));
+        }
+    }
+    // Move through the start boundary while the allocation still has planned state.
+    f.clock.set(now + chrono::Duration::minutes(1));
+    for (op, payload) in [
+        ("allocation.remove", json!({"id": protected[2].0})),
+        (
+            "allocation.update",
+            json!({"id": protected[2].0, "allocation": replacement}),
+        ),
+    ] {
+        assert!(f.execute(op, payload).is_err());
+    }
+    f.clock.set(now);
+    for (start, end) in [
+        ("2026-10-24T00:00:00Z", "2026-10-24T00:20:00Z"),
+        ("2026-10-24T01:20:00Z", "2026-10-24T01:40:00Z"),
+    ] {
+        let error = f
+            .execute(
+                "allocation.update",
+                json!({"id": future, "allocation": {
+                    "task_id": task, "start": start, "end": end, "minutes": 20
+                }}),
+            )
+            .unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("new allocation start must be in the future")
+        );
+    }
+    let unchanged = f.world();
+    assert_eq!(unchanged.workspace.revision, before.workspace.revision);
+    assert_eq!(unchanged.allocations, before.allocations);
+
+    f.execute(
+        "allocation.update",
+        json!({"id": future, "allocation": replacement}),
+    )
+    .unwrap();
+    let edited = f.world();
+    let moved = edited
+        .allocations
+        .iter()
+        .find(|row| row.id == future)
+        .unwrap();
+    assert_eq!(
+        moved.start,
+        Utc.with_ymd_and_hms(2026, 10, 24, 5, 0, 0).unwrap()
+    );
+    f.execute("allocation.remove", json!({"id": future}))
+        .unwrap();
+    assert_eq!(
+        f.world().allocations,
+        before
+            .allocations
+            .iter()
+            .filter(|row| row.id != future)
+            .cloned()
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn approved_manual_allocation_edits_are_rechecked_at_start_boundary() {
+    for operation in ["allocation.remove", "allocation.update"] {
+        let mut f = Fixture::new();
+        let task = f.task(30);
+        let id = f.allocation(
+            &task,
+            None,
+            "2026-10-24T01:21:00Z",
+            "2026-10-24T01:51:00Z",
+            30,
+            false,
+        );
+        let mut payload = json!({"id": id});
+        if operation == "allocation.update" {
+            payload["allocation"] = json!({"task_id": task, "start": "2026-10-24T02:00:00Z",
+                "end": "2026-10-24T02:30:00Z", "minutes": 30});
+        }
+        let make = |fixture: &mut Fixture| {
+            fixture
+                .execute(
+                    "proposal.create",
+                    json!({
+                        "intent": "Edit a manual slot", "ttl_seconds": 600,
+                        "operations": [{"operation": operation, "payload": payload}]
+                    }),
+                )
+                .unwrap()
+        };
+        let proposal = make(&mut f);
+        assert_eq!(proposal.data["proposal"]["status"], "validated");
+        let proposal_id = &proposal.data["proposal"]["id"];
+        let approval = f
+            .execute("proposal.approve", json!({"proposal_id": proposal_id}))
+            .unwrap();
+        let before = f.world();
+        f.clock
+            .set(Utc.with_ymd_and_hms(2026, 10, 24, 1, 21, 0).unwrap());
+        let failure = f
+            .execute(
+                "changes.commit",
+                json!({
+                    "proposal_id": proposal_id, "approval_grant": approval.data["approval"]["id"],
+                }),
+            )
+            .unwrap_err();
+        assert!(
+            failure
+                .message
+                .contains("only unlocked planned allocations")
+        );
+        let after = f.world();
+        assert_eq!(after.workspace.revision, before.workspace.revision);
+        assert_eq!(after.allocations, before.allocations);
+        assert_eq!(make(&mut f).data["proposal"]["status"], "draft");
+    }
 }
