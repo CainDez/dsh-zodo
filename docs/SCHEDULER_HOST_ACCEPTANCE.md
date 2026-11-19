@@ -11,6 +11,7 @@
 
 ## 当前证据
 
+- 精确版本 `56c45ecfaf7008e06171266f36b9460658372665` 的 [Linux CI](https://github.com/CainDez/dsh-zodo/actions/runs/44629290730/job/135931339896) 通过实际 Web 的固定预约冲突检查：目标时段与固定预约重叠时，界面提示冲突并保留输入，不进入批准或提交；关闭后原分配和预约均保留。此轮也验证这些业务事实在同版本 Host/Core 重启后不变，以及卸载后桥接返回 404；同次模拟 Host 为 **34/34**。
 - 精确版本 `b798007382493d9a725ec1947a05788ed7f4e7ab` 的 [Linux CI](https://github.com/CainDez/dsh-zodo/actions/runs/44625174355/job/135918465394) 同时通过官方 DSH Web 与模拟 Host (**34/34**)。真实界面取消改期未写入，预览显示原时段和新时段且不改变分配。确认后只移动同一条 30 分钟分配，保留 ID、任务、容量与来源，其他日程事实不变。真正停止并重启同版本 DSH Host 和 Core 后，新 Core 实例读取的持久化快照与重启前一致，包含已移动的时段。CLI 卸载并重新启动官方 Web 后，同源桥接地址返回 404。该轮不等同于改期冲突、丢回执、窄窗或完整周重排的官方 Web 验收。
 - 精确版本 `e1ef202d0beef1914a70a1960efb55eae647ba54` 的 [Linux CI 日志](https://github.com/CainDez/dsh-zodo/actions/runs/44618434426/job/135893272824) 同时通过官方 Web 与模拟 Host (**34/34**)。官方 Web 通过界面新建任务、刷新无重复、设置可用时间并选定 30 分钟的明确时段。预览和批准均不写入分配，随后确认仅产生一条精确匹配的分配，其余业务记录不变。此轮没有验证改期、冲突处理或当前版进程重启。
 - 精确版本 `8236e1101c27ef3f34596a2c79906422e3dd363c` 的 [Linux CI 日志](https://github.com/CainDez/dsh-zodo/actions/runs/44615713968/job/135884276825) 同时通过官方 Web 与模拟 Host。官方 Web 通过真实界面新建一条预计 37 分钟的任务，Core 恰好增加一条任务和一个 revision，容量和分配均未改变；正常刷新并重新进入插件后，原任务 ID、估时及 Core 快照不变。刷新不等同于 Host 或 Core 进程重启。同次模拟 Host **34/34**，Core、服务、数据清理全部通过；焦点等待修正的 [独立一轮](https://github.com/CainDez/dsh-zodo/actions/runs/44615506790/job/135882973745) 同样 **34/34**。

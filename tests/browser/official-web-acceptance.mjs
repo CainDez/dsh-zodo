@@ -570,6 +570,99 @@ try {
       await row.waitFor()
       await fixedRow.waitFor()
       console.log('PASS official-move-fixed-conflict-no-fact-change')
+
+      // A bigger second task cannot fit in the first day's remaining capacity.
+      // Only visible controls create this disposable week fixture.
+      phase = 'official-week-plan-fixture'
+      await showTasks()
+      await workbench.getByRole('button', { name: '新建任务', exact: true }).click()
+      await inWorkbench.getByLabel('标题', { exact: true }).fill('Official Web week task')
+      await inWorkbench.getByLabel('预计分钟', { exact: true }).fill('125')
+      await inWorkbench.getByTestId('task-save').click()
+      await inWorkbench.waitFor({ state: 'hidden' })
+      await workbench.getByTestId('nav-schedule').click()
+      await heading('日程').waitFor()
+      const nextCapacityDate = new Date(Date.parse(day + 'T12:00:00Z') + 86400000)
+      while ([0, 6].includes(nextCapacityDate.getUTCDay())) {
+        nextCapacityDate.setTime(nextCapacityDate.getTime() + 86400000)
+      }
+      const nextDay = nextCapacityDate.toISOString().slice(0, 10)
+      await workbench.getByRole('button', { name: '增加容量', exact: true }).click()
+      await capacityEditor.getByLabel('名称', { exact: true }).fill('Official Web week capacity')
+      await capacityEditor.getByLabel('开始', { exact: true }).fill(nextDay + 'T14:00')
+      await capacityEditor.getByLabel('结束', { exact: true }).fill(nextDay + 'T16:00')
+      await capacityEditor.getByLabel('可用分钟', { exact: true }).fill('120')
+      await capacityEditor.getByRole('button', { name: '保存', exact: true }).click()
+      await capacityEditor.waitFor({ state: 'hidden' })
+      const week = await snapshot()
+      const weekTask = week.tasks.find(item => item.title === 'Official Web week task')
+      const weekCapacity = week.capacity.find(item => item.title === 'Official Web week capacity')
+      assert.equal(weekTask?.estimate_minutes, 125)
+      assert.equal(weekCapacity?.capacity_minutes, 120)
+      assert.equal(Date.parse(weekCapacity.start), Date.parse(nextDay + 'T14:00:00+08:00'))
+      assert.equal(Date.parse(weekCapacity.end), Date.parse(nextDay + 'T16:00:00+08:00'))
+      assert.deepEqual(week, { ...conflictResult, revision: conflictResult.revision + 2,
+        tasks: week.tasks, capacity: week.capacity })
+      assert.equal(week.tasks.length, 2)
+      assert.deepEqual(week.tasks.find(item => item.id === task.id), conflictResult.tasks[0])
+      assert.equal(week.capacity.length, 2)
+      assert.deepEqual(week.capacity.find(item => item.id === capacity.id), conflictResult.capacity[0])
+
+      const plan = workbench.getByRole('dialog', { name: '检查计划建议', exact: true })
+      const planCheck = async (button, intent, summary, startingFacts) => {
+        commands.length = 0
+        // Any write before explicit approval fails closed.
+        allowCommit = false
+        await workbench.getByRole('button', { name: button, exact: true }).click()
+        assert.match(await plan.getByTestId('plan-intent').innerText(), intent)
+        assert.match(await plan.getByTestId('plan-change-summary').innerText(), summary)
+        assert.deepEqual(await snapshot(), startingFacts)
+        assert.deepEqual(commands, ['plan.propose'])
+        const applied = page.waitForResponse(response => operation(response.request()) === 'changes.commit', { timeout: 6000 })
+        allowCommit = true
+        await plan.getByTestId('plan-apply').click()
+        const response = await applied
+        assert.equal(response.status(), 200)
+        assert.equal((await response.json()).ok, true)
+        await plan.waitFor({ state: 'hidden' })
+        assert.deepEqual(commands, ['plan.propose', 'proposal.approve', 'changes.commit'])
+        const committed = await snapshot()
+        assert.deepEqual(committed, { ...startingFacts, revision: startingFacts.revision + 1,
+          allocations: committed.allocations })
+        const ordered = committed.allocations.slice().sort((a, b) => Date.parse(a.start) - Date.parse(b.start))
+        const windows = new Set()
+        for (const [i, item] of ordered.entries()) {
+          const block = week.capacity.find(entry => entry.id === item.capacity_block_id)
+          assert.ok(block)
+          const start = Date.parse(item.start)
+          const end = Date.parse(item.end)
+          assert.ok(start >= Date.parse(block.start) && end <= Date.parse(block.end))
+          assert.equal(end - start, item.minutes * 60000)
+          assert.ok(end <= Date.parse(fixed.start) || start >= Date.parse(fixed.end))
+          if (i) assert.ok(start >= Date.parse(ordered[i - 1].end))
+          windows.add(block.id)
+        }
+        assert.deepEqual(windows, new Set([capacity.id, weekCapacity.id]))
+        for (const target of [task, weekTask]) {
+          assert.equal(ordered.filter(item => item.task_id === target.id)
+            .reduce((minutes, item) => minutes + item.minutes, 0), target.estimate_minutes)
+        }
+        return committed
+      }
+
+      phase = 'official-week-additive'
+      const appended = await planCheck('生成计划', /仅补充安排/, /拟新增 [1-9]\d* 项、修改 0 项、移除 0 项/, week)
+      assert.deepEqual(appended.allocations.find(item => item.id === moved.id), moved)
+      console.log('PASS official-week-additive-preserves-existing-allocation')
+
+      phase = 'official-week-explicit-replan'
+      const replanned = await planCheck('重新规划', /允许重排/, /拟新增 [1-9]\d* 项、修改 0 项、移除 [1-9]\d* 项/, appended)
+      assert.equal(replanned.allocations.some(item => item.id === moved.id), false)
+      await workbench.getByTestId('schedule-date').fill(day)
+      await fixedRow.waitFor()
+      await workbench.getByTestId('time-allocation-' + replanned.allocations.find(item =>
+        item.capacity_block_id === capacity.id).id).waitFor()
+      console.log('PASS official-week-explicit-replan-preserves-fixed-appointment')
     } finally {
       releaseCommit(false)
       await page.unroute(rpc, holdCommit)
@@ -626,7 +719,9 @@ try {
       await waitDay(today)
       await testId('schedule-date').fill(day)
       await waitDay(day)
-      await testId('time-allocation-' + narrowBaseline.allocations[0].id).waitFor()
+      const visibleAllocation = narrowBaseline.allocations.find(item => item.capacity_block_id === capacity.id)
+      assert.ok(visibleAllocation)
+      await testId('time-allocation-' + visibleAllocation.id).waitFor()
       assert.equal(await workbench.locator('.zw-day').count(), 1)
       assert(await workbench.locator('.zw-single').evaluate(grid =>
         grid.clientWidth > 0 && grid.scrollWidth <= grid.clientWidth + 1))

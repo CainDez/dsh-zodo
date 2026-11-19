@@ -55,5 +55,6 @@ Windows binary/profile isolation, or Host-to-Core rediscovery after restart. It 
 busy input, not provider freshness/connectivity. DST and no-busy UI matrices remain in their
 existing separate suites; this one week does not substitute for them.
 
-The roadmap's whole-week **Core composition** now has one durable regression. Final desktop
-acceptance remains blocked on the supported isolated Windows runner, not claimed complete.
+The roadmap's whole-week **Core composition** has one durable regression. It does not
+substitute for the whole-week journey in official DSH Web. Native Windows Desktop and
+cross-version compatibility are deferred for this Linux-first stage.
