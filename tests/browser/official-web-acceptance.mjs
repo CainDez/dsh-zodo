@@ -77,9 +77,13 @@ try {
   phase = 'official-sidebar-zodo'
   await page.getByRole('button', { name: 'Zodo', exact: true }).click({ timeout: 12000 })
   console.log('PASS official-sidebar-zodo')
-  phase = 'official-today-core-connected'
-  await page.getByRole('heading', { name: '今天', exact: true }).waitFor()
-  await page.getByText('Core 已连接', { exact: true }).waitFor()
+  const workbench = page.locator('[data-zodo-workbench="a2"]')
+  const heading = name => workbench.getByRole('heading', { name, exact: true })
+  phase = 'official-today-heading'
+  await heading('今天').waitFor()
+  phase = 'official-core-connected'
+  await workbench.getByText('Core 已连接', { exact: true }).waitFor()
+  console.log('PASS official-today-core-connected')
 
   const snapshot = () => page.evaluate(async () => {
     const response = await fetch('/zodo-bridge/v1/rpc', {
@@ -100,17 +104,17 @@ try {
   const before = await snapshot()
   assert.equal(before.tasks + before.capacity + before.allocations, 0)
   assert(Number.isInteger(before.revision))
-  for (const [view, heading] of [['today', '今天'], ['schedule', '日程']]) {
-    phase = view + '-navigate'
-    await page.getByTestId('nav-' + view).click()
-    await page.getByRole('heading', { name: heading, exact: true }).waitFor()
-    phase = view + '-open-task'
-    const trigger = await page.getByTestId('first-schedule-guide')
-      .getByTestId('first-schedule-action').elementHandle()
+  console.log('PASS clean-core-baseline')
+  const checkKeyboard = async view => {
+    phase = view + '-guide-button'
+    const button = workbench.getByTestId('first-schedule-guide').getByTestId('first-schedule-action')
+    await button.waitFor()
+    const trigger = await button.elementHandle()
     try {
+      phase = view + '-open-task'
       await trigger.focus()
       await page.keyboard.press('Enter')
-      const dialog = page.getByRole('dialog', { name: '新建任务' })
+      const dialog = workbench.getByRole('dialog', { name: '新建任务' })
       await dialog.waitFor()
       phase = view + '-escape-focus'
       await page.keyboard.press('Escape')
@@ -123,12 +127,30 @@ try {
     }
     console.log('PASS ' + view + '-keyboard-dialog')
   }
+  // The real sidebar opens Today by default; test it without clicking its active tab.
+  await checkKeyboard('today')
+  phase = 'official-schedule-click'
+  await workbench.getByTestId('nav-schedule').click()
+  phase = 'official-schedule-heading'
+  await heading('日程').waitFor()
+  await checkKeyboard('schedule')
+  phase = 'official-return-today-click'
+  await workbench.getByTestId('nav-today').click()
+  phase = 'official-return-today-heading'
+  await heading('今天').waitFor()
+  console.log('PASS official-return-today')
+
   phase = 'unchanged-core-snapshot'
   assert.deepEqual(await snapshot(), before)
   console.log('PASS unchanged-core-snapshot')
 } catch (error) {
   // No URL, browser exception, frame dump, screenshot, or session data in output.
-  console.log('FAIL ' + phase + (phase === 'sandbox-launch' ? ' ' + launchReason(error) : ''))
+  const message = String(error)
+  const reason = phase === 'sandbox-launch' ? launchReason(error)
+    : /strict mode violation/i.test(message) ? 'multiple-matches'
+    : /intercepts pointer events/i.test(message) ? 'pointer-intercepted'
+    : /TimeoutError/i.test(message) ? 'timeout' : 'unclassified'
+  console.log('FAIL ' + phase + ' ' + reason)
   process.exitCode = 1
 } finally {
   if (browser) await browser.close().catch(() => {
