@@ -1,4 +1,4 @@
-# This exercises synthetic React/bridge/Core fixtures, not an installed DSH Desktop.
+# The synthetic fixture and real official DSH Web probe report separate results. Not DSH Desktop.
 name: Zodo Linux x64 browser fixture
 
 on:
@@ -27,7 +27,7 @@ jobs:
     if: github.repository == 'CainDez/dsh-zodo' && github.ref == 'refs/heads/xiaoz/zodo-scheduler' && github.event_name == 'push' && github.event.deleted == false
     permissions: {}
     runs-on: ubuntu-22.04
-    timeout-minutes: 40
+    timeout-minutes: 50
     defaults:
       run:
         shell: bash
@@ -87,6 +87,7 @@ jobs:
           print("verified-linux-zip-sha256", info["plugin_zip_sha256"])
           PY
       - name: Verify and install only existing locked fixture dependencies
+        id: fixture-deps
         timeout-minutes: 5
         run: |
           cd "$RUNNER_TEMP/zodo-reviewed-source"
@@ -127,3 +128,56 @@ jobs:
           # Only sanitized static case names/counts and cleanup are printed.
           node tests/browser/harness-ci-summary.mjs "${reports[0]}"
           test "$status" -eq 0
+      - name: Verify installed official DSH Web separately from the fixture
+        if: ${{ !cancelled() && steps.fixture-deps.outcome == 'success' }}
+        timeout-minutes: 10
+        run: |
+          cd "$RUNNER_TEMP/zodo-reviewed-source"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          official_tmp="$(mktemp -d "$RUNNER_TEMP/zodo-official-web.XXXXXX")"
+          trap 'rm -rf -- "$official_tmp"' EXIT
+          mkdir "$official_tmp/home" "$official_tmp/tmp" "$official_tmp/runtime"
+          deps="$PWD/tests/browser/official-ci-deps"
+          python3 -B "$deps/verify-lock.py"
+          cp "$deps"/package{,-lock}.json "$official_tmp/runtime/"
+          npm_cmd="$(command -v npm)"
+          chrome="$(command -v google-chrome)"
+          python_cmd="$(command -v python3)"
+          # Prefer the exact image-cached patch; 24.22.3 is the pinned Node security release.
+          node_version=24.22.3
+          node="${RUNNER_TOOL_CACHE:?}/node/$node_version/x64/bin/node"
+          if [[ ! -x "$node" ]]; then
+            mkdir "$official_tmp/bin"
+            bundle="node-v$node_version-linux-x64.tar.xz"
+            # https://nodejs.org/dist/v24.22.3/SHASUMS256.txt (linux x64, glibc).
+            curl -q --fail --silent --proto '=https' --connect-timeout 10 --max-time 90 \
+              --max-filesize 60000000 "https://nodejs.org/dist/v$node_version/$bundle" \
+              --output "$official_tmp/$bundle" ||
+                { echo 'Pinned Node vendor download unavailable'; exit 1; }
+            (
+              cd "$official_tmp"
+              printf '%s  %s\n' '4f2b175a6d53a5c617a80dba2676238a0688cef28c6da4eba35c7d844e66fcfb' "$bundle" |
+                sha256sum --check --status
+              tar -xJOf "$bundle" "node-v$node_version-linux-x64/bin/node" > bin/node
+              chmod 0755 bin/node
+            )
+            node="$official_tmp/bin/node"
+          fi
+          test "$("$node" --version)" = "v$node_version"
+          clean=(env -i HOME="$official_tmp/home" TMPDIR="$official_tmp/tmp" LANG=C.UTF-8 CI=1)
+          install_path="$(dirname "$node"):/usr/bin:/bin"
+          touch "$official_tmp/user.npmrc" "$official_tmp/global.npmrc"
+          "${clean[@]}" PATH="$install_path" NPM_CONFIG_USERCONFIG="$official_tmp/user.npmrc" \
+            NPM_CONFIG_GLOBALCONFIG="$official_tmp/global.npmrc" \
+            "$npm_cmd" ci --prefix "$official_tmp/runtime" --cache "$official_tmp/npm-cache" \
+              --ignore-scripts --no-audit --no-fund --fetch-retries=1 --registry=https://registry.npmjs.org \
+              >/dev/null 2>&1 ||
+                { echo 'Locked official Web runtime install failed'; exit 1; }
+          test "$(sha256sum < "$official_tmp/runtime/package-lock.json")" = "$(sha256sum < "$deps/package-lock.json")"
+          probe_path="$install_path:$official_tmp/runtime/node_modules/.bin"
+          test "$("${clean[@]}" PATH="$probe_path" "$official_tmp/runtime/node_modules/.bin/pnpm" --version)" = 11.25.0
+          out="$RUNNER_TEMP/zodo-linux-assembly"
+          "${clean[@]}" PATH="$probe_path" "$python_cmd" -B tests/browser/official-web-acceptance.py \
+            --dsh-prefix "$official_tmp/runtime" --node "$node" --chrome "$chrome" \
+            --playwright "$PWD/tests/browser/ci-deps/node_modules/playwright-core" \
+            --zip "$out/zodo-harness-plugin-linux-x64.zip" --core "$out/zodo"
