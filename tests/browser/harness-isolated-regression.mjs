@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'
 import { startFixture } from './harness-isolated-fixture.mjs'
 import { fixtureFailure, fixtureSummary } from './harness-isolated-diagnostics.mjs'
-import { LOST_RECEIPT_CASE } from './harness-ci-summary.mjs'
+import { FIRST_SCHEDULE_CASE, LOST_RECEIPT_CASE } from './harness-ci-summary.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const output = path.join(here, 'harness-fixture-runtime/results', new Date().toISOString().replace(/[:.]/g, '-'))
@@ -18,7 +18,7 @@ const report = { fixture: 'real Core + real index.js bridge + real client.js + R
   exclusions: ['DSH authentication/login', 'DSH router and sidebar composition', 'live model dispatch', 'native desktop shell'],
   cases: [], navigation: [], pageErrors: [], unexpectedNetwork: [] }
 let browser, fixture, page
-let receiptCheckpoint = 'not-started', receiptFailureCheckpoint
+let receiptCheckpoint = 'not-started', receiptFailureCheckpoint, firstScheduleCheckpoint
 let stage = 'artifacts'
 report.runtime = { node: process.version, platform: process.platform, arch: process.arch, timezone: 'Asia/Shanghai' }
 const check = async (name, run) => {
@@ -26,7 +26,8 @@ const check = async (name, run) => {
   try { await run(); report.cases.push({ name, passed: true, ms: Date.now() - start }) }
   catch (error) {
     report.cases.push({ name, passed: false, error: String(error), ms: Date.now() - start,
-      ...(name === LOST_RECEIPT_CASE ? { checkpoint: receiptFailureCheckpoint ?? receiptCheckpoint } : {}) })
+      ...(name === LOST_RECEIPT_CASE ? { checkpoint: receiptFailureCheckpoint ?? receiptCheckpoint } :
+        name === FIRST_SCHEDULE_CASE ? { checkpoint: firstScheduleCheckpoint } : {}) })
     if (page) {
       await page.screenshot({ path: path.join(output, 'failure-' + report.cases.length + '.png'), fullPage: true }).catch(() => {})
       await page.unrouteAll({ behavior: 'wait' }).catch(() => {})
@@ -143,21 +144,37 @@ try {
   })
 
   await check('First schedule guidance exposes task creation on Today and Schedule without writing', async () => {
+    firstScheduleCheckpoint = 'baseline-snapshot'
     const baseline = await snapshot()
     for (const view of ['today', 'schedule']) {
+      firstScheduleCheckpoint = `${view}-navigate`
       await nav(view)
       const guide = page.getByTestId('first-schedule-guide')
       const action = guide.getByTestId('first-schedule-action')
+      firstScheduleCheckpoint = `${view}-verify-cta`
       assert.equal(await action.innerText(), '新建任务')
-      await action.focus()
-      await page.keyboard.press('Enter')
-      const dialog = page.getByRole('dialog', { name: '新建任务' })
-      await dialog.waitFor()
-      await page.keyboard.press('Escape')
-      await dialog.waitFor({ state: 'hidden' })
-      assert.equal(await action.evaluate(element => element === document.activeElement), true)
+      firstScheduleCheckpoint = `${view}-open-keyboard`
+      const trigger = await action.elementHandle()
+      try {
+        await trigger.focus()
+        await page.keyboard.press('Enter')
+        const dialog = page.getByRole('dialog', { name: '新建任务' })
+        firstScheduleCheckpoint = `${view}-wait-open`
+        await dialog.waitFor()
+        firstScheduleCheckpoint = `${view}-dismiss-keyboard`
+        await page.keyboard.press('Escape')
+        firstScheduleCheckpoint = `${view}-wait-hidden`
+        await dialog.waitFor({ state: 'hidden' })
+        // Restoration happens asynchronously; the exact original trigger must regain focus.
+        firstScheduleCheckpoint = `${view}-restore-focus`
+        await page.waitForFunction(button => document.activeElement === button, trigger, { timeout: 3000 })
+      } finally {
+        await trigger.dispose()
+      }
     }
+    firstScheduleCheckpoint = 'after-snapshot'
     const after = await snapshot()
+    firstScheduleCheckpoint = 'verify-no-writes'
     assert.equal(after.workspace.revision, baseline.workspace.revision)
     assert.equal(after.tasks.length, 0)
     assert.equal(after.capacity_blocks.length, 0)

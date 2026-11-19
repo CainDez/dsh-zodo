@@ -216,9 +216,10 @@ test('first schedule CTA only opens existing editors or settings', () => {
   const end = source.indexOf('      const renderToday =', start)
   const clean = (value) => JSON.parse(JSON.stringify(value))
   const task = { id: 'saved-task' }
+  const trigger = { test: 'original button' }
   for (const [step, expected] of [
-    [{ kind: 'task' }, { type: 'task', task: null }],
-    [{ kind: 'estimate', task }, { type: 'task', task }],
+    [{ kind: 'task' }, { type: 'task', task: null, restoreFocus: trigger }],
+    [{ kind: 'estimate', task }, { type: 'task', task, restoreFocus: trigger }],
     [{ kind: 'capacity' }, { type: 'capacity' }],
     [{ kind: 'schedule', day: '2026-11-24' }, { type: 'quick-schedule', day: '2026-11-24', guidedDraft: { start: '', end: '', capacity: '' } }],
     [{ kind: 'timezone' }, 'settings'],
@@ -231,8 +232,9 @@ test('first schedule CTA only opens existing editors or settings', () => {
     })
     assert.equal(tree.props.testid, 'first-schedule-guide')
     assert.deepEqual(calls, [], 'render is read-only')
-    tree.children[1].props.onClick()
+    tree.children[1].props.onClick({ currentTarget: trigger })
     assert.deepEqual(clean(calls), [expected])
+    if (expected.restoreFocus) assert.equal(calls[0].restoreFocus, trigger)
   }
 })
 
@@ -283,4 +285,34 @@ test('guided dialog can intentionally leave times blank while standard date defa
   assert.deepEqual(findInputs(mount({
     guidedDraft: { capacity: 'c', start: '2026-11-24T14:00', end: '2026-11-24T14:20' },
   }).tree), ['2026-11-24T14:00', '2026-11-24T14:20'])
+})
+
+test('guided task editor restores the explicit trigger after child autofocus and dialog removal', () => {
+  const start = source.indexOf('    function Modal(')
+  const end = source.indexOf('    function Section(', start)
+  const effects = []
+  const timers = []
+  const focused = []
+  class Element {
+    constructor(name) { this.name = name; this.attached = true }
+    focus() { focused.push(this.name) }
+  }
+  const trigger = new Element('guide')
+  const pointer = new Element('navigation')
+  const autofocus = new Element('dialog title field')
+  const Modal = vm.runInNewContext(`${source.slice(start, end)}\nModal`, {
+    COPY: { close: '关闭' }, h: () => ({}), useRef: current => ({ current }),
+    useEffect: effect => effects.push(effect), HTMLElement: Element,
+    document: { activeElement: autofocus, contains: el => el.attached },
+    lastFocusedElement: { current: autofocus }, lastPointerButton: { current: pointer },
+    setTimeout: callback => timers.push(callback),
+  })
+  Modal({ title: '新建任务', restoreFocus: trigger })
+  const cleanup = effects[0]()
+  autofocus.attached = false
+  cleanup()
+  assert.deepEqual(focused, [], 'restoration waits for removal')
+  assert.equal(timers.length, 1)
+  timers[0]()
+  assert.deepEqual(focused, ['guide'])
 })

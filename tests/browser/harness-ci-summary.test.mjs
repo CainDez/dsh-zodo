@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { summarizeForCi, LOST_RECEIPT_CASE, LOST_RECEIPT_CHECKPOINTS } from './harness-ci-summary.mjs'
+import { summarizeForCi, FIRST_SCHEDULE_CASE, FIRST_SCHEDULE_CHECKPOINTS, LOST_RECEIPT_CASE, LOST_RECEIPT_CHECKPOINTS } from './harness-ci-summary.mjs'
 const clean = { coreStopped: true, serverStopped: true, dataRemoved: true }
 const valid = () => ({ status: 'passed', executed: 1, passed: 1, failed: 0, cases: [{ name: 'known case', passed: true }], cleanup: clean })
 test('successful full suite retains counts and cleanup only', () => {
@@ -45,4 +45,20 @@ test('unknown, non-string and misattributed checkpoints fail closed', () => {
   const success = receiptFailure('close-review')
   success.cases[0].passed = true
   assert.throws(() => summarizeForCi(success, [LOST_RECEIPT_CASE]), /INVALID_REPORT/)
+})
+
+test('first schedule lifecycle checkpoints are fixed and cannot be shared across report cases', () => {
+  for (const checkpoint of FIRST_SCHEDULE_CHECKPOINTS) {
+    const report = receiptFailure(checkpoint)
+    report.cases[0].name = FIRST_SCHEDULE_CASE
+    const summary = summarizeForCi(report, [FIRST_SCHEDULE_CASE])
+    assert.deepEqual(summary.failureCheckpoints, [{ name: FIRST_SCHEDULE_CASE, checkpoint }])
+    assert.doesNotMatch(JSON.stringify(summary), /SECRET_SENTINEL/)
+  }
+  for (const checkpoint of ['SECRET_SENTINEL', 'close-review']) {
+    const report = receiptFailure(checkpoint)
+    report.cases[0].name = FIRST_SCHEDULE_CASE
+    assert.throws(() => summarizeForCi(report, [FIRST_SCHEDULE_CASE]), /INVALID_REPORT/)
+  }
+  assert.throws(() => summarizeForCi(receiptFailure('today-restore-focus'), [LOST_RECEIPT_CASE]), /INVALID_REPORT/)
 })

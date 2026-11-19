@@ -681,15 +681,19 @@ window.__ModuleLoader__.load({
       }, true)
     }
 
-    function Modal({ title, subtitle, children, footer, onClose, wide }) {
+    function Modal({ title, subtitle, children, footer, onClose, wide, restoreFocus }) {
       const ref = useRef(null)
       const restoreTarget = useRef(lastPointerButton.current ?? null)
       useEffect(() => {
         // Accepting dialog guidance: remember the trigger so closing returns focus instead of
         // dropping keyboard users on document.body. Cleanup runs for save, cancel and Escape alike.
-        restoreTarget.current = typeof HTMLElement !== 'undefined' && document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null
+        // A caller that captured its button before rendering can survive a child
+        // autoFocus taking focus before this mount effect runs.
+        restoreTarget.current = restoreFocus ?? (
+          typeof HTMLElement !== 'undefined' && document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null
+        )
         return () => {
           const candidate = restoreTarget.current
           const pointer = lastPointerButton.current
@@ -807,7 +811,7 @@ window.__ModuleLoader__.load({
       return width
     }
 
-    function TaskEditor({ task, snapshot, projectId, onClose, send, busy }) {
+    function TaskEditor({ task, snapshot, projectId, onClose, send, busy, restoreFocus }) {
       const [form, setForm] = useState({
         title: task?.title ?? '',
         estimate: task?.estimate_minutes ?? 30,
@@ -851,6 +855,7 @@ window.__ModuleLoader__.load({
         title: task ? '编辑任务' : '新建任务',
         subtitle: '保存后由 Core 校验关系与版本。',
         onClose,
+        restoreFocus,
         footer: h(React.Fragment, null,
           h(Button, { onClick: onClose }, COPY.cancel),
           h(Button, { tone: 'primary', onClick: submit, disabled: busy, testid: 'task-save' }, COPY.save),
@@ -4377,8 +4382,8 @@ window.__ModuleLoader__.load({
         const step = firstScheduleStep(snapshot, todayCheckedAt, workspaceTimezone(snapshot))
         if (!step) return null
         const actions = {
-          task: ['先建一个可以安排的任务，并填入预计分钟；不用先建项目或连接模型。', '新建任务', () => setModal({ type: 'task', task: null })],
-          estimate: ['已有任务。给任务填入预计分钟，才能为它安排时段。', '补充任务估时', () => setModal({ type: 'task', task: step.task })],
+          task: ['先建一个可以安排的任务，并填入预计分钟；不用先建项目或连接模型。', '新建任务', event => setModal({ type: 'task', task: null, restoreFocus: event.currentTarget })],
+          estimate: ['已有任务。给任务填入预计分钟，才能为它安排时段。', '补充任务估时', event => setModal({ type: 'task', task: step.task, restoreFocus: event.currentTarget })],
           capacity: ['已有带估时的任务。先标出一段你愿意用来做任务的时间，也就是「容量」。日历空白不是容量。', '添加可用时间', () => setModal({ type: 'capacity' })],
           timezone: ['已录入任务和容量，但无法识别工作空间时区。请先检查时区设置。', '查看工作空间设置', () => setView('settings')],
           schedule: ['已有带估时的任务和未来容量。选择任务、容量和具体时段，先检查预览，再批准保存；是否可安排以 Core 检查为准。', '打开时段安排', () => setModal({ type: 'quick-schedule', day: step.day,
@@ -4931,7 +4936,7 @@ window.__ModuleLoader__.load({
         switch (modal.type) {
           case 'command': return h(CommandPalette, { onClose: closeModal, actions: commandActions })
           case 'capture': return h(CaptureEditor, { onClose: closeModal, send, busy })
-          case 'task': return h(TaskEditor, { task: modal.task ?? null, projectId: modal.projectId, snapshot: { ...snapshot, projects: snapshot.projects, tasks: snapshot.tasks }, onClose: closeModal, send, busy })
+          case 'task': return h(TaskEditor, { task: modal.task ?? null, projectId: modal.projectId, restoreFocus: modal.restoreFocus, snapshot: { ...snapshot, projects: snapshot.projects, tasks: snapshot.tasks }, onClose: closeModal, send, busy })
           case 'time': return h(TimeEditor, { day: modal.day, task: modal.task ?? null, tasks: modal.tasks ?? snapshot.tasks, snapshot, onClose: closeModal, send, busy })
           case 'goal': return h(GoalEditor, { goal: modal.goal ?? null, onClose: closeModal, send, busy })
           case 'project': return h(ProjectEditor, { project: modal.project ?? null, goals: snapshot.goals, goalId: modal.goalId, onClose: closeModal, send, busy })

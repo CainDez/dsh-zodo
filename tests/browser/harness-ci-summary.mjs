@@ -44,6 +44,18 @@ export const LOST_RECEIPT_CHECKPOINTS = Object.freeze([
   'restore-today'
 ])
 
+export const FIRST_SCHEDULE_CASE = 'First schedule guidance exposes task creation on Today and Schedule without writing'
+const FIRST_SCHEDULE_STAGES = ['navigate', 'verify-cta', 'open-keyboard', 'wait-open', 'dismiss-keyboard', 'wait-hidden', 'restore-focus']
+export const FIRST_SCHEDULE_CHECKPOINTS = Object.freeze([
+  'baseline-snapshot',
+  ...['today', 'schedule'].flatMap(view => FIRST_SCHEDULE_STAGES.map(stage => `${view}-${stage}`)),
+  'after-snapshot', 'verify-no-writes',
+])
+const checkpointLabels = new Map([
+  [LOST_RECEIPT_CASE, LOST_RECEIPT_CHECKPOINTS],
+  [FIRST_SCHEDULE_CASE, FIRST_SCHEDULE_CHECKPOINTS],
+])
+
 export function summarizeForCi(report, knownCases) {
   if (!Array.isArray(report?.cases) || !Array.isArray(knownCases) || !knownCases.length) throw new Error('INVALID_REPORT')
   const statuses = ['passed', 'failed', 'blocked', 'error', 'not-run']
@@ -53,8 +65,9 @@ export function summarizeForCi(report, knownCases) {
   for (const row of report.cases) {
     if (!knownCases.includes(row?.name) || seen.has(row.name) || typeof row.passed !== 'boolean') throw new Error('INVALID_REPORT')
     if (row.checkpoint !== undefined) {
-      if (row.name !== LOST_RECEIPT_CASE || row.passed || !LOST_RECEIPT_CHECKPOINTS.includes(row.checkpoint)) throw new Error('INVALID_REPORT')
-      failureCheckpoints.push({ name: LOST_RECEIPT_CASE, checkpoint: LOST_RECEIPT_CHECKPOINTS.find(label => label === row.checkpoint) })
+      const checkpoint = checkpointLabels.get(row.name)?.find(label => label === row.checkpoint)
+      if (row.passed || !checkpoint) throw new Error('INVALID_REPORT')
+      failureCheckpoints.push({ name: knownCases.find(name => name === row.name), checkpoint })
     }
     seen.add(row.name)
   }
