@@ -1,5 +1,5 @@
 # Build and verify exactly the triggering push SHA, including real bridge response envelopes and lost receipts.
-# Scope: Windows package assembly and owned synthetic browser fixture; never DSH acceptance.
+# Scope: Windows package assembly, owned synthetic browser and Core profile fixtures; never DSH acceptance.
 name: Zodo Windows isolated verification
 
 on:
@@ -20,7 +20,7 @@ jobs:
     if: github.repository == 'CainDez/dsh-zodo' && github.ref == 'refs/heads/xiaoz/zodo-scheduler' && github.event_name == 'push' && github.event.deleted == false
     permissions: {}
     runs-on: windows-2025
-    timeout-minutes: 45
+    timeout-minutes: 70
     defaults:
       run:
         shell: pwsh
@@ -28,6 +28,7 @@ jobs:
       GIT_TERMINAL_PROMPT: '0'
     steps:
       - name: Public pinned checkout, Windows assembly and same-build verification
+        id: current_assembly
         timeout-minutes: 28
         run: |
           $ErrorActionPreference = 'Stop'
@@ -157,3 +158,57 @@ jobs:
           & node tests/browser/harness-ci-summary.mjs $reports[0].FullName
           $summaryExit = $LASTEXITCODE
           if ($testExit -ne 0 -or $summaryExit -ne 0) { throw 'Rendered regression failed or incomplete; see sanitized result' }
+      - name: Historical package and owned same-profile Core upgrade (not Desktop)
+        if: ${{ !cancelled() && steps.current_assembly.outcome == 'success' }}
+        timeout-minutes: 25
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $source = Join-Path $env:RUNNER_TEMP 'zodo-reviewed-source'
+          $older = Join-Path $env:RUNNER_TEMP 'zodo-reviewed-legacy-source'
+          $oldSha = 'c3f3d0d63c7467dee14c241c2c05405dee7c2130'
+          $log = Join-Path $env:RUNNER_TEMP 'zodo-legacy-private.log'
+          Set-Location $source
+          if ((& git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) { throw 'Current source identity changed' }
+          if (Test-Path -LiteralPath $older) { throw 'Expected a fresh historical checkout' }
+          & git merge-base --is-ancestor $oldSha $env:GITHUB_SHA *> $log
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned historical source not in existing bounded public fetch' }
+          & git worktree add --quiet --detach $older $oldSha *>> $log
+          if ($LASTEXITCODE -ne 0) { throw 'Historical worktree creation failed' }
+          try {
+            Push-Location $older
+            try {
+              if ((& git rev-parse HEAD).Trim() -ne $oldSha -or @(git status --porcelain --untracked-files=normal).Count -ne 0) { throw 'Historical source identity mismatch' }
+              # Historical build script uses that checkout's target/release and cannot
+              # emit the modern cargo_target metadata. Select existing MSVC directly.
+              $rustBin = $null
+              foreach ($homePath in @($env:RUSTUP_HOME, (Join-Path $env:USERPROFILE '.rustup'), 'C:/Users/Default/.rustup')) {
+                if (-not $homePath) { continue }
+                $candidate = Join-Path $homePath 'toolchains/stable-x86_64-pc-windows-msvc/bin'
+                if ((Test-Path -LiteralPath (Join-Path $candidate 'cargo.exe') -PathType Leaf) -and
+                    (Test-Path -LiteralPath (Join-Path $candidate 'rustc.exe') -PathType Leaf)) {
+                  $rustBin = $candidate
+                  break
+                }
+              }
+              if (-not $rustBin) { throw 'Preinstalled MSVC Rust toolchain unavailable; no installation attempted' }
+              $env:PATH = "$rustBin;$env:PATH"
+              $rustHost = @(& rustc -vV | Where-Object { $_ -eq 'host: x86_64-pc-windows-msvc' })
+              if ($LASTEXITCODE -ne 0 -or $rustHost.Count -ne 1) { throw 'Unverified Rust host target' }
+              $env:CARGO_TARGET_DIR = Join-Path $older 'target'
+              & pwsh -NoProfile -File scripts/build-release.ps1 *>> $log
+              if ($LASTEXITCODE -ne 0) { throw 'Historical Windows assembly failed; raw log withheld' }
+            } finally {
+              Pop-Location
+            }
+            & python -B tests/packaging/verify_legacy_windows_package.py $older
+            if ($LASTEXITCODE -ne 0) { throw 'Historical package did not match its source and Windows x64 Core' }
+            $current = Get-Content -LiteralPath artifacts/release/BUILD_INFO.json -Raw | ConvertFrom-Json
+            if ($current.commit -ne $env:GITHUB_SHA -or $current.cargo_target -ne 'x86_64-pc-windows-msvc') { throw 'Current build identity mismatch' }
+            & python -B tests/packaging/run_isolated_core_upgrade.py (Join-Path $older 'artifacts/release/zodo.exe') (Join-Path $source 'artifacts/release/zodo.exe')
+            if ($LASTEXITCODE -ne 0) { throw 'Owned Windows Core profile upgrade did not pass; no Desktop conclusion' }
+          } finally {
+            # This detached worktree contains only a reviewed checkout and its generated outputs.
+            & git worktree remove --force $older *>> $log
+            if ($LASTEXITCODE -ne 0) { throw 'Historical worktree cleanup unverified' }
+          }
