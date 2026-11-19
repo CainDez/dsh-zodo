@@ -2,6 +2,13 @@
 
 这不是发布说明。分支 `xiaoz/zodo-scheduler` 已实现可用路径，但没有把纯测试或桥接测试当成已登录桌面验收。
 
+## 当前阶段：Linux 优先，不做旧版兼容
+
+- 正式 Windows Desktop 暂缓，不阻塞开发。当前版用隔离 Linux x64 和合成数据验证干净安装、使用、同版本重启与卸载。不要求旧版迁移或跨版本兼容；旧证据留作历史。
+- Debian 13 上完成 Linux x64 Rust release 和插件 ZIP 打包。包内 ELF 与构建产物逐字节核对，解包后 Core 权限为 0755。Python 打包校验 11/11，适配器与诊断 86/86。真实宿主实测的 ZIP SHA-256 为 `c73d7e519c161f3fa45f1c12d41e98eeeccd17df2078be78be5ca0fa4f275166`，其中 Core 构建基线为 `17a32653`，SHA-256 为 `4b6155aeac84f4ebbf92518accddf65e5f501be0bb9b6cafdbbb1128adced605`；这一轮改包不改 Core 与插件运行代码。
+- 用官方 npm `@deepseek-ai/dsh@0.2.2-rc.5`，在专用 `DSH_HOME`、`HOME`、`ZODO_DATA_DIR` 中，把校验后解包目录以 `dsh plugin --profile web add file:<目录>` 装入 Web profile。以 `dsh web --no-open --host 127.0.0.1 --port 0` 运行，走 Host 本地引导、插件会话和 bridge。未覆盖 Electron。确认从空库录入任务及容量，预览和批准不增加分配，提交恰好一条；分别重启 Web Host 与 Core 后记录及 revision 一致，卸载插件并再启动 Host 后 bridge 返回 404。未登录、未调用模型，无真实日历。
+- 上述是官方 Linux Web Host 的 HTTP/生命周期冒烟，不是渲染或原生 Desktop 验收；Linux Chromium 夹具被环境限制拦在启动前。后续优先验证真实界面，并完善首次使用场景，不因 Windows 或跨版本兼容停工。
+
 ## 当前证据
 
 - 在 `6b2d625` 实际重跑的 Node 适配器和诊断：81/81（`node --test tests/adapter/*.test.mjs tests/browser/harness-isolated-diagnostics.test.mjs`）。
@@ -15,7 +22,7 @@
 - [Windows Actions #5](https://github.com/CainDez/dsh-zodo/actions/runs/44439847145) 在 `a95c4e9d3abb3c5dbabddc569bf5b45fd8206b2b` 实际构建、校验两版 x64 包，旧版 ZIP SHA-256 `c11b6e8852232506e964e8a65b7494d4a8f64c85e001128157113e9069617d74`，新版 `b99f43b0b9fec0a1920b5a7e809535bcaadd3c04b0fd24fbd235177349549139`。包内 Core 与测试所用同次构建 Core 一致。Windows 同一 SQLite 合成工作区升级保留旧记录、只新增一次，重启快照一致、清理通过；同次 Windows Chrome 夹具 32/32 通过。CI 没有上传发布包，也没有启动真实 DSH Desktop。
 - 真实 DSH 桌面加载、升级、卸载均未验收；不访问真实用户配置、日历或账号，不降低隔离机制来跑测试。
 
-## 用隔离环境验收
+## 历史参考：Windows 桌面和跨版本验收（本阶段不执行）
 
 1. 用干净检出核对精确 Git SHA，按[仓库构建流程](RELEASE.md)在隔离 Windows x64 生成分支自己的包。记录 Host 版本、源码 SHA 和 ZIP SHA-256，不拿历史 release 包替代。用包校验器比对当前源码和同次构建的 Core。分别为 Harness home、Electron user-data 和 Core 的 `ZODO_DATA_DIR` 准备新的专用目录；实际启动参数以所选 Host 版本文档为准。不对默认 profile 操作。如出现账号门槛，在这一点停止而非绕过或登录真实账号。
 2. 验证从启动到「今天」/「日程」无错误；在普通宽度与 390px 切到单日、换日、回今天，检查没有横向裁切，键盘可达所有主要操作。
@@ -25,7 +32,7 @@
 6. 先在 Windows x64 以第 1 步的隔离方式从上述固定旧源码构建并核对包版本与哈希，再用该旧版 Zodo 包在同一隔离 profile 中建立合成基线：固定预约、锁定安排、可移动任务和一次已确认的计划。保存这几类记录的 ID 和日期时间，并记录 Core 是否由 Host 启动。按官方支持的流程升级 **Zodo 插件**到当前分支包；不要清空或重置数据来让升级通过。
 7. 完全退出并重启 DSH Desktop，核对插件和 Core 实际版本，复查基线记录与约束未改变，并新建一次安排，确认只产生一条记录。再通过官方流程卸载 **Zodo 插件**，确认入口和 bridge 消失，独立 Core 未被误终止；清理合成 profile 和临时数据。没有可复现旧包时，标记「升级未验证」，不以重启或重装替代。
 
-只有验证到的层才标通过。若无法取得合适环境，不视为产品已完成验收，也不要求开放真实账户或写入真实日历。
+只有验证到的层才标通过。缺少真实桌面环境应标未做，不阻塞当前 Linux 迭代；不要求开放真实账户或写入真实日历。
 
 ### 升级失败时的恢复边界
 

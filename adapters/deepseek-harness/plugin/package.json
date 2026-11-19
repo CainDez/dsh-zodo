@@ -22,7 +22,8 @@
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
-    "bin/win32-x64/zodo-core.exe"
+    "bin/win32-x64/zodo-core.exe",
+    "bin/linux-x64/zodo-core"
   ],
   "dsh": {
     "bundle": {
