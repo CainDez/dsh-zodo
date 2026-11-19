@@ -17,6 +17,17 @@ function launchReason(error) {
   return 'unclassified'
 }
 
+function reportFailure(stage, error) {
+  // No URL, browser exception, frame dump, screenshot, or session data in output.
+  const message = String(error)
+  const reason = stage === 'sandbox-launch' ? launchReason(error)
+    : /strict mode violation/i.test(message) ? 'multiple-matches'
+    : /intercepts pointer events/i.test(message) ? 'pointer-intercepted'
+    : /TimeoutError/i.test(message) ? 'timeout' : 'unclassified'
+  console.log('FAIL ' + stage + ' ' + reason)
+  process.exitCode = 1
+}
+
 let phase = 'local-launch-token'
 let browser, denyProxy
 try {
@@ -43,7 +54,9 @@ try {
   })
   console.log('PASS sandbox-launch')
   phase = 'sandboxed-browser-context'
-  const context = await browser.newContext({ serviceWorkers: 'block', locale: 'zh-CN' })
+  const context = await browser.newContext({
+    serviceWorkers: 'block', locale: 'zh-CN', viewport: { width: 1440, height: 960 },
+  })
   context.setDefaultTimeout(4500)
   phase = 'browser-egress-routes'
   await context.route('**/*', route => new URL(route.request().url()).origin === origin
@@ -74,10 +87,70 @@ try {
   }
   console.log('PASS official-zodo-boot-graph')
 
+  const workbench = page.locator('[data-zodo-workbench="a2"]')
+  // Only these shipped, optional onboarding actions are permitted in this fresh
+  // profile. Do not sign in, set up a model, or suppress the host overlay.
+  const onboarding = [
+    ['preview-notice', /^(预览版说明|Preview Notice)$/, /^(继续|Continue)$/],
+    ['optional-account', /^(开始使用|Get started)$/, /^(关闭|Close)$/],
+    ['optional-model', /^(添加一个 API Key 开始使用|Add an API key to get started)$/, /^(稍后配置|Configure later)$/],
+  ].map(([id, name, action]) => ({ id, dialog: page.getByRole('dialog', { name }), action }))
+  const [preview, account, model] = onboarding
+  const completedOnboarding = new Set()
+  const ensureHostInteractive = async (observePreview = false) => {
+    phase = 'official-host-onboarding'
+    if (observePreview) {
+      // Settings/session readiness can arrive after the sidebar first renders.
+      await preview.dialog.waitFor({ timeout: 5500 }).catch(error => {
+        if (error.name !== 'TimeoutError') throw error
+      })
+    }
+    try {
+      for (const { id, dialog, action } of onboarding) {
+        if (!await dialog.isVisible()) continue
+        phase = 'official-onboarding-' + id
+        assert(!completedOnboarding.has(id))
+        await dialog.getByRole('button', { name: action }).click()
+        await dialog.waitFor({ state: 'hidden' })
+        completedOnboarding.add(id)
+        console.log('PASS ' + phase)
+        if (id === 'preview-notice') {
+          await account.dialog.or(model.dialog).first().waitFor({ timeout: 4500 }).catch(error => {
+            if (error.name !== 'TimeoutError') throw error
+          })
+        }
+      }
+      phase = 'official-host-interactive'
+      const ready = await page.waitForFunction(() => {
+        const root = document.getElementById('root')
+        const zodo = document.querySelector('[data-zodo-workbench="a2"]')
+        return root && !root.inert && !zodo?.closest('[inert]')
+      }, undefined, { timeout: 4500 })
+      await ready.dispose()
+    } catch (error) {
+      const labels = await page.evaluate(() => {
+        const drawer = document.querySelector('[data-sidebar-drawer]')
+        const root = document.getElementById('root')
+        const workbench = document.querySelector('[data-zodo-workbench="a2"]')
+        return [
+          innerWidth >= 768 ? 'desktop-viewport' : 'narrow-viewport',
+          root?.inert ? 'root-inert' : 'root-not-inert',
+          !drawer ? 'no-drawer' : drawer.hasAttribute('data-sidebar-collapsed') ? 'drawer-closed' : 'drawer-open',
+          workbench?.closest('[inert]') ? 'workbench-inert' : 'workbench-not-inert',
+        ]
+      }).catch(() => ['host-markers-unavailable'])
+      const visible = []
+      for (const { id, dialog } of onboarding) {
+        if (await dialog.isVisible().catch(() => false)) visible.push(id)
+      }
+      console.log('DIAG official-host ' + [...labels, ...(visible.length ? visible : ['no-known-dialog'])].join(' '))
+      throw error
+    }
+  }
+  await ensureHostInteractive(true)
   phase = 'official-sidebar-zodo'
   await page.getByRole('button', { name: 'Zodo', exact: true }).click({ timeout: 12000 })
   console.log('PASS official-sidebar-zodo')
-  const workbench = page.locator('[data-zodo-workbench="a2"]')
   const heading = name => workbench.getByRole('heading', { name, exact: true })
   phase = 'official-today-heading'
   await heading('今天').waitFor()
@@ -195,31 +268,39 @@ try {
       await trigger?.dispose()
     }
   }
-  // The real sidebar opens Today by default; test it without clicking its active tab.
-  await checkKeyboard('today')
-  phase = 'official-schedule-click'
-  await workbench.getByTestId('nav-schedule').click()
-  phase = 'official-schedule-heading'
-  await heading('日程').waitFor()
-  await checkKeyboard('schedule')
-  phase = 'official-return-today-click'
-  await workbench.getByTestId('nav-today').click()
-  phase = 'official-return-today-heading'
-  await heading('今天').waitFor()
-  console.log('PASS official-return-today')
-
-  phase = 'unchanged-core-snapshot'
-  assert.deepEqual(await snapshot(), before)
-  console.log('PASS unchanged-core-snapshot')
+  // Always compare the real Core snapshot after the interaction attempt,
+  // without replacing the original diagnosis if the snapshot also fails.
+  let interactionFailed = false
+  try {
+    await ensureHostInteractive()
+    await checkKeyboard('today')
+    await ensureHostInteractive()
+    phase = 'official-schedule-click'
+    await workbench.getByTestId('nav-schedule').click()
+    phase = 'official-schedule-heading'
+    await heading('日程').waitFor()
+    await ensureHostInteractive()
+    await checkKeyboard('schedule')
+    phase = 'official-return-today-click'
+    await workbench.getByTestId('nav-today').click()
+    phase = 'official-return-today-heading'
+    await heading('今天').waitFor()
+    console.log('PASS official-return-today')
+  } catch (error) {
+    interactionFailed = true
+    reportFailure(phase, error)
+  } finally {
+    phase = 'unchanged-core-snapshot'
+    try {
+      assert.deepEqual(await snapshot(), before)
+      console.log('PASS unchanged-core-snapshot')
+    } catch (error) {
+      if (!interactionFailed) throw error
+      reportFailure(phase, error)
+    }
+  }
 } catch (error) {
-  // No URL, browser exception, frame dump, screenshot, or session data in output.
-  const message = String(error)
-  const reason = phase === 'sandbox-launch' ? launchReason(error)
-    : /strict mode violation/i.test(message) ? 'multiple-matches'
-    : /intercepts pointer events/i.test(message) ? 'pointer-intercepted'
-    : /TimeoutError/i.test(message) ? 'timeout' : 'unclassified'
-  console.log('FAIL ' + phase + ' ' + reason)
-  process.exitCode = 1
+  reportFailure(phase, error)
 } finally {
   if (browser) await browser.close().catch(() => {
     console.log('FAIL sandboxed-browser-cleanup')
