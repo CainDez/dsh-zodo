@@ -252,9 +252,28 @@ try {
     await dialog.waitFor({ state: 'hidden' })
     const task = (await snapshot()).tasks.find(row => row.title === 'Fixture task initial')
     assert.ok(task); taskId = task.id
-    await open.click(); await page.keyboard.press('Escape')
-    await dialog.waitFor({ state: 'hidden' })
-    assert.equal(await open.evaluate(element => element === document.activeElement), true)
+    const trigger = await open.elementHandle()
+    try {
+      await open.click()
+      await dialog.waitFor()
+      // The modal focuses itself in the same effect that binds Escape.
+      // Wait for that effect, not just click completion or the dialog DOM.
+      const mounted = await dialog.elementHandle()
+      try {
+        const focused = await page.waitForFunction(node => node.contains(document.activeElement), mounted, { timeout: 3000 })
+        await focused.dispose()
+      } finally {
+        await mounted.dispose()
+      }
+      await page.keyboard.press('Escape')
+      await dialog.waitFor({ state: 'hidden' })
+      // Modal cleanup restores focus asynchronously after unmount. Verify it
+      // returns to the exact trigger, rather than whichever button now matches.
+      const restored = await page.waitForFunction(button => document.activeElement === button, trigger, { timeout: 3000 })
+      await restored.dispose()
+    } finally {
+      await trigger.dispose()
+    }
   })
 
   await check('Task edit, completion/reopen and archive/restore', async () => {
