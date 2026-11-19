@@ -105,27 +105,95 @@ try {
   assert.equal(before.tasks + before.capacity + before.allocations, 0)
   assert(Number.isInteger(before.revision))
   console.log('PASS clean-core-baseline')
+  const taskDialog = { name: '新建任务', exact: true }
+  const inWorkbench = workbench.getByRole('dialog', taskDialog)
+  const anywhere = page.getByRole('dialog', taskDialog)
+  const dialogInDom = page.locator('[role="dialog"][aria-label="新建任务"]')
+  const readDialog = async () => {
+    if (await inWorkbench.count()) return 'workbench'
+    if (await anywhere.count()) return 'page-only'
+    if (await dialogInDom.count()) return 'dom-only'
+    return 'absent'
+  }
   const checkKeyboard = async view => {
-    phase = view + '-guide-button'
     const button = workbench.getByTestId('first-schedule-guide').getByTestId('first-schedule-action')
-    await button.waitFor()
-    const trigger = await button.elementHandle()
+    let trigger, events
     try {
-      phase = view + '-open-task'
+      phase = view + '-guide-button'
+      await button.waitFor()
+      assert.equal((await button.innerText()).trim(), '新建任务')
+      assert(await button.isEnabled())
+      trigger = await button.elementHandle()
+      phase = view + '-blocked-by-inert-ancestor'
+      assert(!(await trigger.evaluate(node => node.closest('[inert]') !== null)))
+      phase = view + '-focus-before-enter'
       await trigger.focus()
+      // Record trusted delivery only; do not intercept, synthesize or modify input.
+      events = await trigger.evaluateHandle(node => {
+        let key, target = false, click = false
+        const capture = event => { if (event.isTrusted && event.key === 'Enter') key = event }
+        const atTarget = event => { if (event.isTrusted && event.key === 'Enter') target = true }
+        const activation = event => { if (event.isTrusted) click = true }
+        window.addEventListener('keydown', capture, true)
+        node.addEventListener('keydown', atTarget)
+        node.addEventListener('click', activation)
+        return {
+          summary: () => !key ? 'enter-unobserved'
+            : click ? 'trusted-click-observed'
+              : key.defaultPrevented ? 'enter-default-prevented-no-click'
+                : target ? 'enter-target-no-click' : 'enter-missed-target',
+          dispose: () => {
+            window.removeEventListener('keydown', capture, true)
+            node.removeEventListener('keydown', atTarget)
+            node.removeEventListener('click', activation)
+          },
+        }
+      })
+      assert(await trigger.evaluate(node => node.isConnected && document.activeElement === node))
+      phase = view + '-enter'
       await page.keyboard.press('Enter')
-      const dialog = workbench.getByRole('dialog', { name: '新建任务' })
-      await dialog.waitFor()
-      phase = view + '-escape-focus'
+      phase = view + '-keyboard-dialog-page'
+      await anywhere.waitFor()
+      phase = view + '-keyboard-dialog-workbench'
+      await inWorkbench.waitFor()
+      phase = view + '-escape-dialog'
       await page.keyboard.press('Escape')
-      await dialog.waitFor({ state: 'hidden' })
-      const focused = await page.waitForFunction(button => document.activeElement === button,
+      await inWorkbench.waitFor({ state: 'hidden' })
+      phase = view + '-restore-focus'
+      const focused = await page.waitForFunction(node => document.activeElement === node,
         trigger, { timeout: 3000 })
       await focused.dispose()
+      console.log('PASS ' + view + '-keyboard-dialog')
+    } catch {
+      process.exitCode = 1
+      const failed = phase
+      const delivery = events ? await events.evaluate(value => value.summary()).catch(() => 'unavailable') : 'not-started'
+      const dialog = await readDialog().catch(() => 'unknown')
+      console.log('FAIL ' + failed + ' ' + delivery + ' dialog-' + dialog)
+      // Pointer is a diagnostic/control only; it cannot clear the keyboard failure.
+      // Do not click a CTA underneath an existing (possibly hidden) dialog.
+      try {
+        if (dialog === 'absent' && (failed.endsWith('-keyboard-dialog-page') ||
+              failed.endsWith('-keyboard-dialog-workbench'))) {
+          await button.click()
+          await inWorkbench.waitFor()
+          console.log('PASS ' + view + '-pointer-control-only')
+        }
+        if (await inWorkbench.count()) {
+          await inWorkbench.getByRole('button', { name: '取消', exact: true }).click()
+          await inWorkbench.waitFor({ state: 'hidden' })
+        }
+      } catch {
+        const pointerDialog = await readDialog().catch(() => 'unknown')
+        console.log('FAIL ' + view + '-pointer-diagnostic dialog-' + pointerDialog)
+      }
     } finally {
-      await trigger.dispose()
+      if (events) {
+        await events.evaluate(value => value.dispose()).catch(() => {})
+        await events.dispose()
+      }
+      await trigger?.dispose()
     }
-    console.log('PASS ' + view + '-keyboard-dialog')
   }
   // The real sidebar opens Today by default; test it without clicking its active tab.
   await checkKeyboard('today')
