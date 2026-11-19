@@ -7,10 +7,11 @@
 - 正式 Windows Desktop 暂缓，不阻塞开发。当前版用隔离 Linux x64 和合成数据验证干净安装、使用、同版本重启与卸载。不要求旧版迁移或跨版本兼容；旧证据留作历史。
 - Debian 13 上完成 Linux x64 Rust release 和插件 ZIP 打包。包内 ELF 与构建产物逐字节核对，解包后 Core 权限为 0755。Python 打包校验 11/11，适配器与诊断 86/86。真实宿主实测的 ZIP SHA-256 为 `c73d7e519c161f3fa45f1c12d41e98eeeccd17df2078be78be5ca0fa4f275166`，其中 Core 构建基线为 `17a32653`，SHA-256 为 `4b6155aeac84f4ebbf92518accddf65e5f501be0bb9b6cafdbbb1128adced605`；这一轮改包不改 Core 与插件运行代码。
 - 用官方 npm `@deepseek-ai/dsh@0.2.2-rc.5`，在专用 `DSH_HOME`、`HOME`、`ZODO_DATA_DIR` 中，把校验后解包目录以 `dsh plugin --profile web add file:<目录>` 装入 Web profile。以 `dsh web --no-open --host 127.0.0.1 --port 0` 运行，走 Host 本地引导、插件会话和 bridge。未覆盖 Electron。确认从空库录入任务及容量，预览和批准不增加分配，提交恰好一条；分别重启 Web Host 与 Core 后记录及 revision 一致，卸载插件并再启动 Host 后 bridge 返回 404。未登录、未调用模型，无真实日历。
-- 上述是官方 Linux Web Host 的 HTTP/生命周期冒烟，不是渲染或原生 Desktop 验收。实际 Web 界面另有独立的首次使用、新建任务、刷新及精确排程验收；调整和冲突处理仍待分开验证。
+- 上述是较早的官方 Linux Web Host HTTP/生命周期冒烟，不是渲染或原生 Desktop 验收。当前版已有独立的真实界面改期，以及同版重启持久化与卸载结果，见下方。
 
 ## 当前证据
 
+- 精确版本 `b798007382493d9a725ec1947a05788ed7f4e7ab` 的 [Linux CI](https://github.com/CainDez/dsh-zodo/actions/runs/44625174355/job/135918465394) 同时通过官方 DSH Web 与模拟 Host (**34/34**)。真实界面取消改期未写入，预览显示原时段和新时段且不改变分配。确认后只移动同一条 30 分钟分配，保留 ID、任务、容量与来源，其他日程事实不变。真正停止并重启同版本 DSH Host 和 Core 后，新 Core 实例读取的持久化快照与重启前一致，包含已移动的时段。CLI 卸载并重新启动官方 Web 后，同源桥接地址返回 404。该轮不等同于改期冲突、丢回执、窄窗或完整周重排的官方 Web 验收。
 - 精确版本 `e1ef202d0beef1914a70a1960efb55eae647ba54` 的 [Linux CI 日志](https://github.com/CainDez/dsh-zodo/actions/runs/44618434426/job/135893272824) 同时通过官方 Web 与模拟 Host (**34/34**)。官方 Web 通过界面新建任务、刷新无重复、设置可用时间并选定 30 分钟的明确时段。预览和批准均不写入分配，随后确认仅产生一条精确匹配的分配，其余业务记录不变。此轮没有验证改期、冲突处理或当前版进程重启。
 - 精确版本 `8236e1101c27ef3f34596a2c79906422e3dd363c` 的 [Linux CI 日志](https://github.com/CainDez/dsh-zodo/actions/runs/44615713968/job/135884276825) 同时通过官方 Web 与模拟 Host。官方 Web 通过真实界面新建一条预计 37 分钟的任务，Core 恰好增加一条任务和一个 revision，容量和分配均未改变；正常刷新并重新进入插件后，原任务 ID、估时及 Core 快照不变。刷新不等同于 Host 或 Core 进程重启。同次模拟 Host **34/34**，Core、服务、数据清理全部通过；焦点等待修正的 [独立一轮](https://github.com/CainDez/dsh-zodo/actions/runs/44615506790/job/135882973745) 同样 **34/34**。
 - 精确版本 `0a1ec9c9c6edd595152755e02735acfda5c37904` 的 [Linux CI 日志](https://github.com/CainDez/dsh-zodo/actions/runs/44609266544/job/135861198800)：官方 DSH Web 0.2.2-rc.5 验证通过首次使用。以全新临时 profile 走原有预览告知和可选账号关闭按钮，不登录或配置模型。从实际侧栏打开 Zodo，「今天」和「日程」均验证 Enter 打开新建任务、Esc 关闭并将焦点还给入口，导航返回「今天」后 Core 快照和 revision 不变。同次模拟 Host 步骤为 **33/34**，未通过的是「任务输入校验、Esc 和焦点恢复」用例，整项 CI 未通过。分别记录这两项结果，不把官方 Web 首次使用等同于全流程验收。

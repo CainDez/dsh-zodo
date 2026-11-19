@@ -407,11 +407,12 @@ try {
     }
     const rpc = origin + '/zodo-bridge/v1/rpc'
     let releaseCommit
+    let allowCommit = true
     const commitGate = new Promise(resolve => { releaseCommit = resolve })
     const holdCommit = async route => {
       // Fallback preserves the pre-existing context egress route. Fail closed
       // if the approval-only state could not be verified.
-      if (operation(route.request()) !== 'changes.commit' || await commitGate) return route.fallback()
+      if (operation(route.request()) !== 'changes.commit' || (allowCommit && await commitGate)) return route.fallback()
       return route.abort()
     }
     page.on('request', observe)
@@ -520,6 +521,55 @@ try {
       await row.click()
       await detail.getByTestId('time-detail-move').waitFor()
       console.log('PASS official-move-committed-same-allocation')
+
+      // The appointment starts after the current task slot, but overlaps the
+      // requested destination. No commit may pass in this negative scenario.
+      allowCommit = false
+      commands.length = 0
+      phase = 'official-move-conflict-create-fixed-appointment'
+      await detail.getByRole('button', { name: '关闭', exact: true }).last().click()
+      await detail.waitFor({ state: 'hidden' })
+      await workbench.getByTestId(`schedule-add-appointment-${day}`).click()
+      const appointment = workbench.getByRole('dialog', { name: '新建固定预约', exact: true })
+      const appointmentTitle = 'Official Web acceptance fixed appointment'
+      await appointment.getByLabel('标题', { exact: true }).fill(appointmentTitle)
+      await appointment.getByLabel('开始', { exact: true }).fill(`${day}T15:35`)
+      await appointment.getByLabel('结束', { exact: true }).fill(`${day}T16:00`)
+      assert.equal(await appointment.getByRole('checkbox', { name: '锁定，不被自动移动' }).isChecked(), true)
+      await appointment.getByRole('button', { name: '保存', exact: true }).click()
+      await appointment.waitFor({ state: 'hidden' })
+      const conflictBaseline = await snapshot()
+      const [fixed] = conflictBaseline.otherFacts.commitments
+      assert.ok(fixed && typeof fixed.id === 'string' && fixed.id.length > 0)
+      assert.equal(fixed.title, appointmentTitle)
+      assert.equal(fixed.locked, true)
+      assert.equal(Date.parse(fixed.start), instant('15:35'))
+      assert.equal(Date.parse(fixed.end), instant('16:00'))
+      assert.deepEqual(conflictBaseline, { ...movedState, revision: movedState.revision + 1,
+        otherFacts: { ...movedState.otherFacts, commitments: [fixed] } })
+      assert.deepEqual(commands, ['commitment.create'])
+      const fixedRow = workbench.getByTestId('time-commitment-' + fixed.id)
+      await fixedRow.getByText(appointmentTitle, { exact: true }).waitFor()
+
+      phase = 'official-move-fixed-conflict-rejected'
+      commands.length = 0
+      await row.click()
+      await detail.getByTestId('time-detail-move').click()
+      assert.equal(await move.getByTestId('move-slot-capacity').inputValue(), capacity.id)
+      await move.getByTestId('move-slot-start').fill(`${day}T15:30`)
+      await move.getByText(`新结束（保持原时长）：${day} 16:00`, { exact: true }).waitFor()
+      await move.getByTestId('move-slot-preview').click()
+      await move.getByRole('alert').filter({ hasText: /所选时段与已有安排或忙碌区间冲突；改选时段，不会移动已有安排/ }).waitFor()
+      assert.equal(await review.count(), 0)
+      assert.equal(await move.getByTestId('move-slot-start').inputValue(), `${day}T15:30`)
+      await move.getByRole('button', { name: '取消', exact: true }).click()
+      await move.waitFor({ state: 'hidden' })
+      assert.deepEqual(commands, ['proposal.create'])
+      const conflictResult = await snapshot()
+      assert.deepEqual(conflictResult, { ...conflictBaseline, revision: conflictResult.revision })
+      await row.waitFor()
+      await fixedRow.waitFor()
+      console.log('PASS official-move-fixed-conflict-no-fact-change')
     } finally {
       releaseCommit(false)
       await page.unroute(rpc, holdCommit)
