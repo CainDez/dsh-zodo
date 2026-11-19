@@ -5,6 +5,18 @@ import { createServer } from 'node:net'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+// Never emit browser errors: recent Chromium/Playwright logs can contain
+// arbitrary paths, URLs, or display configuration. Emit only known labels.
+function launchReason(error) {
+  const err = String(error)
+  if (/Socket path too long|sun_path|AF_UNIX.*too long/i.test(err)) return 'unix-socket-path'
+  if (/No usable sandbox|SUID sandbox helper binary|Failed to move to new namespace/i.test(err)) return 'sandbox-unavailable'
+  if (/Operation not permitted|Permission denied/i.test(err)) return 'os-permission-denied'
+  if (/error while loading shared libraries/i.test(err)) return 'shared-library-unavailable'
+  if (/TimeoutError/i.test(err)) return 'timeout'
+  return 'unclassified'
+}
+
 let phase = 'local-launch-token'
 let browser, denyProxy
 try {
@@ -29,8 +41,11 @@ try {
       '--proxy-bypass-list=<-loopback>;' + host,
     ],
   })
+  console.log('PASS sandbox-launch')
+  phase = 'sandboxed-browser-context'
   const context = await browser.newContext({ serviceWorkers: 'block', locale: 'zh-CN' })
   context.setDefaultTimeout(4500)
+  phase = 'browser-egress-routes'
   await context.route('**/*', route => new URL(route.request().url()).origin === origin
     ? route.continue() : route.abort('blockedbyclient'))
   await context.routeWebSocket('**/*', socket => {
@@ -111,9 +126,9 @@ try {
   phase = 'unchanged-core-snapshot'
   assert.deepEqual(await snapshot(), before)
   console.log('PASS unchanged-core-snapshot')
-} catch {
+} catch (error) {
   // No URL, browser exception, frame dump, screenshot, or session data in output.
-  console.log('FAIL ' + phase)
+  console.log('FAIL ' + phase + (phase === 'sandbox-launch' ? ' ' + launchReason(error) : ''))
   process.exitCode = 1
 } finally {
   if (browser) await browser.close().catch(() => {

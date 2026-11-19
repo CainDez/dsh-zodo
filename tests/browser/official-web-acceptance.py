@@ -160,10 +160,16 @@ def run(args):
                         time.sleep(.15)
                     else:
                         raise TimeoutError()
-                    phase = "sandboxed-browser"
-                    # Launcher secrets travel through a private pipe, not argv or output.
-                    run_group([str(node), str(HERE / "official-web-acceptance.mjs"), str(chrome), str(pw)],
-                              root, env, timeout=100, private_input=match[1], stdout=None)
+                    phase = "browser-temp"
+                    # Chromium creates a SingletonSocket inside TMPDIR. The
+                    # nested runner path can exceed Linux's Unix socket limit.
+                    with tempfile.TemporaryDirectory(prefix="zodo-pw-", dir="/tmp") as browser_tmp:
+                        check(len(os.fsencode(browser_tmp)) <= 40)
+                        browser_env = {**env, "TMPDIR": browser_tmp}
+                        phase = "sandboxed-browser"
+                        # The launcher secret travels through a private pipe only.
+                        run_group([str(node), str(HERE / "official-web-acceptance.mjs"), str(chrome), str(pw)],
+                                  root, browser_env, timeout=100, private_input=match[1], stdout=None)
             finally:
                 phase_before_cleanup = phase
                 phase = "owned-process-cleanup"
