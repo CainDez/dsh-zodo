@@ -376,3 +376,266 @@ fn strict_slot_batch_conflict_is_atomic_and_agent_cannot_approve() {
     );
     assert_eq!(f.world().allocations, before.allocations);
 }
+
+fn seed_allocation(
+    f: &mut Fixture,
+    task: &str,
+    block: Option<&str>,
+    start: &str,
+    end: &str,
+    minutes: u32,
+    locked: bool,
+) -> String {
+    f.execute("allocation.create", json!({"allocation": {
+        "task_id": task, "capacity_block_id": block, "start": format!("2026-10-25T{start}:00Z"), "end": format!("2026-10-25T{end}:00Z"),
+        "minutes": minutes, "locked": locked
+    }})).unwrap().data["changes"][0]["id"].as_str().unwrap().to_owned()
+}
+
+fn move_payload(f: &mut Fixture, id: &str, block: &str, start: &str, end: &str) -> Value {
+    let world = f.world();
+    let row = world.allocations.iter().find(|row| row.id == id).unwrap();
+    json!({"id": id, "expected_task_version": world.task(&row.task_id).unwrap().version, "capacity_block_id": block,
+        "start": format!("2026-10-25T{start}:00Z"), "end": format!("2026-10-25T{end}:00Z")})
+}
+
+fn propose_move(f: &mut Fixture, payload: Value) -> CommandResult {
+    f.execute("proposal.create", json!({"intent": "Move this slot", "operations": [{"operation": "allocation.move", "payload": payload}]})).unwrap()
+}
+
+fn reject_move(f: &mut Fixture, payload: Value, reason: &str) {
+    let before = f.world();
+    let proposal = propose_move(f, payload);
+    assert_eq!(proposal.data["proposal"]["status"], "draft");
+    let diagnostics = &proposal.data["proposal"]["diagnostics"];
+    assert!(diagnostics.to_string().contains(reason), "{diagnostics}");
+    assert!(
+        f.execute(
+            "proposal.approve",
+            json!({"proposal_id": proposal.data["proposal"]["id"]})
+        )
+        .is_err()
+    );
+    assert_eq!(f.world().allocations, before.allocations);
+    assert_eq!(f.world().workspace.revision, before.workspace.revision);
+}
+
+#[test]
+fn strict_move_preserves_identity_duration_and_all_other_facts_and_uses_only_its_own_reservation() {
+    let mut f = Fixture::new();
+    let task = f.task(json!({"estimate_minutes": 30}));
+    let other = f.task(json!({}));
+    let block = f.capacity(30); // Source already consumes the full remaining work and capacity.
+    let id = seed_allocation(&mut f, &task, Some(&block), "02:00", "02:30", 30, false);
+    seed_allocation(&mut f, &other, None, "03:00", "03:30", 30, true);
+    f.clock
+        .set(Utc.with_ymd_and_hms(2026, 10, 25, 1, 50, 0).unwrap());
+    let before = f.world();
+    let payload = move_payload(&mut f, &id, &block, "02:10", "02:40"); // Physically overlaps old slot.
+    assert!(f.execute("allocation.move", payload.clone()).is_err());
+    let proposal = propose_move(&mut f, payload);
+    let p = &proposal.data["proposal"];
+    assert_eq!(p["status"], "validated");
+    assert_eq!(p["preview"]["added"], json!([]));
+    assert_eq!(p["preview"]["removed"], json!([]));
+    assert_eq!(p["preview"]["changed"].as_array().unwrap().len(), 1);
+    assert_eq!(p["preview"]["changed"][0]["id"], id);
+    assert_eq!(
+        p["preview"]["changed"][0]["after"]["start"],
+        "2026-10-25T02:10:00Z"
+    );
+    assert_eq!(f.world().allocations, before.allocations);
+    let ids = f.approve(&proposal);
+    assert_eq!(f.world().allocations, before.allocations);
+    f.clock
+        .set(Utc.with_ymd_and_hms(2026, 10, 25, 1, 55, 0).unwrap());
+    let result = f.commit(&ids).unwrap();
+    assert_eq!(
+        result.data["changed"],
+        json!([{"id": id, "kind": "allocation", "action": "moved"}])
+    );
+    assert_eq!(result.data["effects"], json!([]));
+    let mut expected = before.allocations.clone();
+    let moved = expected.iter_mut().find(|row| row.id == id).unwrap();
+    moved.start = Utc.with_ymd_and_hms(2026, 10, 25, 2, 10, 0).unwrap();
+    moved.end = Utc.with_ymd_and_hms(2026, 10, 25, 2, 40, 0).unwrap();
+    moved.updated_at = Utc.with_ymd_and_hms(2026, 10, 25, 1, 55, 0).unwrap();
+    let after = f.world();
+    assert_eq!(after.allocations, expected);
+    assert_eq!(after.tasks, before.tasks);
+    assert_eq!(after.commitments, before.commitments);
+    assert_eq!(after.capacity_blocks, before.capacity_blocks);
+    assert_eq!(after.calendar_events, before.calendar_events);
+    assert_eq!(after.activities, before.activities);
+    assert!(f.commit(&ids).is_err());
+    assert_eq!(f.world().allocations, expected);
+}
+
+#[test]
+fn strict_move_rejects_noop_duration_stale_version_missing_capacity_locked_and_overlap() {
+    let mut f = Fixture::new();
+    let task = f.task(json!({}));
+    let other = f.task(json!({}));
+    let block = f.capacity(180);
+    let id = seed_allocation(&mut f, &task, Some(&block), "02:00", "02:30", 30, false);
+    let locked = seed_allocation(&mut f, &other, None, "03:00", "03:30", 30, true);
+    for (source, capacity, start, end, reason) in [
+        (
+            &id,
+            block.as_str(),
+            "02:00",
+            "02:30",
+            "destination is unchanged",
+        ),
+        (
+            &id,
+            block.as_str(),
+            "01:00",
+            "01:20",
+            "preserve its duration",
+        ),
+        (&id, "missing", "01:00", "01:30", "capacity_block"),
+        (
+            &id,
+            block.as_str(),
+            "03:00",
+            "03:30",
+            "overlaps another allocation",
+        ),
+        (
+            &locked,
+            block.as_str(),
+            "01:00",
+            "01:30",
+            "only unlocked planned allocations",
+        ),
+    ] {
+        let payload = move_payload(&mut f, source, capacity, start, end);
+        reject_move(&mut f, payload, reason);
+    }
+    // Generic/manual create can store extra seconds while accounting in whole
+    // minutes. A strict move must not silently shorten that original interval.
+    let fractional = f
+        .execute(
+            "allocation.create",
+            json!({"allocation": {
+                "task_id": other, "start": "2026-10-25T03:30:01Z", "end": "2026-10-25T04:00:02Z",
+                "minutes": 30
+            }}),
+        )
+        .unwrap()
+        .data["changes"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let payload = move_payload(&mut f, &fractional, &block, "02:30", "03:00");
+    reject_move(&mut f, payload, "preserve its duration");
+    let mut stale = move_payload(&mut f, &id, &block, "01:00", "01:30");
+    stale["expected_task_version"] = json!(999);
+    reject_move(&mut f, stale, "task changed");
+}
+
+#[test]
+fn strict_move_rejects_commit_if_either_start_or_revision_changed() {
+    for scenario in ["source started", "destination started", "revision changed"] {
+        let mut f = Fixture::new();
+        let task = f.task(json!({}));
+        let block = f.capacity(180);
+        let source_start = if scenario == "source started" {
+            "02:00"
+        } else {
+            "02:30"
+        };
+        let source_end = if scenario == "source started" {
+            "02:30"
+        } else {
+            "03:00"
+        };
+        let target_start = if scenario == "source started" {
+            "02:30"
+        } else {
+            "02:00"
+        };
+        let target_end = if scenario == "source started" {
+            "03:00"
+        } else {
+            "02:30"
+        };
+        let id = seed_allocation(
+            &mut f,
+            &task,
+            Some(&block),
+            source_start,
+            source_end,
+            30,
+            false,
+        );
+        f.clock
+            .set(Utc.with_ymd_and_hms(2026, 10, 25, 1, 59, 30).unwrap());
+        let payload = move_payload(&mut f, &id, &block, target_start, target_end);
+        let p = propose_move(&mut f, payload);
+        assert_eq!(p.data["proposal"]["status"], "validated");
+        let ids = f.approve(&p);
+        if scenario == "revision changed" {
+            f.task(json!({"title": "Concurrent change"}));
+        } else {
+            f.clock
+                .set(Utc.with_ymd_and_hms(2026, 10, 25, 2, 0, 0).unwrap());
+        }
+        let before = f.world();
+        let error = f.commit(&ids).unwrap_err();
+        if scenario == "revision changed" {
+            assert_eq!(error.code, zodo_kernel::ErrorCode::RevisionConflict);
+        } else {
+            assert!(error.message.contains("future"), "{error:?}");
+        }
+        let after = f.world();
+        assert_eq!(after.workspace.revision, before.workspace.revision);
+        assert_eq!(after.allocations, before.allocations);
+        assert_eq!(after.approval_grants, before.approval_grants);
+    }
+}
+
+#[test]
+fn strict_move_preserves_successor_boundary_and_requires_full_predecessor_work() {
+    for required in [30, 60] {
+        let mut f = Fixture::new();
+        let predecessor = f.task(json!({"estimate_minutes": required}));
+        let successor = f.task(json!({}));
+        let block = f.capacity(180);
+        f.execute(
+            "dependency.add",
+            json!({"predecessor_id": predecessor, "successor_id": successor}),
+        )
+        .unwrap();
+        let id = seed_allocation(&mut f, &predecessor, None, "01:00", "01:30", 30, false);
+        let successor_id = seed_allocation(&mut f, &successor, None, "02:00", "02:30", 30, false);
+        let after_successor = move_payload(&mut f, &id, &block, "02:30", "03:00");
+        reject_move(&mut f, after_successor, "retained successor interval");
+        let at_boundary = move_payload(&mut f, &id, &block, "01:30", "02:00");
+        if required == 60 {
+            reject_move(&mut f, at_boundary, "incompletely scheduled");
+        } else {
+            let before = f.world();
+            let p = propose_move(&mut f, at_boundary);
+            assert_eq!(p.data["proposal"]["status"], "validated");
+            let ids = f.approve(&p);
+            f.commit(&ids).unwrap();
+            let after = f.world();
+            assert_eq!(
+                after.allocations.iter().find(|a| a.id == successor_id),
+                before.allocations.iter().find(|a| a.id == successor_id)
+            );
+            assert_eq!(
+                after
+                    .allocations
+                    .iter()
+                    .find(|a| a.id == id)
+                    .unwrap()
+                    .capacity_block_id
+                    .as_deref(),
+                Some(block.as_str())
+            );
+        }
+    }
+}

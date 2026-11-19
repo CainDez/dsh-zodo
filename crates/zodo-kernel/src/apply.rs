@@ -403,6 +403,10 @@ pub fn apply_change(
             let id = create_allocation(world, &draft, &source, now, ids)?;
             outcome.record("allocation", &id, "created");
         }
+        ChangeOp::AllocationMove(input) => {
+            move_allocation(world, input, now)?;
+            outcome.record("allocation", &input.id, "moved");
+        }
         ChangeOp::AllocationUpdate { id, allocation } => {
             update_allocation(world, id, allocation, source.clone(), now)?;
             outcome.record("allocation", id, "updated");
@@ -1047,6 +1051,108 @@ fn validate_scheduled_allocation(
         minutes: (input.end - input.start).num_minutes() as u32,
         locked: false,
     })
+}
+
+fn move_allocation(
+    world: &mut World,
+    input: &crate::ops::AllocationMove,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    input.validate()?;
+    let position = world
+        .allocations
+        .iter()
+        .position(|row| row.id == input.id)
+        .ok_or_else(|| ZodoError::not_found("allocation", &input.id))?;
+    let original = &world.allocations[position];
+    require_manual_allocation_editable(original, now)?;
+    if original.capacity_block_id.as_deref() == Some(input.capacity_block_id.as_str())
+        && original.start == input.start
+        && original.end == input.end
+    {
+        return Err(ZodoError::validation(
+            "the selected destination is unchanged",
+        ));
+    }
+    let draft = validate_scheduled_allocation(
+        world,
+        &crate::ops::ScheduledAllocation {
+            task_id: original.task_id.clone(),
+            expected_task_version: input.expected_task_version,
+            capacity_block_id: input.capacity_block_id.clone(),
+            start: input.start,
+            end: input.end,
+        },
+        now,
+    )?;
+    if draft.minutes != original.minutes || draft.end - draft.start != original.end - original.start
+    {
+        return Err(ZodoError::validation(
+            "moving an allocation must preserve its duration",
+        ));
+    }
+    validate_allocation(world, &draft, Some(&original.id), now)?;
+    validate_move_successors(world, original, &draft, now)?;
+
+    let allocation = &mut world.allocations[position];
+    allocation.capacity_block_id = draft.capacity_block_id;
+    allocation.start = draft.start;
+    allocation.end = draft.end;
+    allocation.updated_at = now;
+    Ok(())
+}
+
+fn validate_move_successors(
+    world: &World,
+    original: &Allocation,
+    draft: &AllocationDraft,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    // Do not move successor records. Conservatively apply the same dependency
+    // rule used for adding a strict slot to the projected predecessor schedule.
+    let mut earliest_start = None::<DateTime<Utc>>;
+    for dependency in world.successors_of(&original.task_id) {
+        let successor = world
+            .task(&dependency.successor_id)
+            .ok_or_else(|| ZodoError::not_found("task", &dependency.successor_id))?;
+        if successor.archived
+            || matches!(successor.status, TaskStatus::Done | TaskStatus::Cancelled)
+        {
+            continue;
+        }
+        for allocation in world
+            .allocations
+            .iter()
+            .filter(|row| row.task_id == successor.id && row.reserves_work_at(now))
+        {
+            earliest_start =
+                Some(earliest_start.map_or(allocation.start, |start| start.min(allocation.start)));
+        }
+    }
+    let Some(earliest_start) = earliest_start else {
+        return Ok(());
+    };
+    let task = world
+        .task(&original.task_id)
+        .ok_or_else(|| ZodoError::not_found("task", &original.task_id))?;
+    let required = task
+        .remaining_minutes
+        .or(task.estimate_minutes)
+        .unwrap_or(0);
+    let (reserved, latest_end) = world
+        .allocations
+        .iter()
+        .filter(|row| row.id != original.id && row.task_id == task.id && row.reserves_work_at(now))
+        .fold(
+            (u64::from(draft.minutes), draft.end),
+            |(minutes, end), row| (minutes + u64::from(row.minutes), end.max(row.end)),
+        );
+    if required == 0 || reserved < u64::from(required) || latest_end > earliest_start {
+        return Err(ZodoError::validation(
+            "move would leave predecessor work incompletely scheduled before a retained successor interval",
+        ));
+    }
+    Ok(())
 }
 
 fn create_allocation(
