@@ -755,6 +755,97 @@ try {
     } finally {
       page.off('request', observe)
     }
+
+    // Exercise the shipped manual importer, without configuring or contacting a
+    // calendar provider. The agenda must not expose vendor IDs or event titles.
+    phase = 'official-busy-missing-source'
+    await page.setViewportSize({ width: 1440, height: 960 })
+    await ensureHostInteractive()
+    await workbench.getByTestId('schedule-mode').selectOption('7')
+    await workbench.getByTestId('schedule-date').fill(day)
+    const noSource = workbench.getByText(/没有外部日历来源，无法判断日历覆盖情况/)
+    const busyRows = workbench.getByTestId('time-busy')
+    await noSource.waitFor()
+    assert.equal(await busyRows.count(), 0)
+    const absent = await snapshot()
+    assert.deepEqual(absent, narrowBaseline)
+    assert.deepEqual(absent.otherFacts.calendar_sources, [])
+    assert.deepEqual(absent.otherFacts.calendar_events, [])
+
+    const sourceInput = {
+      provider: 'manual', display_name: 'Official Web busy fixture', external_id: 'synthetic-hidden-source-id',
+    }
+    const tomorrow = new Date(Date.parse(day + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10)
+    const event = {
+      external_id: 'synthetic-hidden-event-id', title: 'SYNTHETIC HIDDEN CALENDAR TITLE',
+      start: day + 'T23:30:00+08:00', end: tomorrow + 'T00:30:00+08:00',
+    }
+    const importBusy = async events => {
+      await workbench.getByRole('button', { name: '导入忙碌', exact: true }).click()
+      const editor = workbench.getByRole('dialog', { name: '导入忙碌快照', exact: true })
+      await editor.getByLabel('JSON 快照', { exact: true }).fill(JSON.stringify({ ...sourceInput, events }))
+      await editor.getByRole('button', { name: '导入', exact: true }).click()
+      await editor.waitFor({ state: 'hidden' })
+    }
+    commands.length = 0
+    page.on('request', observe)
+    try {
+      phase = 'official-busy-cross-midnight-import'
+      await importBusy([event])
+      const imported = await snapshot()
+      const [source] = imported.otherFacts.calendar_sources
+      const [stored] = imported.otherFacts.calendar_events
+      assert.ok(source?.id && stored?.id)
+      assert.equal(source.provider, 'manual')
+      assert.equal(source.writable, false)
+      assert.equal(source.external_id, sourceInput.external_id)
+      assert.equal(stored.source_id, source.id)
+      assert.equal(stored.external_id, event.external_id)
+      assert.equal(stored.title, event.title)
+      assert.equal(stored.busy, true)
+      assert.equal(Date.parse(stored.start), Date.parse(event.start))
+      assert.equal(Date.parse(stored.end), Date.parse(event.end))
+      assert.deepEqual(imported, { ...absent, revision: absent.revision + 1,
+        otherFacts: { ...absent.otherFacts, calendar_sources: [source], calendar_events: [stored] } })
+      const sourceRow = workbench.getByTestId('calendar-source-' + source.id)
+      await sourceRow.getByText(/1 个忙碌事件/).waitFor()
+      await sourceRow.getByText('新鲜', { exact: true }).waitFor()
+
+      phase = 'official-busy-cross-midnight-redacted-agenda'
+      for (const [date, span, continuation] of [
+        [day, '23:30–24:00', '延续至次日'], [tomorrow, '00:00–00:30', '从前日延续'],
+      ]) {
+        const row = workbench.getByTestId('schedule-day-' + date).getByTestId('time-busy')
+        await row.getByText(span, { exact: true }).waitFor()
+        await row.getByText(continuation, { exact: true }).waitFor()
+        await row.getByText('外部日历忙碌', { exact: true }).waitFor()
+        await row.getByText('只读忙碌快照', { exact: true }).waitFor()
+        assert.equal(await row.getAttribute('role'), null)
+        assert.equal(await row.getAttribute('tabindex'), null)
+      }
+      assert.equal(await busyRows.count(), 2)
+      for (const privateValue of [sourceInput.external_id, event.external_id, event.title]) {
+        assert.equal((await workbench.innerText()).includes(privateValue), false)
+      }
+      console.log('PASS official-busy-cross-midnight-redacted')
+
+      phase = 'official-busy-empty-source-not-missing'
+      await importBusy([])
+      await sourceRow.getByText(/0 个忙碌事件/).waitFor()
+      await sourceRow.getByText('新鲜', { exact: true }).waitFor()
+      assert.equal(await noSource.count(), 0)
+      assert.equal(await busyRows.count(), 0)
+      const empty = await snapshot()
+      const [refreshed] = empty.otherFacts.calendar_sources
+      assert.ok(Date.parse(refreshed.last_sync_at) >= Date.parse(source.last_sync_at))
+      assert.deepEqual(empty, { ...imported, revision: imported.revision + 1,
+        otherFacts: { ...imported.otherFacts, calendar_sources: [{ ...source, last_sync_at: refreshed.last_sync_at }],
+          calendar_events: [] } })
+      assert.deepEqual(commands, ['calendar.import_busy', 'calendar.import_busy'])
+      console.log('PASS official-busy-empty-distinct-from-missing-source')
+    } finally {
+      page.off('request', observe)
+    }
   }
 } catch (error) {
   reportFailure(phase, error)
