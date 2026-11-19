@@ -55,7 +55,7 @@ try {
   console.log('PASS sandbox-launch')
   phase = 'sandboxed-browser-context'
   const context = await browser.newContext({
-    serviceWorkers: 'block', locale: 'zh-CN', viewport: { width: 1440, height: 960 },
+    serviceWorkers: 'block', locale: 'zh-CN', timezoneId: 'Asia/Shanghai', viewport: { width: 1440, height: 960 },
   })
   context.setDefaultTimeout(4500)
   phase = 'browser-egress-routes'
@@ -170,13 +170,14 @@ try {
     })
     const body = await response.json()
     if (!response.ok || !body.ok) throw new Error('snapshot failed')
-    const { workspace, tasks, capacity_blocks, allocations } = body.result.data
-    return { revision: workspace.revision, tasks: tasks.map(({ id, title, estimate_minutes }) => ({ id, title, estimate_minutes })),
-      capacity: capacity_blocks.length, allocations: allocations.length }
+    const { workspace, tasks, capacity_blocks, allocations, now: _now, proposals: _proposals,
+      approval_grants: _approvalGrants, ...otherFacts } = body.result.data
+    return { revision: workspace.revision, timezone: workspace.timezone ?? workspace.settings?.timezone,
+      tasks, capacity: capacity_blocks, allocations, otherFacts }
   })
   phase = 'clean-core-baseline'
   const before = await snapshot()
-  assert.equal(before.tasks.length + before.capacity + before.allocations, 0)
+  assert.equal(before.tasks.length + before.capacity.length + before.allocations.length, 0)
   assert(Number.isInteger(before.revision))
   console.log('PASS clean-core-baseline')
   const taskDialog = { name: '新建任务', exact: true }
@@ -331,8 +332,9 @@ try {
     assert.equal(saved.tasks.length, 1)
     const [task] = saved.tasks
     assert(typeof task.id === 'string' && task.id.length > 0)
-    assert.deepEqual(saved, { ...before, revision: before.revision + 1,
-      tasks: [{ id: task.id, title, estimate_minutes: estimate }] })
+    assert.equal(task.title, title)
+    assert.equal(task.estimate_minutes, estimate)
+    assert.deepEqual(saved, { ...before, revision: before.revision + 1, tasks: [task] })
     await showTasks()
     phase = 'official-save-visible-task'
     await checkRow(task.id)
@@ -355,6 +357,120 @@ try {
     await checkRow(task.id)
     assert.deepEqual(await snapshot(), saved)
     console.log('PASS official-ui-reload-same-task-no-duplicate')
+
+    // Add one working-day capacity block, then schedule inside it with the
+    // shipped strict preview and apply UI. No test code sends write RPCs.
+    phase = 'official-booking-add-capacity'
+    assert.equal(saved.timezone, 'Asia/Shanghai')
+    await workbench.getByTestId('nav-schedule').click()
+    await heading('日程').waitFor()
+    const future = new Date(Date.now() + 86400000)
+    const shanghai = { timeZone: saved.timezone }
+    while (['Sat', 'Sun'].includes(future.toLocaleDateString('en-US', { ...shanghai, weekday: 'short' }))) {
+      future.setTime(future.getTime() + 86400000)
+    }
+    const day = future.toLocaleDateString('en-CA', shanghai)
+    assert.match(day, /^\d{4}-\d{2}-\d{2}$/)
+    const capacityTitle = 'Official Web acceptance capacity'
+    const instant = clock => Date.parse(`${day}T${clock}:00+08:00`)
+    await workbench.getByRole('button', { name: '增加容量', exact: true }).click()
+    const capacityEditor = workbench.getByRole('dialog', { name: '增加可用容量', exact: true })
+    await capacityEditor.getByLabel('名称', { exact: true }).fill(capacityTitle)
+    await capacityEditor.getByLabel('开始', { exact: true }).fill(`${day}T14:00`)
+    await capacityEditor.getByLabel('结束', { exact: true }).fill(`${day}T16:00`)
+    await capacityEditor.getByLabel('可用分钟', { exact: true }).fill('120')
+    await capacityEditor.getByRole('button', { name: '保存', exact: true }).click()
+    await capacityEditor.waitFor({ state: 'hidden' })
+    phase = 'official-booking-exact-capacity'
+    const baseline = await snapshot()
+    const [capacity] = baseline.capacity
+    assert.ok(capacity && typeof capacity.id === 'string' && capacity.id.length > 0)
+    assert.deepEqual(baseline, { ...saved, revision: saved.revision + 1, capacity: [capacity] })
+    assert.equal(capacity.title, capacityTitle)
+    assert.equal(Date.parse(capacity.start), instant('14:00'))
+    assert.equal(Date.parse(capacity.end), instant('16:00'))
+    assert.equal(capacity.capacity_minutes, 120)
+
+    const assertFacts = (state, extra = {}) => {
+      assert.deepEqual(state, { ...baseline, revision: state.revision, ...extra })
+    }
+    const isRpc = request => request.method() === 'POST' && request.url() === origin + '/zodo-bridge/v1/rpc'
+    const operation = request => {
+      if (!isRpc(request)) return undefined
+      const body = request.postDataJSON()
+      return body?.kind === 'command' ? body.envelope?.operation : undefined
+    }
+    const commands = []
+    const observe = request => {
+      const name = operation(request)
+      if (name !== undefined) commands.push(name)
+    }
+    const rpc = origin + '/zodo-bridge/v1/rpc'
+    let releaseCommit
+    const commitGate = new Promise(resolve => { releaseCommit = resolve })
+    const holdCommit = async route => {
+      // Fallback preserves the pre-existing context egress route. Fail closed
+      // if the approval-only state could not be verified.
+      if (operation(route.request()) !== 'changes.commit' || await commitGate) return route.fallback()
+      return route.abort()
+    }
+    page.on('request', observe)
+    await page.route(rpc, holdCommit)
+    try {
+      phase = 'official-booking-slot-input'
+      await workbench.getByTestId('schedule-date').fill(day)
+      await workbench.getByTestId(`schedule-slot-${day}`).click()
+      const slot = workbench.getByRole('dialog', { name: '安排任务时段', exact: true })
+      await slot.getByTestId('schedule-slot-task').selectOption(task.id)
+      await slot.getByTestId('schedule-slot-capacity').selectOption(capacity.id)
+      await slot.getByLabel('开始（工作空间时区）', { exact: true }).fill(`${day}T14:15`)
+      await slot.getByLabel('结束（工作空间时区）', { exact: true }).fill(`${day}T14:45`)
+      const resolved = await slot.getByTestId('schedule-slot-utc').innerText()
+      assert.ok(resolved.includes(new Date(instant('14:15')).toISOString()))
+      assert.ok(resolved.includes(new Date(instant('14:45')).toISOString()))
+      phase = 'official-booking-preview-without-allocation'
+      await slot.getByTestId('schedule-slot-preview').click()
+      const review = workbench.getByRole('dialog', { name: '检查提案', exact: true })
+      await review.getByTestId('plan-change-summary').getByText(/拟新增 1 项、修改 0 项、移除 0 项/).waitFor()
+      assertFacts(await snapshot())
+      assert.deepEqual(commands, ['proposal.create'])
+      console.log('PASS official-booking-preview-no-allocation')
+
+      phase = 'official-booking-approval-without-allocation'
+      await Promise.all([
+        page.waitForRequest(request => operation(request) === 'changes.commit', { timeout: 6000 }),
+        review.getByTestId('plan-apply').click(),
+      ])
+      assert.deepEqual(commands, ['proposal.create', 'proposal.approve', 'changes.commit'])
+      const approved = await snapshot()
+      assertFacts(approved)
+      console.log('PASS official-booking-approval-no-allocation')
+
+      phase = 'official-booking-exact-commit'
+      const committed = page.waitForResponse(response => operation(response.request()) === 'changes.commit', { timeout: 6000 })
+      releaseCommit(true)
+      const receipt = await committed
+      assert.equal(receipt.status(), 200)
+      assert.equal((await receipt.json()).ok, true)
+      await review.waitFor({ state: 'hidden' })
+      const after = await snapshot()
+      const [allocation] = after.allocations
+      assert.ok(allocation && typeof allocation.id === 'string' && allocation.id.length > 0)
+      assert.equal(after.revision, approved.revision + 1)
+      assertFacts(after, { allocations: [allocation] })
+      assert.equal(allocation.task_id, task.id)
+      assert.equal(allocation.capacity_block_id, capacity.id)
+      assert.equal(Date.parse(allocation.start), instant('14:15'))
+      assert.equal(Date.parse(allocation.end), instant('14:45'))
+      assert.equal(allocation.minutes, 30)
+      assert.deepEqual(commands, ['proposal.create', 'proposal.approve', 'changes.commit'])
+      await workbench.getByTestId('time-allocation-' + allocation.id).waitFor()
+      console.log('PASS official-booking-committed-one-exact-allocation')
+    } finally {
+      releaseCommit(false)
+      await page.unroute(rpc, holdCommit)
+      page.off('request', observe)
+    }
   }
 } catch (error) {
   reportFailure(phase, error)
