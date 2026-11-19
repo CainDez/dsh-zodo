@@ -6,14 +6,14 @@ const source=readFileSync(new URL('../../adapters/deepseek-harness/plugin/client
 const zones=source.slice(source.indexOf('    function workspaceTimezone'),source.indexOf('    function truncateText'))
 const dateCode=source.slice(source.indexOf('    function agendaDate'),source.indexOf('    function agendaShift'))
 const code=source.slice(source.indexOf('    function scheduleRecovery'),source.indexOf('    function CapacityEditor'))
-function mount({form={},send,zone='Asia/Shanghai',capacityStart='2026-11-24T00:00Z',capacityEnd='2026-11-24T12:00Z'}={}) {
+function mount({form={},send,guidedDraft,zone='Asia/Shanghai',capacityStart='2026-11-24T00:00Z',capacityEnd='2026-11-24T12:00Z'}={}) {
   const writes=[],errors=[],closed=[],modals=[]
   const Component=vm.runInNewContext(`${zones}\n${dateCode}\n${code}\nQuickSchedule`,{
     Modal:'Modal',Button:'Button',Field:'Field',React:{Fragment:'Fragment'},COPY:{cancel:'取消'},
     h:(tag,props,...children)=>({tag,props,children}),useRef:value=>({current:value}),
     useState:initial=>[typeof initial==='object'?{...initial,task:'t',capacity:'c',...form}:initial,value=>errors.push(value)],
   })
-  const tree=Component({day:'2026-11-24',snapshot:{workspace:{timezone:zone},tasks:[{id:'t',version:3,title:'Task'}],capacity_blocks:[{id:'c',title:'Capacity',start:capacityStart,end:capacityEnd}]},busy:false,
+  const tree=Component({day:'2026-11-24',guidedDraft,snapshot:{workspace:{timezone:zone},tasks:[{id:'t',version:3,title:'Task'}],capacity_blocks:[{id:'c',title:'Capacity',start:capacityStart,end:capacityEnd}]},busy:false,
     send:async(...args)=>{writes.push(args);return send?send(...args):{data:{proposal:{id:'p',status:'validated',intent:'Core candidate'}}}},onClose:()=>closed.push(true),setModal:value=>modals.push(value)})
   return {tree,writes,errors,closed,modals,save:tree.props.footer.children[1].props.onClick}
 }
@@ -220,12 +220,12 @@ test('first schedule CTA only opens existing editors or settings', () => {
     [{ kind: 'task' }, { type: 'task', task: null }],
     [{ kind: 'estimate', task }, { type: 'task', task }],
     [{ kind: 'capacity' }, { type: 'capacity' }],
-    [{ kind: 'schedule', day: '2026-11-24' }, { type: 'quick-schedule', day: '2026-11-24' }],
+    [{ kind: 'schedule', day: '2026-11-24' }, { type: 'quick-schedule', day: '2026-11-24', guidedDraft: { start: '', end: '', capacity: '' } }],
     [{ kind: 'timezone' }, 'settings'],
   ]) {
     const calls = []
     const tree = vm.runInNewContext(`${source.slice(start, end)}\nrenderFirstSchedule()`, {
-      snapshot: {}, todayCheckedAt: 0, workspaceTimezone: () => 'Asia/Shanghai', firstScheduleStep: () => step,
+      snapshot: {}, todayCheckedAt: 0, workspaceTimezone: () => 'Asia/Shanghai', firstScheduleStep: () => step, guidedScheduleDraft: () => ({ start: '', end: '', capacity: '' }),
       h: (tag, props, ...children) => ({ tag, props, children }), Section: 'Section', Button: 'Button', busy: false,
       setModal: data => calls.push(data), setView: data => calls.push(data),
     })
@@ -234,4 +234,53 @@ test('first schedule CTA only opens existing editors or settings', () => {
     tree.children[1].props.onClick()
     assert.deepEqual(clean(calls), [expected])
   }
+})
+
+const nextDraft = vm.runInNewContext(`${zones}\n${dateCode}\n${code}\nguidedScheduleDraft`)
+const cap = (id, start, end, capacity_minutes = 30) => ({ id, start, end, capacity_minutes })
+const guided = (blocks, now, zone, estimate_minutes = 30) => JSON.parse(JSON.stringify(nextDraft({
+  tasks: [{ id: 't', estimate_minutes }], capacity_blocks: blocks,
+}, Date.parse(now), zone)))
+const blankDraft = { capacity: '', start: '', end: '' }
+test('guided draft rounds inward, supports narrow late-night capacity and uses strict future minutes', () => {
+  assert.deepEqual(guided([
+    cap('sub-minute', '2026-11-23T15:54:50Z', '2026-11-23T15:55:25Z'),
+    cap('late', '2026-11-23T15:57:30Z', '2026-11-23T16:01:12Z'),
+  ], '2026-11-23T15:58:00Z', 'Asia/Shanghai'), {
+    capacity: 'late', start: '2026-11-23T23:59', end: '2026-11-24T00:01',
+  })
+  assert.deepEqual(guided([cap('too-short', '2026-11-23T15:57:30Z', '2026-11-23T15:58:59Z')],
+    '2026-11-23T15:00:00Z', 'Asia/Shanghai'), blankDraft)
+  assert.deepEqual(guided([cap('budget', '2026-11-23T15:30:00Z', '2026-11-23T17:00:00Z', 8)],
+    '2026-11-23T15:00:00Z', 'Asia/Shanghai', 5), {
+    capacity: 'budget', start: '2026-11-23T23:30', end: '2026-11-23T23:35',
+  })
+})
+test('guided draft never guesses across DST gaps or folds', () => {
+  const zone = 'America/New_York'
+  assert.deepEqual(guided([cap('gap', '2026-03-08T06:50:00Z', '2026-03-08T07:20:00Z')],
+    '2026-03-08T06:00:00Z', zone), {
+    capacity: 'gap', start: '2026-03-08T01:50', end: '2026-03-08T01:51',
+  })
+  assert.deepEqual(guided([cap('fold', '2026-11-01T05:30:00Z', '2026-11-01T06:45:00Z')],
+    '2026-11-01T05:00:00Z', zone), blankDraft)
+  assert.deepEqual(guided([
+    cap('fold', '2026-11-01T05:30:00Z', '2026-11-01T06:45:00Z'),
+    cap('safe', '2026-11-01T07:30:00Z', '2026-11-01T08:00:00Z'),
+  ], '2026-11-01T05:00:00Z', zone), {
+    capacity: 'safe', start: '2026-11-01T02:30', end: '2026-11-01T03:00',
+  })
+})
+test('guided dialog can intentionally leave times blank while standard date defaults stay unchanged', () => {
+  const findInputs = node => [
+    ...(node?.tag === 'input' && node.props.type === 'datetime-local' ? [node.props.value] : []),
+    ...(node?.children ?? []).flat(Infinity).flatMap(findInputs),
+  ]
+  assert.deepEqual(findInputs(mount().tree), ['2026-11-24T09:00', '2026-11-24T10:00'])
+  const guidedForm = mount({ guidedDraft: blankDraft })
+  assert.deepEqual(findInputs(guidedForm.tree), ['', ''])
+  assert.equal(guidedForm.writes.length, 0)
+  assert.deepEqual(findInputs(mount({
+    guidedDraft: { capacity: 'c', start: '2026-11-24T14:00', end: '2026-11-24T14:20' },
+  }).tree), ['2026-11-24T14:00', '2026-11-24T14:20'])
 })

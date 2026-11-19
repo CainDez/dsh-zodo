@@ -1461,6 +1461,48 @@ window.__ModuleLoader__.load({
       const day = wallClockInput(next, timeZone).slice(0, 10)
       return agendaDate(day) ? { kind: 'schedule', day } : { kind: 'timezone' }
     }
+    function guidedScheduleDraft(snapshot, now, timeZone) {
+      const empty = { capacity: '', start: '', end: '' }
+      if (!Number.isFinite(now) || !isKnownTimezone(timeZone)) return empty
+      const minute = 60_000
+      const remaining = manualScheduleTasks(snapshot).map(task => task.remaining_minutes ?? task.estimate_minutes)
+        .filter(value => Number.isSafeInteger(value) && value > 0)
+      if (!remaining.length) return empty
+      const maxMinutes = remaining.reduce((min, value) => Math.min(min, value), 30)
+      const futureMinute = (Math.floor(now / minute) + 1) * minute
+      const blocks = (snapshot.capacity_blocks ?? []).map(block => ({
+        id: block.id, minutes: block.capacity_minutes,
+        start: Math.max(futureMinute, Math.ceil(Date.parse(block.start) / minute) * minute),
+        end: Math.floor(Date.parse(block.end) / minute) * minute,
+      })).filter(block => typeof block.id === 'string' && block.id &&
+        Number.isSafeInteger(block.minutes) && block.minutes > 0 &&
+        Number.isFinite(block.start) && Number.isFinite(block.end) && block.end - block.start >= minute)
+        .sort((left, right) => left.start - right.start || left.end - right.end || left.id.localeCompare(right.id))
+      const uniqueWall = instant => {
+        const wall = wallClockInput(instant, timeZone)
+        if (!agendaDate(wall.slice(0, 10))) return null
+        const { instants } = resolveWallTime(wall.slice(0, 10), wall.slice(11, 16), timeZone)
+        return instants.length === 1 && instants[0] === instant ? wall : null
+      }
+      for (const block of blocks) {
+        // Prefer the first minute. The last full minute is a bounded fallback
+        // when the first timestamp falls into a repeated local clock.
+        for (const startInstant of new Set([block.start, block.end - minute])) {
+          const start = uniqueWall(startInstant)
+          if (!start) continue
+          const preferred = Math.min(maxMinutes, block.minutes, (block.end - startInstant) / minute)
+          // If the preferred interval crosses a clock change, try one valid minute.
+          // Do not choose either occurrence of a repeated clock on the user's behalf.
+          for (const duration of new Set([preferred, 1])) {
+            const end = uniqueWall(startInstant + duration * minute)
+            if (end && Date.parse(end + 'Z') - Date.parse(start + 'Z') === duration * minute) {
+              return { capacity: block.id, start, end }
+            }
+          }
+        }
+      }
+      return empty
+    }
     // END PURE FIRST-SCHEDULE GUIDANCE
 
     function schedulePickerOptions(snapshot, form, timeZone) {
@@ -1481,11 +1523,11 @@ window.__ModuleLoader__.load({
       return { tasks, capacities, dateKnown }
     }
 
-    function QuickSchedule({ day, snapshot, send, busy, onClose, setModal }) {
+    function QuickSchedule({ day, guidedDraft, snapshot, send, busy, onClose, setModal }) {
       const timeZone = workspaceTimezone(snapshot)
       const zoneValid = isKnownTimezone(timeZone)
       const pending = useRef(false)
-      const [form, setForm] = useState({ task: '', capacity: '', start: `${day}T09:00`, end: `${day}T10:00`, startChoice: null, endChoice: null })
+      const [form, setForm] = useState({ task: '', capacity: '', start: `${day}T09:00`, end: `${day}T10:00`, ...guidedDraft, startChoice: null, endChoice: null })
       const [error, setError] = useState('')
       const updateForm = next => {
         if (pending.current || busy) return
@@ -1536,7 +1578,10 @@ window.__ModuleLoader__.load({
           h(Button, { onClick: propose, disabled: busy, testid: 'schedule-slot-preview' }, '生成严格预览')) },
         error ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert' }, error) : null,
         busy ? h('p', { role: 'status' }, '正在生成预览，请等待后关闭。') : null,
-        h('p', { className: 'zw-fineprint' }, `所选日期标签 ${day} 来自本机日程；下面所有日期与钟点按工作空间时区 ${timeZone} 解释，不自动猜测跨时区对应时刻。请核对 UTC 预览。`),
+        h('p', { className: 'zw-fineprint' }, guidedDraft ? (guidedDraft.start
+          ? `起止时刻是已有容量内的可编辑建议，按工作空间时区 ${timeZone} 显示；请核对后选任务并生成严格预览。`
+          : `没有可安全预填的整分钟时段。请按工作空间时区 ${timeZone} 手动选择容量及起止时刻。`)
+          : `所选日期标签 ${day} 来自本机日程；下面所有日期与钟点按工作空间时区 ${timeZone} 解释，不自动猜测跨时区对应时刻。请核对 UTC 预览。`),
         h('fieldset', { disabled: busy, style: { border: 0, padding: 0, margin: 0, minWidth: 0 } },
         h('legend', { className: 'zw-fineprint' }, '修改输入后须重新生成预览；保存中输入受保护'),
         h(Field, { label: '任务' }, h('select', { value: form.task, onChange: event => updateForm({ ...form, task: event.target.value }), 'data-testid': 'schedule-slot-task' },
@@ -4336,7 +4381,8 @@ window.__ModuleLoader__.load({
           estimate: ['已有任务。给任务填入预计分钟，才能为它安排时段。', '补充任务估时', () => setModal({ type: 'task', task: step.task })],
           capacity: ['已有带估时的任务。先标出一段你愿意用来做任务的时间，也就是「容量」。日历空白不是容量。', '添加可用时间', () => setModal({ type: 'capacity' })],
           timezone: ['已录入任务和容量，但无法识别工作空间时区。请先检查时区设置。', '查看工作空间设置', () => setView('settings')],
-          schedule: ['已有带估时的任务和未来容量。选择任务、容量和具体时段，先检查预览，再批准保存；是否可安排以 Core 检查为准。', '打开时段安排', () => setModal({ type: 'quick-schedule', day: step.day })],
+          schedule: ['已有带估时的任务和未来容量。选择任务、容量和具体时段，先检查预览，再批准保存；是否可安排以 Core 检查为准。', '打开时段安排', () => setModal({ type: 'quick-schedule', day: step.day,
+            guidedDraft: guidedScheduleDraft(snapshot, Date.now(), workspaceTimezone(snapshot)) })],
         }
         const [description, label, open] = actions[step.kind]
         return h(Section, { title: '安排第一项任务', testid: 'first-schedule-guide' },
@@ -4896,7 +4942,7 @@ window.__ModuleLoader__.load({
           case 'reminder': return h(ReminderEditor, { task: modal.task, onClose: closeModal, send, busy })
           case 'blocked': return h(BlockedEditor, { task: modal.task, onClose: closeModal, send, busy })
           case 'commitment': return h(CommitmentEditor, { day: modal.day, snapshot, onClose: closeModal, send, busy })
-          case 'quick-schedule': return h(QuickSchedule, { day: modal.day, snapshot, send, busy, onClose: closeModal, setModal })
+          case 'quick-schedule': return h(QuickSchedule, { day: modal.day, guidedDraft: modal.guidedDraft, snapshot, send, busy, onClose: closeModal, setModal })
           case 'capacity': return h(CapacityEditor, { onClose: closeModal, send, busy })
           case 'capacity-candidates': return h(CapacitySuggestions, { onClose: closeModal, send, busy })
           case 'meeting-propose': return h(MeetingProposal, { onClose: closeModal, send, busy, setView, report: setNotice })
