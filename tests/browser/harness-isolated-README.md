@@ -20,6 +20,13 @@ For an explicitly managed manual fixture, `node tests/browser/harness-isolated-f
 Use a disposable development/CI machine with working local TCP and Unix sockets,
 an already provisioned supported Chrome/Chromium, Node, pnpm, and Rust. The normal
 Playwright browser launch must work under that runner's existing security policy.
+On Linux the fixture explicitly requests Playwright's Chromium sandbox; it does
+not fall back to a weaker launch. The branch-scoped [Linux x64 workflow](../../.github/workflows/zodo-linux-x64-browser.yml)
+uses the hosted `ubuntu-22.04` image's existing Chrome, builds the exact triggering
+revision, and verifies the same-build Core. It publishes no screenshots, raw logs
+or artifacts. A passing run covers the React/bridge/Core fixture only, never
+official DSH Desktop or account-backed behavior.
+
 A Chromium `socket() failed: Operation not permitted`, `ptrace: Operation not
 permitted`, or `No usable sandbox` startup error is an **environment blocker**,
 not a failed UI assertion and not a successful test. Do not disable host syscall

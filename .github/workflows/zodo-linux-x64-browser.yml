@@ -1,0 +1,129 @@
+# This exercises synthetic React/bridge/Core fixtures, not an installed DSH Desktop.
+name: Zodo Linux x64 browser fixture
+
+on:
+  push:
+    branches:
+      - xiaoz/zodo-scheduler
+    paths:
+      - .github/workflows/zodo-linux-x64-browser.yml
+      - adapters/deepseek-harness/plugin/**
+      - tests/adapter/**
+      - tests/browser/**
+      - scripts/build-linux-plugin.py
+      - scripts/verify-plugin-package.py
+      - Cargo.toml
+      - Cargo.lock
+      - crates/**
+
+permissions: {}
+
+concurrency:
+  group: zodo-linux-x64-browser
+  cancel-in-progress: false
+
+jobs:
+  rendered-fixture:
+    if: github.repository == 'CainDez/dsh-zodo' && github.ref == 'refs/heads/xiaoz/zodo-scheduler' && github.event_name == 'push' && github.event.deleted == false
+    permissions: {}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      GIT_TERMINAL_PROMPT: '0'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - name: Fetch exact triggering commit and verify runner prerequisites
+        timeout-minutes: 5
+        run: |
+          test "$(uname -s):$(uname -m)" = Linux:x86_64
+          for tool in git python3 node npm rustup google-chrome timeout; do
+            command -v "$tool" >/dev/null || { echo "Required runner tool missing: $tool"; exit 1; }
+          done
+          node -e 'if (Number(process.versions.node.split(".")[0]) < 22) process.exit(1)'
+          # Resolve only an installed toolchain; do not trigger an installer.
+          rustup toolchain list | grep -Eq '^stable-x86_64-unknown-linux-gnu( |$)'
+          rust_bin="$(dirname "$(rustup which --toolchain stable-x86_64-unknown-linux-gnu cargo)")"
+          test -x "$rust_bin/rustc"
+          test -x "$rust_bin/cargo"
+          printf '%s\n' "$rust_bin" >> "$GITHUB_PATH"
+          source_dir="$RUNNER_TEMP/zodo-reviewed-source"
+          mkdir "$source_dir"
+          cd "$source_dir"
+          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
+          git init --quiet
+          git remote add origin https://github.com/CainDez/dsh-zodo.git
+          # Public fetch only; no checkout action, token or credential fallback.
+          git -c credential.helper= -c http.extraHeader= fetch --no-tags --depth=128 origin refs/heads/xiaoz/zodo-scheduler >"$RUNNER_TEMP/zodo-git.log" 2>&1 ||
+            { echo 'Public branch fetch failed'; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD ||
+            { echo 'Trigger SHA is not in the bounded branch history'; exit 1; }
+          git checkout --quiet --detach "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain --untracked-files=normal)"
+          node --version
+          google-chrome --version
+          echo "verified-source-sha $GITHUB_SHA"
+      - name: Build locked Linux plugin and verify bundled Core
+        timeout-minutes: 22
+        run: |
+          cd "$RUNNER_TEMP/zodo-reviewed-source"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          out="$RUNNER_TEMP/zodo-linux-assembly"
+          python3 -B scripts/build-linux-plugin.py "$out" >"$RUNNER_TEMP/zodo-build.log" 2>&1 ||
+            { echo 'Locked Linux plugin build failed'; exit 1; }
+          python3 -B scripts/verify-plugin-package.py --target linux-x64 "$out/zodo-harness-plugin-linux-x64.zip" "$out/zodo"
+          python3 -B - "$out" "$GITHUB_SHA" <<'PY'
+          import json
+          import pathlib
+          import sys
+          info = json.loads((pathlib.Path(sys.argv[1]) / "BUILD_INFO.json").read_bytes())
+          if (info.get("source_commit") != sys.argv[2] or
+              info.get("working_tree_dirty_at_start") is not False or
+              info.get("cargo_target") != "x86_64-unknown-linux-gnu"):
+              raise SystemExit("Build identity mismatch")
+          print("verified-linux-zip-sha256", info["plugin_zip_sha256"])
+          PY
+      - name: Verify and install only existing locked fixture dependencies
+        timeout-minutes: 5
+        run: |
+          cd "$RUNNER_TEMP/zodo-reviewed-source"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -B tests/browser/ci-deps/verify-lock.py
+          npm ci --prefix tests/browser/ci-deps --cache "$RUNNER_TEMP/zodo-npm-cache" --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org >"$RUNNER_TEMP/zodo-install.log" 2>&1 ||
+            { echo 'Locked fixture dependencies failed; no unlocked fallback'; exit 1; }
+          python3 -B tests/browser/ci-deps/verify-lock.py
+          for destination in tests/browser/node_modules tests/browser/harness-fixture-runtime/node_modules; do
+            test ! -e "$destination"
+            test ! -L "$destination"
+            cp -a tests/browser/ci-deps/node_modules "$destination"
+          done
+      - name: Run owned fixture with Chromium sandbox enabled
+        timeout-minutes: 10
+        run: |
+          cd "$RUNNER_TEMP/zodo-reviewed-source"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          export ZODO_FIXTURE_CORE_BIN="$RUNNER_TEMP/zodo-linux-assembly/zodo"
+          export ZODO_CHROME="$(command -v google-chrome)"
+          test -x "$ZODO_FIXTURE_CORE_BIN"
+          test -x "$ZODO_CHROME"
+          results=tests/browser/harness-fixture-runtime/results
+          test ! -e "$results"
+          test ! -L "$results"
+          status=0
+          timeout --kill-after=10s 8m node tests/browser/harness-isolated-regression.mjs >"$RUNNER_TEMP/zodo-browser.log" 2>&1 || status=$?
+          if [[ "$status" == 124 || "$status" == 137 ]]; then
+            echo '{"status":"timeout","cleanup":"unverified"}'
+            exit 1
+          fi
+          shopt -s nullglob
+          reports=("$results"/*/report.json)
+          if [[ "${#reports[@]}" != 1 ]]; then
+            echo '{"status":"missing-or-ambiguous-report","cleanup":"unverified"}'
+            exit 1
+          fi
+          # Only sanitized static case names/counts and cleanup are printed.
+          node tests/browser/harness-ci-summary.mjs "${reports[0]}"
+          test "$status" -eq 0

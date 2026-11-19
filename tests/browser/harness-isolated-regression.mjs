@@ -101,7 +101,12 @@ try {
   stage = 'fixture-start'
   fixture = await startFixture({ binary: process.env.ZODO_FIXTURE_CORE_BIN })
   stage = 'browser-launch'
-  browser = await chromium.launch({ executablePath: process.env.ZODO_CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
+  browser = await chromium.launch({
+    executablePath: process.env.ZODO_CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    headless: true,
+    // Playwright defaults to disabled sandboxing; Linux requires it, with no retry in a weaker mode.
+    chromiumSandbox: process.platform === 'linux',
+  })
   report.runtime.browser = browser.version()
   stage = 'browser-context'
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, timezoneId: 'Asia/Shanghai' })
