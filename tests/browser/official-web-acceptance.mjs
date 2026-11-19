@@ -466,6 +466,60 @@ try {
       assert.deepEqual(commands, ['proposal.create', 'proposal.approve', 'changes.commit'])
       await workbench.getByTestId('time-allocation-' + allocation.id).waitFor()
       console.log('PASS official-booking-committed-one-exact-allocation')
+
+      // Reuse the booked allocation. The same scoped request observer stays
+      // active; the booking gate has already been released.
+      commands.length = 0
+      const row = workbench.getByTestId('time-allocation-' + allocation.id)
+      const detail = workbench.getByRole('dialog', { name: '时间对象详情', exact: true })
+      const move = workbench.getByRole('dialog', { name: '移动任务时段', exact: true })
+      const openMove = async () => {
+        await row.click()
+        await detail.getByTestId('time-detail-move').click()
+        await move.waitFor()
+        assert.equal(await move.getByTestId('move-slot-capacity').inputValue(), capacity.id)
+        await move.getByTestId('move-slot-start').fill(`${day}T15:00`)
+        await move.getByText(`新结束（保持原时长）：${day} 15:30`, { exact: true }).waitFor()
+      }
+
+      phase = 'official-move-cancel-no-write'
+      await openMove()
+      await move.getByRole('button', { name: '取消', exact: true }).click()
+      await move.waitFor({ state: 'hidden' })
+      assert.deepEqual(await snapshot(), after)
+      assert.deepEqual(commands, [])
+      console.log('PASS official-move-cancel-no-write')
+
+      phase = 'official-move-preview-no-allocation-change'
+      await openMove()
+      await move.getByTestId('move-slot-preview').click()
+      const oldSlot = await review.getByTestId('plan-move-before').innerText()
+      const nextSlot = await review.getByTestId('plan-move-after').innerText()
+      assert.match(oldSlot, /Official Web acceptance capacity.*14:15.*14:45/s)
+      assert.match(nextSlot, /Official Web acceptance capacity.*15:00.*15:30/s)
+      const movePreview = await snapshot()
+      assert.deepEqual(movePreview, { ...after, revision: movePreview.revision })
+      assert.deepEqual(commands, ['proposal.create'])
+      console.log('PASS official-move-preview-no-allocation-change')
+
+      phase = 'official-move-commit-same-allocation'
+      const moveCommit = page.waitForResponse(response => operation(response.request()) === 'changes.commit', { timeout: 6000 })
+      await review.getByTestId('plan-apply').click()
+      const moveReceipt = await moveCommit
+      assert.equal(moveReceipt.status(), 200)
+      assert.equal((await moveReceipt.json()).ok, true)
+      await review.waitFor({ state: 'hidden' })
+      const movedState = await snapshot()
+      const [moved] = movedState.allocations
+      assert.ok(moved)
+      assert.equal(Date.parse(moved.start), instant('15:00'))
+      assert.equal(Date.parse(moved.end), instant('15:30'))
+      assert.deepEqual(movedState, { ...after, revision: movePreview.revision + 1,
+        allocations: [{ ...allocation, start: moved.start, end: moved.end, updated_at: moved.updated_at }] })
+      assert.deepEqual(commands, ['proposal.create', 'proposal.approve', 'changes.commit'])
+      await row.click()
+      await detail.getByTestId('time-detail-move').waitFor()
+      console.log('PASS official-move-committed-same-allocation')
     } finally {
       releaseCommit(false)
       await page.unroute(rpc, holdCommit)
