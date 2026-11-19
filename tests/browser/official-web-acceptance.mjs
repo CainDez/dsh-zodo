@@ -780,18 +780,35 @@ try {
       external_id: 'synthetic-hidden-event-id', title: 'SYNTHETIC HIDDEN CALENDAR TITLE',
       start: day + 'T23:30:00+08:00', end: tomorrow + 'T00:30:00+08:00',
     }
-    const importBusy = async events => {
+    const importBusy = async (mode, events) => {
+      const stage = 'official-busy-' + mode
+      phase = stage + '-open-import-control'
       await workbench.getByRole('button', { name: '导入忙碌', exact: true }).click()
       const editor = workbench.getByRole('dialog', { name: '导入忙碌快照', exact: true })
-      await editor.getByLabel('JSON 快照', { exact: true }).fill(JSON.stringify({ ...sourceInput, events }))
+      phase = stage + '-editor-visible'
+      await editor.waitFor()
+      phase = stage + '-fill-json'
+      // A wrapped textarea's DOM text can include its initial JSON, so do
+      // not use the entire wrapping label's computed text as an exact name.
+      const field = editor.locator('label').filter({ has: page.getByText('JSON 快照', { exact: true }) })
+      await field.locator('textarea').fill(JSON.stringify({ ...sourceInput, events }))
+      phase = stage + '-submit'
       await editor.getByRole('button', { name: '导入', exact: true }).click()
-      await editor.waitFor({ state: 'hidden' })
+      phase = stage + '-wait-for-close'
+      try {
+        await editor.waitFor({ state: 'hidden' })
+      } catch (error) {
+        if (await editor.getByRole('alert').isVisible().catch(() => false)) {
+          phase = stage + '-editor-reported-error'
+        }
+        throw error
+      }
     }
     commands.length = 0
     page.on('request', observe)
     try {
-      phase = 'official-busy-cross-midnight-import'
-      await importBusy([event])
+      await importBusy('cross-midnight', [event])
+      phase = 'official-busy-cross-midnight-confirm-core'
       const imported = await snapshot()
       const [source] = imported.otherFacts.calendar_sources
       const [stored] = imported.otherFacts.calendar_events
@@ -808,6 +825,7 @@ try {
       assert.deepEqual(imported, { ...absent, revision: absent.revision + 1,
         otherFacts: { ...absent.otherFacts, calendar_sources: [source], calendar_events: [stored] } })
       const sourceRow = workbench.getByTestId('calendar-source-' + source.id)
+      phase = 'official-busy-cross-midnight-fresh-source'
       await sourceRow.getByText(/1 个忙碌事件/).waitFor()
       await sourceRow.getByText('新鲜', { exact: true }).waitFor()
 
@@ -829,8 +847,8 @@ try {
       }
       console.log('PASS official-busy-cross-midnight-redacted')
 
+      await importBusy('empty', [])
       phase = 'official-busy-empty-source-not-missing'
-      await importBusy([])
       await sourceRow.getByText(/0 个忙碌事件/).waitFor()
       await sourceRow.getByText('新鲜', { exact: true }).waitFor()
       assert.equal(await noSource.count(), 0)
