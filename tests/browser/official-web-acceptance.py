@@ -6,7 +6,9 @@ playwright-core 1.64.1 (the existing tests/browser/ci-deps pin). No downloads.
 Provide an explicit trusted Chrome/Chromium path; Chromium sandbox is required.
 """
 import argparse
+from contextlib import contextmanager
 import hashlib
+from http.cookiejar import CookieJar
 import importlib.util
 import json
 import os
@@ -18,6 +20,11 @@ import signal
 import subprocess
 import tempfile
 import time
+from urllib.error import HTTPError
+from urllib.parse import urlsplit
+from urllib.request import (HTTPCookieProcessor, HTTPRedirectHandler, ProxyHandler,
+                            Request, build_opener)
+from uuid import uuid4
 from zipfile import ZipFile
 
 HERE = Path(__file__).resolve().parent
@@ -90,9 +97,96 @@ def stop_core(data, dsh_home, digest):
         os.close(fd)
 
 
+@contextmanager
+def official_host(dsh, root, env):
+    with tempfile.TemporaryFile(dir=root) as log:
+        host = subprocess.Popen(dsh + ["web", "--no-open", "--host", "127.0.0.1", "--port", "0"],
+                                cwd=root, env=env, stdin=subprocess.DEVNULL,
+                                stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            end = time.monotonic() + 20
+            while time.monotonic() < end:
+                out = os.pread(log.fileno(), 1_000_000, 0)
+                match = re.search(rb"dsh web: (http://127\.0\.0\.1:[0-9]+/\?token=[A-Za-z0-9_-]+)(?=\r?\n)", out)
+                if match:
+                    break
+                check(host.poll() is None and len(out) < 1_000_000)
+                time.sleep(.15)
+            else:
+                raise TimeoutError()
+            yield match[1]
+        finally:
+            stop_group(host)
+
+
+BRIDGE = "/zodo-bridge/v1"
+MAX_RESPONSE = 2_000_000
+
+
+def bridge_session(launch):
+    # Use only this private Host, never environment proxies or cookies. A
+    # bootstrap redirect can only remain on the original exact loopback origin.
+    url = launch.decode("ascii")
+    parts = urlsplit(url)
+    check(parts.scheme == "http" and parts.hostname == "127.0.0.1" and
+          parts.username is None and 0 < parts.port <= 65535)
+    origin = f"http://127.0.0.1:{parts.port}"
+
+    class SameOriginRedirect(HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            actual = urlsplit(newurl)
+            check(not urlsplit(req.full_url).path.startswith(BRIDGE + "/") and
+                  actual.scheme == "http" and actual.netloc == parts.netloc)
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    opener = build_opener(ProxyHandler({}), HTTPCookieProcessor(CookieJar()), SameOriginRedirect())
+    with opener.open(url, timeout=12) as response:
+        check(response.status == 200)
+        check(len(response.read(MAX_RESPONSE + 1)) <= MAX_RESPONSE)
+
+    def request(path, data=None, *, absent=False):
+        check(path in {"/health", "/session", "/rpc"})
+        req = Request(origin + BRIDGE + path, headers={
+            "Origin": origin, "Content-Type": "application/json",
+        }, data=None if data is None else json.dumps(data).encode("utf-8"))
+        try:
+            with opener.open(req, timeout=12) as response:
+                check(not absent and response.status == 200)
+                raw = response.read(MAX_RESPONSE + 1)
+                check(len(raw) <= MAX_RESPONSE)
+                body = json.loads(raw)
+                check(body["ok"] is True)
+                return body
+        except HTTPError as error:
+            with error:
+                check(absent and error.code == 404)
+                return None
+    return request
+
+
+def durable_snapshot(launch, data):
+    request = bridge_session(launch)
+    core = request("/health")["core"]
+    check(core["data_dir"] == str(data) and
+          isinstance(core["instance_id"], str) and bool(core["instance_id"]))
+    session = request("/session", {})
+    check("session_token" not in session)  # browser-side cookie only
+    result = request("/rpc", {"kind": "query", "envelope": {
+        "schema": "zodo.query/1", "workspace_id": "ws_local", "request_id": str(uuid4()),
+        "query": "workspace.snapshot", "payload": {},
+    }})
+    facts = result["result"]["data"]
+    # All other snapshot fields are durable workspace facts or projections thereof.
+    del facts["now"]
+    revision = facts["workspace"]["revision"]
+    check(type(revision) is int and revision > 0)
+    rows = [row for row in facts["tasks"] if row["title"] == "Official Web acceptance task"]
+    check(len(rows) == 1 and bool(rows[0]["id"]))
+    return core["instance_id"], facts
+
+
 def run(args):
     phase = "local-inputs"
-    host = None
     try:
         check(platform.system() == "Linux" and platform.machine() == "x86_64")
         modules = args.dsh_prefix.resolve(strict=True) / "node_modules"
@@ -146,20 +240,7 @@ def run(args):
                 run_group(dsh + ["plugin", "--profile", "web", "add", "file:" + str(unpacked)],
                           root, env, timeout=45)
                 phase = "official-loopback-launch"
-                with tempfile.TemporaryFile(dir=root) as log:
-                    host = subprocess.Popen(dsh + ["web", "--no-open", "--host", "127.0.0.1", "--port", "0"],
-                                            cwd=root, env=env, stdin=subprocess.DEVNULL,
-                                            stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-                    end = time.monotonic() + 20
-                    while time.monotonic() < end:
-                        out = os.pread(log.fileno(), 1_000_000, 0)
-                        match = re.search(rb"dsh web: (http://127\.0\.0\.1:[0-9]+/\?token=[A-Za-z0-9_-]+)(?=\r?\n)", out)
-                        if match:
-                            break
-                        check(host.poll() is None and len(out) < 1_000_000)
-                        time.sleep(.15)
-                    else:
-                        raise TimeoutError()
+                with official_host(dsh, root, env) as launch:
                     phase = "browser-temp"
                     # Chromium creates a SingletonSocket inside TMPDIR. The
                     # nested runner path can exceed Linux's Unix socket limit.
@@ -169,16 +250,33 @@ def run(args):
                         phase = "sandboxed-browser"
                         # The launcher secret travels through a private pipe only.
                         run_group([str(node), str(HERE / "official-web-acceptance.mjs"), str(chrome), str(pw)],
-                                  root, browser_env, timeout=100, private_input=match[1], stdout=None)
+                                  root, browser_env, timeout=100, private_input=launch, stdout=None)
+                    phase = "official-before-restart-snapshot"
+                    before_instance, before_facts = durable_snapshot(launch, clean["ZODO_DATA_DIR"])
+                phase = "official-first-core-stop"
+                stop_core(clean["ZODO_DATA_DIR"], clean["DSH_HOME"], digest)
+
+                phase = "official-restart-launch"
+                with official_host(dsh, root, env) as launch:
+                    phase = "official-after-restart-snapshot"
+                    after_instance, after_facts = durable_snapshot(launch, clean["ZODO_DATA_DIR"])
+                    check(after_instance != before_instance and after_facts == before_facts)
+                phase = "official-restarted-core-stop"
+                stop_core(clean["ZODO_DATA_DIR"], clean["DSH_HOME"], digest)
+                print("PASS official-host-core-restart-persisted-facts", flush=True)
+
+                phase = "official-plugin-remove"
+                run_group(dsh + ["plugin", "--profile", "web", "remove", "@zodo/harness-plugin"],
+                          root, env, timeout=30)
+                manifest = clean["DSH_HOME"] / "profiles" / "web" / "package.json"
+                check("@zodo/harness-plugin" not in json.loads(manifest.read_text()).get("dependencies", {}))
+                phase = "official-after-uninstall-launch"
+                with official_host(dsh, root, env) as launch:
+                    phase = "official-after-uninstall-bridge-absent"
+                    bridge_session(launch)("/health", absent=True)
+                print("PASS official-uninstall-bridge-absent", flush=True)
             finally:
-                phase_before_cleanup = phase
-                phase = "owned-process-cleanup"
-                try:
-                    if host:
-                        stop_group(host)
-                finally:
-                    stop_core(clean["ZODO_DATA_DIR"], clean["DSH_HOME"], digest)
-                phase = phase_before_cleanup
+                stop_core(clean["ZODO_DATA_DIR"], clean["DSH_HOME"], digest)
         return 0
     except (Exception, KeyboardInterrupt):
         # A launcher/error object may contain the temporary login token.
