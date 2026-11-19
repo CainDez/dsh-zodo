@@ -11,7 +11,8 @@
 - Host gateway 6/6：先用 `cargo build -p zodo-runtime --locked` 构建测试 Core，再运行 `node --test adapters/deepseek-harness/plugin/host-gateway.test.js`；自定义构建目录应先把 `ZODO_CORE_TEST_BIN` 指向该可执行文件。真实临时 Core 接入的是模拟 Host 供应商，不调用线上模型，也不是桌面集成。
 - Windows x64 打包及同源 ZIP 校验在标准 Windows Server 2025 runner 通过：[Actions #4](https://github.com/CainDez/dsh-zodo/actions/runs/44359422185)，精确源码 `60f88cb6ccbbdca41909e362aece672a82dd7a67`，ZIP SHA-256 为 `e4f61d3c84a478c9fd8afd97bd50c2318c04e6e300f50b4ba0f84e7fb8880a98`。只记录校验结果和哈希，未上传 ZIP，未发布或安装。
 - 同一运行以同次构建的 Core 启动隔离 Windows Chrome 夹具，**32/32** 通过。覆盖 390px 单日安排、键盘与日期切换、真实 Core 已保存而浏览器丢失回执时禁止重投，以及刷新后找回唯一一条记录。Core、夹具服务和临时数据均清理。真实插件前端和 bridge 运行在模拟 Host 中，不代表安装到 DSH Desktop。
-- 版本升级的旧源码固定为 `c3f3d0d63c7467dee14c241c2c05405dee7c2130`（插件 `0.2.0-dev.1`），新包为本分支 `0.3.0-dev.1`。Linux 隔离 Core 用旧版官方 CLI 建立合成记录，复现新版无法读取旧隐私配置；修复后同一 SQLite 中的固定预约、锁定与可移动安排、已确认提案及业务 revision 均保留。新版只新增一条经批准的安排，再重启仍一致。旧模型路由和诊断设置不等于新版授权；读取不改写，正常事务写入才保存新格式，之后不保证可用旧版打开。此结果不包含 Windows 旧包验证或 Desktop 插件升级。
+- 版本升级的旧源码固定为 `c3f3d0d63c7467dee14c241c2c05405dee7c2130`（插件 `0.2.0-dev.1`），新包为本分支 `0.3.0-dev.1`。Linux 隔离 Core 用旧版官方 CLI 建立合成记录，复现新版无法读取旧隐私配置；修复后同一 SQLite 中的固定预约、锁定与可移动安排、已确认提案及业务 revision 均保留。新版只新增一条经批准的安排，再重启仍一致。旧模型路由和诊断设置不等于新版授权；读取不改写，正常事务写入才保存新格式，之后不保证可用旧版打开。此 Linux 结果不等于 Desktop 插件升级。
+- [Windows Actions #5](https://github.com/CainDez/dsh-zodo/actions/runs/44439847145) 在 `a95c4e9d3abb3c5dbabddc569bf5b45fd8206b2b` 实际构建、校验两版 x64 包，旧版 ZIP SHA-256 `c11b6e8852232506e964e8a65b7494d4a8f64c85e001128157113e9069617d74`，新版 `b99f43b0b9fec0a1920b5a7e809535bcaadd3c04b0fd24fbd235177349549139`。包内 Core 与测试所用同次构建 Core 一致。Windows 同一 SQLite 合成工作区升级保留旧记录、只新增一次，重启快照一致、清理通过；同次 Windows Chrome 夹具 32/32 通过。CI 没有上传发布包，也没有启动真实 DSH Desktop。
 - 真实 DSH 桌面加载、升级、卸载均未验收；不访问真实用户配置、日历或账号，不降低隔离机制来跑测试。
 
 ## 用隔离环境验收
