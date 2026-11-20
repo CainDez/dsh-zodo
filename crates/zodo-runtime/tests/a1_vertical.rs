@@ -515,6 +515,75 @@ fn expired_approval_is_not_reusable() {
 }
 
 #[test]
+fn rejected_proposal_cannot_commit_with_its_previously_valid_grant() {
+    let mut fixture = Fixture::new();
+    let task_id = create_task(&mut fixture, "Rejected approval", 30);
+    create_capacity(
+        &mut fixture,
+        "2026-10-26T01:00:00Z",
+        "2026-10-26T02:00:00Z",
+        60,
+    );
+    let before = fixture.world();
+    let planned = fixture
+        .execute(
+            "plan.propose",
+            json!({
+                "task_ids": [task_id],
+                "horizon_start": "2026-10-26T00:00:00Z",
+                "horizon_end": "2026-10-27T00:00:00Z",
+                "move_unlocked": false,
+            }),
+        )
+        .unwrap();
+    assert!(
+        !planned.data["plan"]["assignments"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(planned.data["proposal"]["status"], "validated");
+    let proposal = planned.data["proposal"]["id"].as_str().unwrap();
+    let approved = fixture
+        .execute("proposal.approve", json!({"proposal_id": proposal}))
+        .unwrap();
+    let grant = approved.data["approval"]["id"].as_str().unwrap();
+    let rejected = fixture
+        .execute(
+            "proposal.reject",
+            json!({"proposal_id": proposal, "reason": "No longer needed"}),
+        )
+        .unwrap();
+    assert_eq!(rejected.status, ResultStatus::Rejected);
+    assert_eq!(rejected.data["proposal"]["status"], "rejected");
+
+    let after_reject = fixture.world();
+    assert_eq!(after_reject.workspace.revision, before.workspace.revision);
+    assert_eq!(after_reject.allocations, before.allocations);
+    assert_eq!(after_reject.tasks, before.tasks);
+    assert_eq!(after_reject.capacity_blocks, before.capacity_blocks);
+    let saved_grant = after_reject
+        .approval_grants
+        .iter()
+        .find(|item| item.id == grant)
+        .unwrap();
+    assert_eq!(saved_grant.proposal_id, proposal);
+    assert!(saved_grant.consumed_at.is_none());
+
+    let error = fixture
+        .execute(
+            "changes.commit",
+            json!({"proposal_id": proposal, "approval_grant": grant}),
+        )
+        .unwrap_err();
+    assert_eq!(error.code, ErrorCode::ApprovalRequired);
+    assert_eq!(
+        serde_json::to_value(fixture.world()).unwrap(),
+        serde_json::to_value(after_reject).unwrap()
+    );
+}
+
+#[test]
 fn reminder_outbox_is_durable_and_not_duplicated() {
     let mut fixture = Fixture::new();
     let fire_at = fixture.clock.now() + Duration::minutes(1);
