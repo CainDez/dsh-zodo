@@ -861,6 +861,37 @@ try {
           calendar_events: [] } })
       assert.deepEqual(commands, ['calendar.import_busy', 'calendar.import_busy'])
       console.log('PASS official-busy-empty-distinct-from-missing-source')
+
+      // Freeze only browser Date in this disposable page, after the real
+      // imports. Leave browser timers running and never change the Core clock.
+      const expiresAt = Date.parse(refreshed.last_sync_at) + refreshed.freshness_seconds * 1000
+      assert.ok(Number.isFinite(expiresAt) && refreshed.freshness_seconds > 0)
+      const renderAt = async now => {
+        await page.clock.setFixedTime(new Date(now))
+        assert.equal(await page.evaluate(() => Date.now()), now)
+        await workbench.getByTestId('nav-today').click()
+        await heading('今天').waitFor()
+        await workbench.getByTestId('nav-schedule').click()
+        await heading('日程').waitFor()
+        await sourceRow.getByText(/0 个忙碌事件/).waitFor()
+      }
+      commands.length = 0
+      phase = 'official-busy-ttl-exact-boundary'
+      await renderAt(expiresAt)
+      await sourceRow.getByText('新鲜', { exact: true }).waitFor()
+      assert.equal(await sourceRow.getByText('过期', { exact: true }).count(), 0)
+
+      // This is the last browser interaction; later lifecycle checks use
+      // the normal wall clock in the separate host/Core processes.
+      phase = 'official-busy-ttl-stale-without-write'
+      await renderAt(expiresAt + 1)
+      await sourceRow.getByText('过期', { exact: true }).waitFor()
+      assert.equal(await sourceRow.getByText('新鲜', { exact: true }).count(), 0)
+      assert.equal(await noSource.count(), 0)
+      assert.equal(await busyRows.count(), 0)
+      assert.deepEqual(commands, [])
+      assert.deepEqual(await snapshot(), empty)
+      console.log('PASS official-busy-ttl-exact-then-stale-no-write')
     } finally {
       page.off('request', observe)
     }
