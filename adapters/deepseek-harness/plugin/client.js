@@ -2227,7 +2227,46 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function ProposalsView({ snapshot, setModal, busy, runs }) {
+    function canDiscardProposal(proposal, uncertain) {
+      // Approval grants do not change the proposal's validated status.
+      return proposal?.status === 'validated' && !uncertain
+    }
+
+    function DiscardProposal({ proposal, available, onClose, onUncertain, send, busy }) {
+      const pending = useRef(false)
+      const blocked = useRef(false)
+      const [error, setError] = useState('')
+      const close = () => { if (!pending.current && !busy) onClose() }
+      const confirm = async () => {
+        if (!available || pending.current || blocked.current || busy) return
+        pending.current = true
+        try {
+          await send('proposal.reject', { proposal_id: proposal.id })
+          blocked.current = true
+          onClose()
+        } catch {
+          // The request may already have succeeded. Verify before attempting again.
+          blocked.current = true
+          onUncertain()
+          setError('未能确认提案是否已放弃。请关闭弹窗并刷新提案状态，不要重复提交。')
+        } finally {
+          pending.current = false
+        }
+      }
+      return h(Modal, { title: '确认放弃提案', onClose: close,
+        footer: h(React.Fragment, null,
+          h(Button, { onClick: close, disabled: busy }, COPY.cancel),
+          h(Button, { onClick: confirm, disabled: busy || !available || Boolean(error),
+            testid: 'proposal-discard-confirm' }, '确认放弃')),
+      },
+        h('p', null, proposal.intent),
+        h('p', null, '放弃后，这条提案及其已有批准不能再用于提交。已保存的日程不受影响。'),
+        error || !available ? h('p', { role: 'alert', className: 'zw-alert zw-alert-warn' },
+          error || '提案状态已变化，请关闭后查看最新状态。') : null,
+      )
+    }
+
+    function ProposalsView({ snapshot, setModal, busy, runs, uncertainProposals }) {
       const proposals = (snapshot.proposals ?? []).slice().sort((left, right) => {
         if (left.created_at !== right.created_at) return String(right.created_at).localeCompare(String(left.created_at))
         return (right.base_revision ?? 0) - (left.base_revision ?? 0)
@@ -2260,6 +2299,10 @@ window.__ModuleLoader__.load({
               proposal.diagnostics.map(item => item.message).join(' · ')) : null,
             h('div', { className: 'zw-action-row' },
               h(Button, { tone: 'primary', onClick: () => apply(proposal), disabled: busy || proposal.status === 'draft' }, '检查并批准'),
+              canDiscardProposal(proposal, uncertainProposals.has(proposal.id)) ? h(Button, {
+                onClick: () => setModal({ type: 'discard-proposal', proposal }),
+                disabled: busy, testid: `proposal-discard-${proposal.id}`,
+              }, '放弃此提案') : null,
               h(Button, {
                 onClick: () => setModal({
                   type: 'data-reference',
@@ -2274,7 +2317,7 @@ window.__ModuleLoader__.load({
         ) : h(Empty, null, '没有待确认的提案。'),
         proposals.length ? h(Section, { title: '最近历史' },
           proposals.filter(proposal => !pending.includes(proposal)).slice(0, 12).map(proposal =>
-            h('div', { className: 'zw-list-row', key: proposal.id },
+            h('div', { className: 'zw-list-row', key: proposal.id, 'data-testid': `proposal-history-${proposal.id}` },
               h('span', null, proposal.intent),
               h(Badge, { tone: proposal.status === 'applied' ? 'accent' : 'neutral' }, proposal.status),
             )),
@@ -2282,7 +2325,7 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function PlanModal({ proposal, plan, snapshotRevision, onClose, onApprove, busy, error, grant, moveUncertain, onEditMove, onUncertainMove }) {
+    function PlanModal({ proposal, plan, snapshotRevision, onClose, onApprove, busy, error, grant, moveUncertain, onEditMove, onUncertainProposal }) {
       const [localError, setLocalError] = useState('')
       const [blocked, setBlocked] = useState('')
       const attempt = useRef({ pending: false, outcome: '' })
@@ -2306,7 +2349,7 @@ window.__ModuleLoader__.load({
           const regenerate = ['VALIDATION_FAILED', 'REVISION_CONFLICT', 'POLICY_CHANGED', 'APPROVAL_EXPIRED', 'APPROVAL_REQUIRED', 'PERMISSION_DENIED', 'NOT_FOUND'].includes(failure.code)
           const outcome = regenerate ? 'regenerate' : 'uncertain'
           attempt.current.outcome = outcome
-          if (isMove && outcome === 'uncertain') onUncertainMove?.()
+          if (outcome === 'uncertain') onUncertainProposal?.()
           setBlocked(outcome)
           setLocalError(regenerate
             ? 'Core 拒绝了本次操作。请核对提案状态、时间、版本和权限；修正后重新生成预览并批准，不能重试旧批准。'
@@ -4271,7 +4314,7 @@ window.__ModuleLoader__.load({
       const [scheduleLength, setScheduleLength] = useState(7)
       const [scheduleStart, setScheduleStart] = useState(() => agendaShift(todayIso(), 0))
       const settledRuns = useRef(new Set())
-      const uncertainMoves = useRef(new Set())
+      const uncertainProposals = useRef(new Set())
       stateSnapshotRef.current = snapshot
 
       useEffect(() => {
@@ -4377,7 +4420,7 @@ window.__ModuleLoader__.load({
         setBusy(true)
         setError('')
         try {
-          const result = await command(operation, payload, snapshot?.workspace?.revision, undefined, !guardedMoveSettlement)
+          const result = await command(operation, payload, snapshot?.workspace?.revision, undefined, !guardedMoveSettlement && operation !== 'proposal.reject')
           setNotice(`${['proposal.create', 'plan.propose'].includes(operation) ? '提案已记录 · 尚未应用' : '已保存'} · r${result.revision} · ${result.operation_id.slice(0, 12)}`)
           if (operation !== 'proposal.approve') await refresh()
           return result
@@ -5111,7 +5154,7 @@ window.__ModuleLoader__.load({
           case 'automation': return h(AutomationView, { snapshot, send, busy, setModal, report: setNotice })
           case 'tasks': return renderTasks()
           case 'schedule': return renderSchedule()
-          case 'proposals': return h(ProposalsView, { snapshot, setModal, busy, runs })
+          case 'proposals': return h(ProposalsView, { snapshot, setModal, busy, runs, uncertainProposals: uncertainProposals.current })
           case 'runs': return h(RunsView, {
             runs,
             loading: runsLoading,
@@ -5162,6 +5205,12 @@ window.__ModuleLoader__.load({
           case 'duplicate-suggestions': return h(DuplicateSuggestions, { onClose: closeModal, send, busy, refresh })
           case 'busy': return h(BusyImportEditor, { onClose: closeModal, send, busy })
           case 'recurrence': return h(RecurrenceEditor, { onClose: closeModal, send, busy })
+          case 'discard-proposal': return h(DiscardProposal, {
+            proposal: modal.proposal,
+            available: canDiscardProposal((snapshot.proposals ?? []).find(row => row.id === modal.proposal.id),
+              uncertainProposals.current.has(modal.proposal.id)),
+            onClose: closeModal, onUncertain: () => uncertainProposals.current.add(modal.proposal.id), send, busy,
+          })
           case 'plan': return h(PlanModal, {
             proposal: modal.proposal,
             plan: modal.plan,
@@ -5172,9 +5221,9 @@ window.__ModuleLoader__.load({
             error,
             grant: modal.grant || (Boolean(allocationMoveOperation(modal.proposal)) &&
               (snapshot.approval_grants ?? []).some(grant => grant.proposal_id === modal.proposal.id)),
-            moveUncertain: uncertainMoves.current.has(modal.proposal.id),
+            moveUncertain: uncertainProposals.current.has(modal.proposal.id),
             onEditMove: modal.moveEditor ? () => setModal({ type: 'allocation-move', ...modal.moveEditor }) : undefined,
-            onUncertainMove: () => uncertainMoves.current.add(modal.proposal.id),
+            onUncertainProposal: () => uncertainProposals.current.add(modal.proposal.id),
           })
           case 'occurrence-move': return h(OccurrenceMove, { occurrence: modal.occurrence, task: modal.task, onClose: closeModal, send, busy })
           case 'recurrence-scope': return h(RecurrenceScopeDialog, { task: modal.task, snapshot, onClose: closeModal, send, busy, setModal })

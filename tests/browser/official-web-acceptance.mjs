@@ -491,6 +491,51 @@ try {
       assert.deepEqual(commands, [])
       console.log('PASS official-move-cancel-no-write')
 
+      phase = 'official-discard-create-disposable-preview'
+      await openMove()
+      const candidateResponse = page.waitForResponse(response => operation(response.request()) === 'proposal.create', { timeout: 6000 })
+      await move.getByTestId('move-slot-preview').click()
+      const candidateReceipt = await candidateResponse
+      assert.equal(candidateReceipt.status(), 200)
+      const candidate = (await candidateReceipt.json()).result?.data?.proposal
+      assert.ok(candidate?.id && candidate.status === 'validated')
+      await review.getByRole('button', { name: '放弃预览', exact: true }).click()
+      await review.waitFor({ state: 'hidden' })
+      assert.deepEqual(commands, ['proposal.create'])
+      assert.deepEqual(await snapshot(), after)
+
+      phase = 'official-discard-confirmation-cancel'
+      await workbench.getByTestId('nav-proposals').click()
+      await heading('提案').waitFor()
+      const discard = workbench.getByTestId('proposal-discard-' + candidate.id)
+      const confirmation = workbench.getByRole('dialog', { name: '确认放弃提案', exact: true })
+      await discard.click()
+      await confirmation.getByRole('button', { name: '取消', exact: true }).click()
+      await confirmation.waitFor({ state: 'hidden' })
+      await discard.waitFor()
+      assert.deepEqual(commands, ['proposal.create'])
+      assert.deepEqual(await snapshot(), after)
+
+      phase = 'official-discard-confirm-one-no-schedule-change'
+      await discard.click()
+      const rejectResponse = page.waitForResponse(response => operation(response.request()) === 'proposal.reject', { timeout: 6000 })
+      await confirmation.getByTestId('proposal-discard-confirm').click()
+      const rejectReceipt = await rejectResponse
+      assert.equal(rejectReceipt.status(), 200)
+      const rejected = (await rejectReceipt.json()).result?.data?.proposal
+      assert.equal(rejected?.id, candidate.id)
+      assert.equal(rejected?.status, 'rejected')
+      await confirmation.waitFor({ state: 'hidden' })
+      await discard.waitFor({ state: 'hidden' })
+      await workbench.getByTestId('proposal-history-' + candidate.id).getByText('rejected', { exact: true }).waitFor()
+      assert.deepEqual(commands, ['proposal.create', 'proposal.reject'])
+      assert.deepEqual(await snapshot(), after)
+      await workbench.getByTestId('nav-schedule').click()
+      await heading('日程').waitFor()
+      await workbench.getByTestId('schedule-date').fill(day)
+      commands.length = 0
+      console.log('PASS official-discard-keeps-schedule-and-rejects-once')
+
       phase = 'official-move-preview-no-allocation-change'
       await openMove()
       await move.getByTestId('move-slot-preview').click()

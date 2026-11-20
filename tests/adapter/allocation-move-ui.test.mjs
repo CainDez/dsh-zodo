@@ -139,7 +139,7 @@ test('move review offers retained edit only before attempt or definitive rejecti
     const f = harness()
     let applications = 0, edits = 0, uncertain = 0
     const props = { proposal: proposalFor(expectedOp), snapshotRevision: 5,
-      onEditMove: () => { edits++ }, onUncertainMove: () => { uncertain++ },
+      onEditMove: () => { edits++ }, onUncertainProposal: () => { uncertain++ },
       onApprove: async () => { applications++; throw Object.assign(new Error('private transport'), { code }) } }
     const tree = f.draw('PlanModal', props)
     byId(tree, 'plan-edit-move').props.onClick()
