@@ -174,43 +174,30 @@ test('Today chooses saved current/next allocation, not priority or a running foc
   assert.equal(api.todayNextAction([], tasks, tasks[2], now).kind, 'suggestion')
 }))
 
-test('Today default card opens task; focus is explicit and does not bubble; timestamp and caveat render', () => {
+test('Today task detail and focus use separate native buttons; timestamp and caveat render', () => {
   const begin = source.indexOf("h(Section, { title: '下一步' }")
   const end = source.indexOf("h(Section, { title: '风险与未排入' }", begin)
   const expression = source.slice(begin, end).trim().replace(/,$/, '')
   const opened = [], focused = []
   const task = {id:'task', title:'Fixture', estimate_minutes:15}
   const tree = vm.runInNewContext(expression, {
-    Section:'Section', Button:'Button', Empty:'Empty', busy:false,
+    Section:'Section', Button:'Button', Empty:'Empty', busy:false, currentFocus:null,
     todayCheckedAt: Date.parse('2026-11-18T10:00Z'), todayAction:{kind:'suggestion',task},
     dateTimeFor: value => value,
     openTask: id => opened.push(id), focusStart: task => focused.push(task.id),
     h: (tag, props, ...children) => ({tag, props, children}),
   })
   assert.ok(JSON.stringify(tree).includes('2026-11-18T10:00:00.000Z'))
-  assert.ok(JSON.stringify(tree).includes('建议不是可执行性判断'))
+  assert.ok(JSON.stringify(tree).includes('不是可执行性判断'))
   const card = tree.children.find(child => child?.props?.['data-testid'] === 'today-next-task')
-  card.props.onClick()
-  let prevented = false
-  const cardElement = {}
-  const childButtonElement = {}
-  // Native child buttons own Enter/Space; bubbling must not navigate or cancel
-  // their browser activation. Only keyboard input on the card itself opens it.
-  for (const key of ['Enter', ' ']) {
-    card.props.onKeyDown({key, target:childButtonElement, currentTarget:cardElement, preventDefault:()=>{prevented=true}})
-  }
-  assert.equal(prevented, false)
+  assert.equal(card.props.onClick, undefined)
+  const detail = card.children.find(child => child?.tag === 'button')
+  const focus = card.children.find(child => child?.props?.testid === 'today-focus')
+  detail.props.onClick()
   assert.deepEqual(opened, ['task'])
-  for (const key of ['Enter', ' ']) {
-    card.props.onKeyDown({key, target:cardElement, currentTarget:cardElement, preventDefault:()=>{prevented=true}})
-  }
-  assert.equal(prevented, true)
-  assert.deepEqual(opened, ['task','task','task'])
   assert.deepEqual(focused, [])
-  const button = card.children.find(child => child?.props?.testid === 'today-focus')
-  let stopped = false
-  button.props.onClick({stopPropagation:()=>{stopped=true}})
-  assert.equal(stopped, true)
+  focus.props.onClick()
+  assert.deepEqual(opened, ['task'])
   assert.deepEqual(focused, ['task'])
 })
 

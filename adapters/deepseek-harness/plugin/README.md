@@ -2,6 +2,14 @@
 
 The maintained Zodo UI is a native DSH left-menu entry and main workbench. Core owns SQLite business facts, proposals, planner, and permissions. The Host bridge supplies authenticated browser/tool access and optional DSH model execution.
 
+## Workbench navigation
+
+- **今天** is the daily execution view: next task or current focus, today's timeline, and deadlines without a scheduled slot. Open a task without leaving this view. For weekly planning or changes to available time, use **日程**.
+- **收集箱** separates **待处理**, **待澄清**, and **处理记录**. **＋ 收集** in the top bar preserves the original text; it does not create a task.
+- **工作** groups **任务**, **项目**, and **目标**. Reusable filters live in the task list. Projects can be independent or linked to a goal; open a project for its complete task list, milestones, and dependencies.
+- **日程** keeps the single-day and seven-day views. **生成计划** adds new placements without moving existing ones; **重新规划** can move eligible future placements. Both require preview and approval before updating the calendar. Appointment, capacity and calendar import tools are under **日程操作**.
+- **回顾** groups execution summaries and habits. Search, proposals and AI runs, and focus stay in the top bar. Workspace and administrative controls are grouped under **设置**.
+
 ## Model selection and privacy are separate
 
 - **Models:** select exactly one DSH provider/model, or a custom OpenAI-compatible endpoint/model. No local/cloud pair, role slots, current-chat-model inheritance or automatic cross-model fallback.

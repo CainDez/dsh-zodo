@@ -9,9 +9,17 @@ pnpm --dir tests/browser/harness-fixture-runtime install --frozen-lockfile --ign
 node tests/browser/harness-isolated-regression.mjs
 ```
 
-Requires a newly integrated release Core, Chrome, and the existing browser test dependencies. Optional `ZODO_FIXTURE_CORE_BIN` selects a binary, never a data directory; `ZODO_CHROME` selects Chrome. An older Core that only accepts v1 local/cloud configuration is not a valid test target. Run the suite only after the integrated release is ready. The fixture itself neither builds Core nor installs anything into a real profile.
+Requires a newly integrated Core, Chrome, and the existing browser test dependencies. On Windows, a freshly built debug Core works for local isolation:
 
-Tests create their own origin and data directory and always stop the Core/server/browser and delete data in `finally`. The bridge discovers the already-owned Core; detached autostart is deliberately disabled with an absent binary path, so a fixture crash cannot leave an untracked replacement Core. The HTTP server is listening and `ctx.webServer.getOrigin()` returns its exact fixture URL before plugin registration. Plugin effects own their callback-channel cleanup. Per-run screenshots and a sanitized JSON report are written under the ignored runtime results directory. Results record release Core/bridge/client hashes, every case outcome, navigation checks and cleanup confirmation.
+```powershell
+cargo build --locked --bin zodo
+$env:ZODO_FIXTURE_CORE_BIN = (Resolve-Path target/debug/zodo.exe).Path
+node tests/browser/harness-isolated-regression.mjs
+```
+
+The default is the release binary. Optional `ZODO_FIXTURE_CORE_BIN` selects a binary, never a data directory; `ZODO_CHROME` selects Chrome. An older Core that only accepts v1 local/cloud configuration is not a valid test target. Run the suite only after the same-source Core build is ready. The fixture itself neither builds Core nor installs anything into a real profile.
+
+Tests create their own origin and data directory and always stop the Core/server/browser and delete data in `finally`. The bridge discovers the already-owned Core; detached autostart is deliberately disabled with an absent binary path, so a fixture crash cannot leave an untracked replacement Core. The HTTP server is listening and `ctx.webServer.getOrigin()` returns its exact fixture URL before plugin registration. Plugin effects own their callback-channel cleanup. Per-run screenshots and a sanitized JSON report are written under the ignored runtime results directory. Results record Core/bridge/client hashes, every case outcome, navigation checks and cleanup confirmation.
 
 For an explicitly managed manual fixture, `node tests/browser/harness-isolated-fixture.mjs --serve` prints its unique loopback URL. POST `/__fixture/shutdown` stops the owned server and Core and removes its data. It also has a 30-minute maximum lifetime. The optional `?fixture_view=models` query navigates the throwaway client to that page without writing settings. Never use it as a replacement for the current DSH GUI. In DSH run_code, import `startFixture()` and keep the process alive through browser inspection before `finally { await fixture.stop() }`; that process starts with an empty environment, so provide valid SystemRoot and TEMP/TMP values before startup.
 
@@ -78,9 +86,9 @@ successful rendered browser run.
 
 ## Coverage and limits
 
-**21 navigation entries; the report records the executed case count.** The original non-settings coverage remains: same-origin/cookie gates, credential non-exposure, empty Core boot, navigation mounting, capture/manual clarification/conversion to task+goal+project, task validation/create/edit/complete/reopen/archive/restore, explicit goal/project editors, habit create/log, saved-view create/apply, one-run automation budget exhaustion, focus start/pause/resume/finish without completing the task, JSON/CSV downloads and SQLite backup hashes, capacity and preview-before-approval plan commit, search, responsive navigation/dialogs, offline draft reload/recovery, JavaScript errors and unexpected external browser requests. Archive/restore is used rather than permanent task deletion.
+**Grouped navigation; the report records the executed case count.** The suite verifies the five primary destinations, sidebar Settings, top-bar Search/Focus/Proposals, and nested Work/Review/Activity/Settings destinations. It also verifies that Today keeps task detail in context and links to Schedule for planning, and that Inbox separates new, unresolved and processed items. The original non-settings coverage remains: same-origin/cookie gates, credential non-exposure, empty Core boot, navigation mounting, capture/manual clarification/conversion to task+goal+project, task validation/create/edit/complete/reopen/archive/restore, explicit goal/project editors, habit create/log, saved-view create/apply, one-run automation budget exhaustion, focus start/pause/resume/finish without completing the task, JSON/CSV downloads and SQLite backup hashes, capacity and preview-before-approval plan commit, search, responsive navigation/dialogs, offline draft reload/recovery, JavaScript errors and unexpected external browser requests. Archive/restore is used rather than permanent task deletion.
 
-Responsive coverage clicks all 21 entries at 390px and 800px viewports and a 600px workbench container inside a 1440px viewport. It checks active state, headings and document/nav horizontal overflow. These are navigation/action checks, not exhaustive proofs of every control on every page.
+Responsive coverage exercises every grouped navigation route at 390px and 800px viewports and a 600px workbench container inside a 1440px viewport. It checks active state, headings and document/nav horizontal overflow. These are navigation/action checks, not exhaustive proofs of every control on every page.
 
 ### Independent model-source and privacy settings
 

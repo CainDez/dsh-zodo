@@ -46,28 +46,26 @@ window.__ModuleLoader__.load({
     const nav = [
       { id: 'today', label: COPY.today, glyph: '◐' },
       { id: 'inbox', label: COPY.inbox, glyph: '⌄' },
-      { id: 'goals', label: COPY.goals, glyph: '◎' },
+      { id: 'work', label: '工作', glyph: '▱', target: 'tasks' },
       { id: 'schedule', label: COPY.schedule, glyph: '▤' },
       { id: 'review', label: COPY.review, glyph: '✓' },
     ]
-    const moreNav = [
-      { id: 'tasks', label: COPY.tasks, glyph: '☷' },
-      { id: 'projects', label: COPY.projects, glyph: '▱' },
-      { id: 'habits', label: '习惯', glyph: '↻' },
-      { id: 'views', label: '视图', glyph: '▦' },
-      { id: 'automation', label: '自动化', glyph: '⚡' },
-      { id: 'focus', label: COPY.focus, glyph: '◉' },
-      { id: 'proposals', label: '提案', glyph: '⚑' },
-      { id: 'runs', label: 'AI 运行', glyph: '▷' },
-      { id: 'search', label: COPY.search, glyph: '⌕' },
-      { id: 'models', label: '模型', glyph: '◈' },
-      { id: 'data', label: '数据', glyph: '▣' },
-      { id: 'sync', label: '同步', glyph: '⇄' },
-      { id: 'settings', label: COPY.settings, glyph: '⚙' },
-      { id: 'privacy', label: COPY.privacy, glyph: '◇' },
-      { id: 'agents', label: COPY.agents, glyph: '⌘' },
-      { id: 'audit', label: COPY.audit, glyph: '≡' },
+    const workSections = [['tasks', '任务'], ['projects', '项目'], ['goals', '目标']]
+    const reviewSections = [['review', '复盘', 'review-summary'], ['habits', '习惯']]
+    const activitySections = [['proposals', '提案', 'activity-proposals'], ['runs', 'AI 运行']]
+    const settingsGroups = [
+      ['常规与自动化', [['settings-overview', '时间、日历与提醒'], ['automation', '自动化']]],
+      ['模型与隐私', [['models', '模型'], ['privacy', '隐私']]],
+      ['Agent 与审计', [['agents', 'Agent 授权'], ['audit', '操作审计']]],
+      ['数据与同步', [['data', '数据管理'], ['sync', '加密同步']]],
     ]
+    const settingsSections = settingsGroups.flatMap(([, sections]) => sections)
+    const inboxSections = [
+      ['pending', '待处理', ['unprocessed']],
+      ['clarify', '待澄清', ['needs_clarification']],
+      ['history', '处理记录', ['processed', 'dismissed']],
+    ]
+    const inboxStatusLabels = { unprocessed: '未处理', needs_clarification: '待澄清', processed: '已处理', dismissed: '已忽略' }
 
     let sessionPromise = null
     let uiSession = null
@@ -4301,6 +4299,25 @@ window.__ModuleLoader__.load({
       const [bridge, setBridge] = useState(null)
       const [view, setView] = useState('today')
       const [selectedTaskId, setSelectedTaskId] = useState(null)
+      const [selectedProjectId, setSelectedProjectId] = useState(null)
+      const [projectOrigin, setProjectOrigin] = useState('projects')
+      const [selectedGoalId, setSelectedGoalId] = useState(null)
+      const [inboxSection, setInboxSection] = useState('pending')
+      const mainRef = useRef(null)
+      const taskDetailRef = useRef(null)
+      const taskTrigger = useRef(null)
+
+      const navigate = target => {
+        if (target !== view) mainRef.current?.scrollTo(0, 0)
+        setSelectedTaskId(null)
+        setSelectedProjectId(null)
+        setSelectedGoalId(null)
+        setView(target)
+      }
+
+      useEffect(() => {
+        if (selectedTaskId) taskDetailRef.current?.focus()
+      }, [selectedTaskId])
       const [modal, setModal] = useState(null)
       const [busy, setBusy] = useState(false)
       const [error, setError] = useState('')
@@ -4324,7 +4341,7 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         const onKey = event => {
-          if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+          if (!event.isComposing && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && rootRef.current?.contains(event.target)) {
             event.preventDefault()
             setModal(current => current?.type === 'command' ? null : { type: 'command' })
           }
@@ -4460,10 +4477,27 @@ window.__ModuleLoader__.load({
       const outstanding = outstandingWork(snapshot, todayCheckedAt)
       const unplacedMinutes = outstanding.minutes
 
+      const currentFocus = (snapshot?.focus_sessions ?? []).find(session => session.state === 'running' || session.state === 'paused')
+      const pendingProposals = (snapshot?.proposals ?? []).filter(proposal => proposal.status === 'validated').length
+      const pendingInbox = (snapshot?.inbox ?? []).filter(entry => entry.status === 'unprocessed' || entry.status === 'needs_clarification').length
       const openTask = id => {
+        taskTrigger.current = document.activeElement
         setSelectedTaskId(id)
-        setView('tasks')
       }
+      const closeTask = () => {
+        setSelectedTaskId(null)
+        taskTrigger.current?.focus?.()
+      }
+      const openProject = (id, origin = 'projects') => {
+        navigate('projects')
+        mainRef.current?.scrollTo(0, 0)
+        setProjectOrigin(origin)
+        setSelectedProjectId(id)
+      }
+      const sectionButtons = (sections, current, onSelect = navigate, prefix = 'nav') => sections.map(([id, label, testId]) =>
+        h('button', { key: id, type: 'button', className: 'zw-section-tab',
+          'aria-current': current === id ? 'page' : undefined, 'data-testid': `${prefix}-${testId ?? id}`,
+          onClick: () => onSelect(id) }, label))
 
       const applySavedView = view => {
         const filter = view.filter ?? {}
@@ -4473,7 +4507,8 @@ window.__ModuleLoader__.load({
           tag: filter.tag ?? '',
           overdue: Boolean(filter.overdue),
         })
-        setView('tasks')
+        setSelectedTaskIds([])
+        navigate('tasks')
       }
 
       const toggleTaskSelection = id => {
@@ -4635,7 +4670,7 @@ window.__ModuleLoader__.load({
           task: ['先建一个可以安排的任务，并填入预计分钟；不用先建项目或连接模型。', '新建任务', event => setModal({ type: 'task', task: null, restoreFocus: event.currentTarget })],
           estimate: ['已有任务。给任务填入预计分钟，才能为它安排时段。', '补充任务估时', event => setModal({ type: 'task', task: step.task, restoreFocus: event.currentTarget })],
           capacity: ['已有带估时的任务。先标出一段你愿意用来做任务的时间，也就是「容量」。日历空白不是容量。', '添加可用时间', () => setModal({ type: 'capacity' })],
-          timezone: ['已录入任务和容量，但无法识别工作空间时区。请先检查时区设置。', '查看工作空间设置', () => setView('settings')],
+          timezone: ['已录入任务和容量，但无法识别工作空间时区。请先检查时区设置。', '查看工作空间设置', () => navigate('settings-overview')],
           schedule: ['已有带估时的任务和未来容量。选择任务、容量和具体时段，先检查预览，再批准保存；是否可安排以 Core 检查为准。', '打开时段安排', () => setModal({ type: 'quick-schedule', day: step.day,
             guidedDraft: guidedScheduleDraft(snapshot, Date.now(), workspaceTimezone(snapshot)) })],
         }
@@ -4646,6 +4681,25 @@ window.__ModuleLoader__.load({
         )
       }
 
+      const renderTaskDetail = () => selectedTask ? h('div', {
+        className: 'zw-context-detail', tabIndex: -1, ref: taskDetailRef,
+        onKeyDown: event => { if (event.key === 'Escape' && !modal) { event.stopPropagation(); closeTask() } },
+      }, h(TaskDetail, {
+        task: selectedTask,
+        snapshot,
+        onClose: closeTask,
+        send,
+        busy,
+        onEdit: () => setModal({ type: 'task', task: selectedTask }),
+        onTime: () => setModal({ type: 'time', task: selectedTask, tasks: snapshot.tasks }),
+        onProgress: () => setModal({ type: 'progress', task: selectedTask }),
+        onDependency: () => setModal({ type: 'dependency', task: selectedTask }),
+        onReminder: () => setModal({ type: 'reminder', task: selectedTask }),
+        onBlocked: () => setModal({ type: 'blocked', task: selectedTask }),
+        onFocus: () => focusStart(selectedTask),
+        setModal,
+      })) : null
+
       const renderToday = () => {
         const emptyWorkspace = !snapshot.tasks.length && !snapshot.goals.length && !snapshot.inbox.length && !snapshot.habits.length
         return h('div', { className: 'zw-page' },
@@ -4654,21 +4708,19 @@ window.__ModuleLoader__.load({
             h('div', { className: 'zw-kicker' }, new Intl.DateTimeFormat('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date())),
             h('h1', null, '今天'),
           ),
-          h('div', { className: 'zw-head-actions' },
-            h(Button, { onClick: () => setModal({ type: 'capture' }), disabled: busy }, '收集'),
-            h(Button, { onClick: () => openPlan(), disabled: busy, tone: 'primary', title: '从现在 5 分钟后起规划 7 天，仅补充安排、不移动已有分配；先预览再批准' }, COPY.plan),
-            h(Button, { onClick: () => openPlan('replan'), disabled: busy, title: '从现在 5 分钟后起规划 7 天，允许重排未来未锁定、未开始分配；固定预约、锁定、已开始和过去事实保持不变，需预览批准' }, '重新规划'),
-          ),
+          h(Button, { onClick: () => { setScheduleStart(agendaShift(today, 0, scheduleLength)); navigate('schedule') }, testid: 'today-open-schedule' }, '打开日程'),
         ),
-        error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
         renderFirstSchedule(),
         emptyWorkspace ? h('p', { className: 'zw-fineprint' }, '也可以先用「收集」记录一句原文，再决定怎样处理。') : null,
         h('div', { className: 'zw-today-grid' },
-          h(Section, { title: '承诺与容量', className: 'zw-span2' },
+          h(Section, { title: '今日时间线', className: 'zw-span2' },
             h('div', { className: 'zw-agenda' },
               todayEntries.map(entry => {
                 const { row, kind } = entry
-                return h('div', { className: `zw-agenda-row ${kind === 'allocation' ? 'zw-allocation' : ''}`, key: `${kind}:${row.id}` },
+                return h(kind === 'busy' ? 'div' : 'button', { className: `zw-agenda-row ${kind === 'allocation' ? 'zw-allocation' : ''}`, key: `${kind}:${row.id}`,
+                  ...(kind === 'busy' ? {} : { type: 'button', onClick: () => kind === 'allocation' && findTask(snapshot, row.task_id)
+                    ? openTask(row.task_id) : setModal({ type: 'time-detail', kind, row }) }),
+                },
                   h('span', { className: 'zw-time' }, `${timeFor(new Date(entry.visibleStart).toISOString())}–${entry.endsAtDayBoundary ? '24:00' : timeFor(new Date(entry.visibleEnd).toISOString())}`),
                   h('span', { className: 'zw-agenda-title' }, kind === 'busy' ? '外部日历忙碌' : kind === 'allocation' ? taskTitle(snapshot, row.task_id) : row.title),
                   h(Badge, { tone: kind === 'commitment' || kind === 'busy' ? 'fixed' : 'soft' }, kind === 'busy' ? '只读忙碌快照' : kind === 'commitment' ? '固定' : kind === 'capacity' ? `容量 ${row.capacity_minutes} 分（全段）` : '任务分配'),
@@ -4681,78 +4733,63 @@ window.__ModuleLoader__.load({
           ),
           h(Section, { title: '下一步' },
             h('p', { className: 'zw-fineprint', 'data-testid': 'today-action-asof' }, `截至 ${dateTimeFor(new Date(todayCheckedAt).toISOString())} · 本次页面计算，非实时专注状态`),
-            todayAction ? h('div', { className: 'zw-next', onClick: () => openTask(todayAction.task.id), role: 'button', tabIndex: 0,
-              onKeyDown: event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openTask(todayAction.task.id) } },
-              'data-testid': 'today-next-task' },
+            currentFocus ? h('div', { className: 'zw-next' },
+              h('strong', null, currentFocus.task_id ? taskTitle(snapshot, currentFocus.task_id) : '未关联任务的专注'),
+              h(Button, { tone: 'primary', onClick: () => navigate('focus') }, currentFocus.state === 'paused' ? '查看已暂停专注' : '管理当前专注'),
+            ) : todayAction ? h('div', { className: 'zw-next', 'data-testid': 'today-next-task' },
               h('span', { className: 'zw-next-kicker' }, todayAction.kind === 'scheduled-now' ? '计划时段覆盖当前时间' : todayAction.kind === 'scheduled-next' ? '今天下一项计划安排' : '按截止日期与优先级排序的建议'),
-              h('strong', null, todayAction.task.title),
+              h('button', { type: 'button', className: 'zw-text-button', onClick: () => openTask(todayAction.task.id) }, todayAction.task.title),
               todayAction.entry ? h('span', { className: 'zw-muted' }, `${dateTimeFor(todayAction.entry.row.start)}–${dateTimeFor(todayAction.entry.row.end)}`) : null,
               h('span', { className: 'zw-muted' }, `${todayAction.task.remaining_minutes ?? todayAction.task.estimate_minutes ?? '—'} 分钟剩余`),
-              h('p', { className: 'zw-fineprint' }, todayAction.entry ? '这是已保存的计划，不代表正在专注，也不保证当前可执行。点击任务卡查看详情。' : '今天没有后续有效任务分配。建议不是可执行性判断；请核实依赖、最早开始时间与容量。点击任务卡查看详情。'),
-              h(Button, { tone: 'primary', onClick: event => { event.stopPropagation(); focusStart(todayAction.task) }, disabled: busy, testid: 'today-focus' }, '开始专注'),
+              h('p', { className: 'zw-fineprint' }, todayAction.entry ? '这是已保存的计划，不代表正在专注，也不保证当前可执行。' : '这是任务建议，不是可执行性判断；请核实依赖、最早开始时间与容量。'),
+              h(Button, { tone: 'primary', onClick: () => focusStart(todayAction.task), disabled: busy, testid: 'today-focus' }, '开始专注'),
             ) : h(Empty, null, '没有待办。可以从收集箱开始。'),
           ),
           h(Section, { title: '风险与未排入' },
             unplacedMinutes > 0 ? h('div', { className: 'zw-alert zw-alert-warn' }, `已知任务中有 ${unplacedMinutes} 分钟尚无未结束分配；这不是规划可行性结论。`) : h('p', { className: 'zw-muted' }, '已知任务未发现尚待分配分钟；不代表容量、依赖或日历约束均满足。'),
             h('p', { className: 'zw-fineprint' }, `截至 ${dateTimeFor(new Date(todayCheckedAt).toISOString())}；只统计开放叶任务和未结束分配。${outstanding.unknown ? '部分数据缺失或无效，无法给出完整总量；请刷新并检查 Core 结果。' : '已结束分配不抵扣剩余工作。'}`),
-            (snapshot.proposals ?? []).some(proposal => proposal.status === 'validated')
-              ? h('div', { className: 'zw-proposal-banner', onClick: () => setView('proposals'), role: 'button', tabIndex: 0 },
-                h('strong', null, '有提案待你确认'),
-                h('span', null, '打开提案中心检查差异与影响。'),
-              )
-              : null,
             nextTask?.hard_deadline ? h('p', { className: 'zw-fineprint' }, `必须完成：${dateTimeFor(nextTask.hard_deadline)}`) : null,
             nextTask?.target_due && nextTask.target_due < today ? h('p', { className: 'zw-warn-text' }, '有逾期任务需要处理。') : null,
           ),
-          h(Section, { title: '今天的工作', className: 'zw-span2' },
-            renderTaskList(activeTasks.filter(task => task.target_due === today || todayAllocations.some(row => row.task_id === task.id)).slice(0, 8),
-              '今天没有指定任务；可以查看所有任务或生成计划。'),
-            h('div', { className: 'zw-inline-link', onClick: () => setView('tasks') }, '查看全部任务 →'),
+          h(Section, { title: '到期但今天未安排', className: 'zw-span2', action: h(Button, { onClick: () => navigate('tasks') }, '全部任务') },
+            renderTaskList(activeTasks.filter(task => (task.target_due === today || (task.hard_deadline && localDateInput(task.hard_deadline) === today))
+              && task.id !== todayAction?.task.id && !todayAllocations.some(row => row.task_id === task.id)), '没有到期且未安排的其他任务。'),
           ),
         ),
       )
       }
 
-      const renderInbox = () => h('div', { className: 'zw-page' },
-        h('header', { className: 'zw-page-head' },
-          h('div', null, h('div', { className: 'zw-kicker' }, '原文先保留'), h('h1', null, '收集箱')),
-          h(Button, { tone: 'primary', onClick: () => setModal({ type: 'capture' }), disabled: busy }, '快速收集'),
-        ),
-        h('div', { className: 'zw-inbox-layout' },
-          h('div', { className: 'zw-inbox-list' },
-            (snapshot.inbox.length ? snapshot.inbox.slice().sort((a, b) => b.created_at.localeCompare(a.created_at)) : []).map(entry =>
-              h('button', {
-                key: entry.id,
-                className: 'zw-inbox-row',
-                onClick: () => setModal({ type: 'inbox-detail', entry }),
-                'data-testid': `inbox-row-${entry.id}`,
-              },
-              h('span', { className: 'zw-inbox-text' }, entry.text),
-              h('span', { className: 'zw-inbox-meta' },
-                h(Badge, { tone: entry.status === 'needs_clarification' ? 'warn' : 'neutral' }, entry.status),
-                h('span', null, dateTimeFor(entry.created_at)),
-              ),
-              )),
-            !snapshot.inbox.length ? h(Empty, null, '收集箱是空的。先记录一句原文，不必现在决定它是什么。') : null,
+      const renderInbox = () => {
+        const statuses = inboxSections.find(([id]) => id === inboxSection)[2]
+        const entries = snapshot.inbox.filter(entry => statuses.includes(entry.status)).sort((a, b) => b.created_at.localeCompare(a.created_at))
+        const sections = inboxSections.map(([id, label, values]) => [id, `${label} · ${snapshot.inbox.filter(entry => values.includes(entry.status)).length}`])
+        return h('div', { className: 'zw-page' },
+          h('header', { className: 'zw-page-head' },
+            h('div', null, h('div', { className: 'zw-kicker' }, '先保留原文，再决定怎么处理'), h('h1', null, '收集箱')),
           ),
-          h('aside', { className: 'zw-inbox-aside' },
-            h('h3', null, '处理原则'),
-            h('p', null, '原文保留；澄清与转换是明确动作。转换后仍可以在任务详情中继续编辑。'),
-            h('p', { className: 'zw-fineprint' }, '没有模型也能收集、澄清和手工转换。'),
-          ),
-        ),
-      )
-
+          h('nav', { className: 'zw-section-nav', 'aria-label': '收集箱状态' }, sectionButtons(sections, inboxSection, setInboxSection, 'inbox')),
+          h('div', { className: 'zw-inbox-list' }, entries.length ? entries.map(entry => h('button', {
+            type: 'button', key: entry.id, className: 'zw-inbox-row',
+            onClick: () => setModal({ type: 'inbox-detail', entry }), 'data-testid': `inbox-row-${entry.id}`,
+          },
+            h('span', { className: 'zw-inbox-text' }, entry.text),
+            h('span', { className: 'zw-inbox-meta' },
+              h(Badge, { tone: entry.status === 'needs_clarification' ? 'warn' : 'neutral' }, inboxStatusLabels[entry.status]),
+              h('span', null, dateTimeFor(entry.created_at)),
+            ),
+          )) : h(Empty, null, { pending: '没有待处理的原文。用顶栏「收集」记下新的想法。', clarify: '没有待澄清的原文。', history: '还没有处理记录。' }[inboxSection])),
+        )
+      }
       const renderGoals = () => h('div', { className: 'zw-page' },
         h('header', { className: 'zw-page-head' },
-          h('div', null, h('div', { className: 'zw-kicker' }, '结果与标准'), h('h1', null, '目标与项目')),
+          h('div', null, h('div', { className: 'zw-kicker' }, '结果与标准'), h('h1', null, '目标')),
           h('div', { className: 'zw-head-actions' },
-            h(Button, { onClick: () => setModal({ type: 'project' }), disabled: busy }, '新建项目'),
             h(Button, { tone: 'primary', onClick: () => setModal({ type: 'goal' }), disabled: busy }, '新建目标'),
           ),
         ),
+        selectedGoalId ? h(Button, { onClick: () => setSelectedGoalId(null) }, '全部目标') : null,
         h('div', { className: 'zw-goals-grid' },
-          snapshot.goals.map(goal => {
+          snapshot.goals.filter(goal => !selectedGoalId || goal.id === selectedGoalId).map(goal => {
             const projects = snapshot.projects.filter(project => project.goal_id === goal.id)
             const projectTasks = snapshot.tasks.filter(task => projects.some(project => project.id === task.project_id))
             return h('article', { className: 'zw-card', key: goal.id },
@@ -4769,12 +4806,11 @@ window.__ModuleLoader__.load({
                 projects.map(project => h('div', { className: 'zw-project-row', key: project.id },
                   h('strong', null, project.title),
                   h('span', null, `${snapshot.tasks.filter(task => task.project_id === project.id).length} 项任务`),
-                  h('button', { className: 'zw-link', onClick: () => setView('projects') }, '查看'),
+                  h('button', { type: 'button', className: 'zw-link', onClick: () => openProject(project.id, 'goals'), 'data-testid': `goal-project-${project.id}` }, '查看'),
                 )),
               ) : h('p', { className: 'zw-muted' }, '还没有项目。可以只用一个任务开始。'),
               h('div', { className: 'zw-action-row' },
                 h(Button, { onClick: () => setModal({ type: 'project', project: null, goalId: goal.id }), disabled: busy }, '添加项目'),
-                h(Button, { onClick: () => setModal({ type: 'task', task: null, projectId: projects[0]?.id }), disabled: busy }, '添加任务'),
                 h(Button, { onClick: () => startAiDecompose(goal), disabled: busy, testid: `ai-goal-${goal.id}` }, 'AI 拆解'),
                 goal.status !== 'achieved' ? h(Button, { onClick: () => {
                   setModal({ type: 'goal-achieve', goal })
@@ -4786,38 +4822,51 @@ window.__ModuleLoader__.load({
         ),
       )
 
-      const renderProjects = () => h('div', { className: 'zw-page' },
-        h('header', { className: 'zw-page-head' },
-          h('div', null, h('div', { className: 'zw-kicker' }, '范围与任务'), h('h1', null, '项目')),
-          h(Button, { tone: 'primary', onClick: () => setModal({ type: 'project' }), disabled: busy }, '新建项目'),
-        ),
-        h('div', { className: 'zw-goals-grid' },
-          snapshot.projects.map(project => {
-            const tasks = snapshot.tasks.filter(task => task.project_id === project.id)
+      const renderProjects = () => {
+        const selected = snapshot.projects.find(project => project.id === selectedProjectId)
+        const taskCount = project => snapshot.tasks.filter(task => task.project_id === project.id)
+        if (selected) {
+          const tasks = taskCount(selected)
+          const ids = new Set(tasks.map(task => task.id))
+          const dependencies = (snapshot.dependencies ?? []).filter(edge => ids.has(edge.predecessor_id) || ids.has(edge.successor_id))
+          const goal = snapshot.goals.find(goal => goal.id === selected.goal_id)
+          return h('div', { className: 'zw-page', 'data-testid': 'project-detail' },
+            h(Button, { onClick: () => navigate(projectOrigin) }, projectOrigin === 'goals' ? '返回目标' : projectOrigin === 'search' ? '返回搜索' : projectOrigin === 'inbox' ? '返回收集箱' : '返回项目'),
+            h('header', { className: 'zw-page-head' },
+              h('div', null, h('div', { className: 'zw-kicker' }, goal ? `所属目标：${goal.title}` : '独立项目'), h('h1', null, selected.title)),
+              h('div', { className: 'zw-head-actions' },
+                h(Button, { onClick: () => setModal({ type: 'project', project: selected }), disabled: busy }, '编辑项目'),
+                h(Button, { onClick: () => setModal({ type: 'task', task: null, projectId: selected.id }), disabled: busy, tone: 'primary' }, '添加任务'),
+              ),
+            ),
+            selected.scope ? h('p', null, selected.scope) : null,
+            h(Section, { title: '任务' }, renderTaskList(tasks)),
+            h(Section, { title: '里程碑', action: h(Button, { onClick: () => setModal({ type: 'milestone', project: selected }), disabled: busy }, '添加里程碑') },
+              (selected.milestones ?? []).length ? selected.milestones.map(milestone => h('button', {
+                type: 'button', key: milestone.id, className: `zw-milestone ${milestone.done ? 'zw-milestone-done' : ''}`,
+                onClick: () => setModal({ type: 'milestone', project: selected, milestone }),
+              }, h('span', null, milestone.done ? '✓' : '○'), h('span', null, milestone.title), milestone.due ? h('em', null, milestone.due) : null)) : h(Empty, null, '还没有里程碑。'),
+            ),
+            h(Section, { title: '任务依赖' }, dependencies.length ? dependencies.map(edge => h('div', { className: 'zw-list-row', key: edge.id },
+              `${taskTitle(snapshot, edge.predecessor_id)} → ${taskTitle(snapshot, edge.successor_id)}`)) : h(Empty, null, '还没有依赖关系。')),
+          )
+        }
+        return h('div', { className: 'zw-page' },
+          h('header', { className: 'zw-page-head' },
+            h('div', null, h('div', { className: 'zw-kicker' }, '范围、交付与里程碑'), h('h1', null, '项目')),
+            h(Button, { tone: 'primary', onClick: () => setModal({ type: 'project' }), disabled: busy }, '新建项目'),
+          ),
+          h('div', { className: 'zw-goals-grid' }, snapshot.projects.length ? snapshot.projects.map(project => {
+            const tasks = taskCount(project)
+            const goal = snapshot.goals.find(goal => goal.id === project.goal_id)
             return h('article', { className: 'zw-card', key: project.id },
-              h('header', { className: 'zw-card-head' },
-                h('div', null, h(Badge, { tone: 'neutral' }, project.status), h('h3', null, project.title)),
-                h('button', { className: 'zw-icon-btn', onClick: () => setModal({ type: 'project', project }) }, '…'),
-              ),
+              h('h3', null, h('button', { type: 'button', className: 'zw-text-button', onClick: () => openProject(project.id), 'data-testid': `project-open-${project.id}` }, project.title)),
               project.scope ? h('p', { className: 'zw-card-copy' }, project.scope) : null,
-              h('div', { className: 'zw-card-meta' }, `${tasks.length} 项任务 · ${tasks.filter(task => task.status === 'done').length} 完成`),
-              (project.milestones ?? []).length ? h('div', { className: 'zw-milestones' },
-                project.milestones.map(milestone => h('button', {
-                  key: milestone.id,
-                  className: `zw-milestone ${milestone.done ? 'zw-milestone-done' : ''}`,
-                  onClick: () => setModal({ type: 'milestone', project, milestone }),
-                }, h('span', null, milestone.done ? '✓' : '○'), h('span', null, milestone.title), milestone.due ? h('em', null, milestone.due) : null)),
-              ) : null,
-              renderTaskList(tasks.slice(0, 5), '还没有任务。'),
-              h('div', { className: 'zw-action-row' },
-                h(Button, { onClick: () => setModal({ type: 'task', task: null, projectId: project.id }), disabled: busy }, '添加任务'),
-                h(Button, { onClick: () => setModal({ type: 'milestone', project }), disabled: busy }, '添加里程碑'),
-              ),
+              h('div', { className: 'zw-card-meta' }, h('span', null, goal ? goal.title : '独立项目'), h('span', null, `${tasks.filter(task => task.status === 'done').length} / ${tasks.length} 项完成`)),
             )
-          }),
-          !snapshot.projects.length ? h(Empty, null, '还没有项目。项目不是创建任务的必要条件。') : null,
-        ),
-      )
+          }) : h(Empty, null, '还没有项目。项目不是创建任务的必要条件。')),
+        )
+      }
 
       const renderTasks = () => {
         const tags = [...new Set([
@@ -4859,8 +4908,8 @@ window.__ModuleLoader__.load({
             h('label', { className: 'zw-check-line' },
               h('input', { type: 'checkbox', checked: taskFilter.overdue,
                 onChange: event => setTaskFilter({ ...taskFilter, overdue: event.target.checked }) }), '只看逾期'),
-            h('Button', { onClick: () => setModal({ type: 'saved-view', initialFilter: taskFilter }), disabled: busy }, '保存视图'),
-            h(Button, { onClick: refresh, disabled: busy }, COPY.refresh),
+            h(Button, { onClick: () => setModal({ type: 'saved-view', initialFilter: taskFilter }), disabled: busy }, '保存视图'),
+            h(Button, { onClick: () => navigate('views'), testid: 'nav-views' }, '已保存的筛选'),
           ),
           h('div', { className: 'zw-toolbar' },
             h('span', { className: 'zw-muted' }, `筛选 ${filtered.length} / ${snapshot.tasks.length} 项；已选 ${selectedTaskIds.length} 项。`),
@@ -4888,23 +4937,18 @@ window.__ModuleLoader__.load({
               })),
               !filtered.length ? h(Empty, null, snapshot.tasks.length ? '没有符合当前过滤条件的任务。' : '还没有任务。创建一个，或者先收集一句原文。') : null,
             ),
-            selectedTask ? h(TaskDetail, {
-              task: selectedTask,
-              snapshot,
-              onClose: () => setSelectedTaskId(null),
-              send,
-              busy,
-              onEdit: () => setModal({ type: 'task', task: selectedTask }),
-              onTime: () => setModal({ type: 'time', task: selectedTask, tasks: snapshot.tasks }),
-              onProgress: () => setModal({ type: 'progress', task: selectedTask }),
-              onDependency: () => setModal({ type: 'dependency', task: selectedTask }),
-              onReminder: () => setModal({ type: 'reminder', task: selectedTask }),
-              onBlocked: () => setModal({ type: 'blocked', task: selectedTask }),
-              onFocus: () => focusStart(selectedTask),
-              setModal,
-            }) : null,
+
           ),
         )
+      }
+
+      const openScheduleOption = editor => event => {
+        const disclosure = event.currentTarget.closest('details')
+        if (disclosure) {
+          disclosure.open = false
+          disclosure.querySelector('summary')?.focus()
+        }
+        setModal(editor)
       }
 
       const renderSchedule = () => {
@@ -4914,12 +4958,17 @@ window.__ModuleLoader__.load({
           h('header', { className: 'zw-page-head' },
             h('div', null, h('div', { className: 'zw-kicker' }, '容量、预约与任务分配'), h('h1', null, '日程')),
             h('div', { className: 'zw-head-actions' },
-              h(Button, { onClick: () => setModal({ type: 'time', task: null, tasks: activeTasks }), disabled: busy, testid: 'schedule-time' }, '任务时间'),
-              h(Button, { onClick: () => setModal({ type: 'commitment' }), disabled: busy }, '增加预约'),
-              h(Button, { onClick: () => setModal({ type: 'capacity' }), disabled: busy }, '增加容量'),
-              h(Button, { onClick: () => setModal({ type: 'busy' }), disabled: busy }, '导入忙碌'),
-              h(Button, { onClick: () => setModal({ type: 'capacity-candidates' }), disabled: busy, testid: 'capacity-suggest' }, '建议容量'),
-              h(Button, { onClick: () => setModal({ type: 'meeting-propose' }), disabled: busy, testid: 'meeting-propose' }, '提议会议'),
+              h('details', { className: 'zw-schedule-options' },
+                h('summary', { className: 'zw-btn zw-btn-secondary', 'data-testid': 'schedule-options' }, '日程操作'),
+                h('div', { className: 'zw-schedule-options-panel' },
+                  h(Button, { onClick: openScheduleOption({ type: 'time', task: null, tasks: activeTasks }), disabled: busy, testid: 'schedule-time' }, '任务时间'),
+                  h(Button, { onClick: openScheduleOption({ type: 'commitment' }), disabled: busy }, '增加预约'),
+                  h(Button, { onClick: openScheduleOption({ type: 'capacity' }), disabled: busy }, '增加容量'),
+                  h(Button, { onClick: openScheduleOption({ type: 'busy' }), disabled: busy }, '导入忙碌'),
+                  h(Button, { onClick: openScheduleOption({ type: 'capacity-candidates' }), disabled: busy, testid: 'capacity-suggest' }, '建议容量'),
+                  h(Button, { onClick: openScheduleOption({ type: 'meeting-propose' }), disabled: busy, testid: 'meeting-propose' }, '提议会议'),
+                ),
+              ),
               h(Button, { onClick: () => openPlan(), disabled: busy, tone: 'primary', title: '从现在 5 分钟后起规划 7 天，仅补充安排、不移动已有分配；先预览再批准' }, COPY.plan),
             h(Button, { onClick: () => openPlan('replan'), disabled: busy, title: '从现在 5 分钟后起规划 7 天，允许重排未来未锁定、未开始分配；固定预约、锁定、已开始和过去事实保持不变，需预览批准' }, '重新规划'),
             ),
@@ -5138,9 +5187,33 @@ window.__ModuleLoader__.load({
         )
       }
 
-      const renderSearch = () => h(SearchView, { send, reader, onSelect: id => { openTask(id); setView('tasks') } })
+      const openResult = ({ kind, id }, origin = 'search') => {
+        if (kind === 'task') {
+          if (!findTask(snapshot, id)) return setNotice('该任务已不可用，请刷新后再试。')
+          openTask(id)
+        } else if (kind === 'project') {
+          if (!snapshot.projects.some(project => project.id === id)) return setNotice('该项目已不可用，请刷新后再试。')
+          openProject(id, origin)
+        } else if (kind === 'goal') {
+          if (!snapshot.goals.some(goal => goal.id === id)) return setNotice('该目标已不可用，请刷新后再试。')
+          navigate('goals')
+          setSelectedGoalId(id)
+        }
+      }
+      const renderSearch = () => h(SearchView, { reader, onSelect: openResult })
 
       const renderAudit = () => h(AuditView, { send: { query: reader.query }, busy })
+
+      const isWork = view === 'views' || workSections.some(([id]) => id === view)
+      const isReview = reviewSections.some(([id]) => id === view)
+      const isActivity = activitySections.some(([id]) => id === view)
+      const isSettings = settingsSections.some(([id]) => id === view)
+      const renderSections = () => isWork
+        ? h('nav', { className: 'zw-section-nav', 'aria-label': '工作分类' }, sectionButtons(workSections, view === 'views' ? 'tasks' : view))
+        : isReview ? h('nav', { className: 'zw-section-nav', 'aria-label': '回顾分类' }, sectionButtons(reviewSections, view))
+        : isActivity ? h('nav', { className: 'zw-section-nav', 'aria-label': '提案和 AI 运行' }, sectionButtons(activitySections, view))
+        : isSettings ? h('nav', { className: 'zw-settings-nav', 'aria-label': '设置分类' }, settingsGroups.map(([label, sections]) =>
+          h('div', { className: 'zw-settings-group', role: 'group', 'aria-label': label, key: label }, h('small', null, label), ...sectionButtons(sections, view)))) : null
 
       const renderBody = () => {
         if (!snapshot) return null
@@ -5150,7 +5223,9 @@ window.__ModuleLoader__.load({
           case 'goals': return renderGoals()
           case 'projects': return renderProjects()
           case 'habits': return h(HabitsView, { snapshot, send, busy, setModal })
-          case 'views': return h(SavedViewsView, { snapshot, send, busy, setModal, onApply: applySavedView })
+          case 'views': return h(React.Fragment, null,
+            h('div', { className: 'zw-saved-back' }, h(Button, { onClick: () => navigate('tasks') }, '返回任务')),
+            h(SavedViewsView, { snapshot, send, busy, setModal, onApply: applySavedView }))
           case 'automation': return h(AutomationView, { snapshot, send, busy, setModal, report: setNotice })
           case 'tasks': return renderTasks()
           case 'schedule': return renderSchedule()
@@ -5171,7 +5246,7 @@ window.__ModuleLoader__.load({
           case 'review': return renderReview()
           case 'focus': return renderFocus()
           case 'search': return renderSearch()
-          case 'settings': return h(SettingsView, { snapshot, send, busy, report: setNotice })
+          case 'settings-overview': return h(SettingsView, { snapshot, send, busy, report: setNotice })
           case 'privacy': return h(PrivacyView, { snapshot, send, busy, report: setNotice, onModels: () => setView('models') })
           case 'agents': return h(AgentsView, { bridge, snapshot })
           case 'audit': return renderAudit()
@@ -5251,34 +5326,38 @@ window.__ModuleLoader__.load({
           ),
           h('div', { className: 'zw-top-actions' },
             h(Button, { onClick: () => setModal({ type: 'capture' }), disabled: busy, testid: 'top-capture' }, '＋ 收集'),
+            h(Button, { onClick: () => navigate('search'), testid: 'nav-search' }, '搜索'),
+            h(Button, { onClick: () => navigate('proposals'), testid: 'nav-proposals' }, pendingProposals ? `提案 · ${pendingProposals}` : runsActive ? 'AI 运行中' : '提案与运行'),
+            h(Button, { onClick: () => navigate('focus'), testid: 'nav-focus' }, currentFocus?.state === 'paused' ? '专注已暂停' : currentFocus ? '专注中' : '专注'),
             h(Button, { onClick: refresh, disabled: busy }, COPY.refresh),
           ),
         ),
         h('div', { className: `zw-shell ${width < 780 ? 'zw-narrow' : ''}` },
           h('nav', { className: 'zw-nav', 'aria-label': 'Zodo 业务入口' },
-            h('div', { className: 'zw-nav-primary' },
-              nav.map(item => h('button', {
-                key: item.id,
-                className: `zw-nav-item ${view === item.id ? 'zw-nav-active' : ''}`,
-                onClick: () => { setView(item.id); setSelectedTaskId(null) },
-                'data-testid': `nav-${item.id}`,
-              }, h('span', { className: 'zw-nav-glyph' }, item.glyph), h('span', null, item.label))),
-            ),
-            h('div', { className: 'zw-nav-section' }, COPY.more),
-            moreNav.map(item => h('button', {
-              key: item.id,
-              className: `zw-nav-item zw-nav-secondary ${view === item.id ? 'zw-nav-active' : ''}`,
-              onClick: () => { setView(item.id); setSelectedTaskId(null) },
-              'data-testid': `nav-${item.id}`,
-            }, h('span', { className: 'zw-nav-glyph' }, item.glyph), h('span', null, item.label))),
+            h('div', { className: 'zw-nav-primary' }, nav.map(item => {
+              const active = item.id === 'work' ? isWork : item.id === 'review' ? isReview : view === item.id
+              return h('button', { key: item.id, type: 'button',
+                className: `zw-nav-item ${active ? 'zw-nav-active' : ''}`, 'aria-current': active ? 'page' : undefined,
+                onClick: () => navigate(item.target ?? item.id), 'data-testid': `nav-${item.id}`,
+              }, h('span', { className: 'zw-nav-glyph', 'aria-hidden': true }, item.glyph),
+              h('span', null, item.label), item.id === 'inbox' && pendingInbox ? h('span', { className: 'zw-nav-count' }, pendingInbox) : null)
+            })),
+            h('button', { type: 'button', className: `zw-nav-item zw-nav-settings ${isSettings ? 'zw-nav-active' : ''}`,
+              'aria-current': isSettings ? 'page' : undefined, onClick: () => navigate('settings-overview'), 'data-testid': 'nav-settings',
+            }, h('span', { className: 'zw-nav-glyph', 'aria-hidden': true }, '⚙'), '设置'),
             h('div', { className: 'zw-nav-foot' },
               h('span', null, snapshot?.workspace?.settings?.timezone ?? 'Asia/Shanghai'),
               h('span', null, snapshot?.workspace?.id ?? ''),
             ),
           ),
-          h('main', { className: 'zw-main' },
+          h('main', { className: 'zw-main', ref: mainRef },
             error ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert', 'data-testid': 'zodo-error' }, error) : null,
-            loading ? h('div', { className: 'zw-loading' }, h('div', { className: 'zw-spinner' }), COPY.loading) : renderBody(),
+            loading ? h('div', { className: 'zw-loading' }, h('div', { className: 'zw-spinner' }), COPY.loading) : snapshot ? h(React.Fragment, null,
+              renderSections(),
+              h('div', { className: `zw-view-layout ${selectedTask ? 'zw-has-detail' : ''}` },
+                h('div', { className: 'zw-view-body' }, renderBody()), renderTaskDetail(),
+              ),
+            ) : null,
           ),
         ),
         notice ? h('div', { className: 'zw-toast', role: 'status', 'data-testid': 'zodo-toast' }, notice) : null,
@@ -5466,8 +5545,9 @@ window.__ModuleLoader__.load({
       const rows = results.map(result => h('button', {
         key: `${result.kind}-${result.id}`,
         className: 'zw-search-result',
+        disabled: !['task', 'project', 'goal'].includes(result.kind),
         onClick: () => {
-          if (result.kind === 'task') onSelect(result.id)
+          onSelect(result)
         },
       }, h(Badge, { tone: 'neutral' }, result.kind), h('span', null, result.title)))
       return h('div', { className: 'zw-page' },
@@ -5520,6 +5600,33 @@ window.__ModuleLoader__.load({
       .zw-nav-secondary { min-height:32px; color:var(--zw-muted); font-size:13px; }
       .zw-nav-foot { margin:24px 10px 0; padding-top:12px; border-top:1px solid var(--zw-divider); display:grid; gap:2px; color:var(--zw-muted); font-size:12px; font-family:ui-monospace,Consolas,monospace; overflow-wrap:anywhere; }
       .zw-main { flex:1; min-width:0; overflow:auto; position:relative; }
+      .zw-top-actions { flex-wrap:wrap; }
+      .zw-nav-settings { margin-top:16px; }
+      .zw-nav-count { margin-left:auto; font-size:12px; color:var(--zw-muted); }
+      .zw-section-nav, .zw-settings-nav { display:flex; flex-wrap:wrap; gap:4px; padding:8px 16px; border-bottom:1px solid var(--zw-divider); background:var(--zw-surface); }
+      .zw-page > .zw-section-nav { padding:0 0 8px; margin-bottom:16px; background:transparent; }
+      .zw-section-tab { min-height:36px; border:0; border-radius:8px; padding:0 12px; background:transparent; color:var(--zw-muted); cursor:pointer; font:inherit; white-space:nowrap; }
+      .zw-section-tab:hover, .zw-section-tab[aria-current=page] { background:var(--zw-accent-soft); color:var(--zw-accent); }
+      .zw-section-tab[aria-current=page] { font-weight:600; }
+      .zw-settings-nav { gap:8px; }
+      .zw-settings-group { display:flex; flex-wrap:wrap; align-items:center; gap:2px; padding:4px 8px; border:1px solid var(--zw-divider); border-radius:8px; }
+      .zw-settings-group small { padding:0 4px; color:var(--zw-muted); }
+      .zw-view-layout.zw-has-detail { display:grid; grid-template-columns:minmax(0,1fr) minmax(280px, 36%); align-items:start; }
+      .zw-context-detail { position:sticky; top:0; margin:16px 16px 16px 0; max-height:calc(100vh - 160px); overflow:auto; border-radius:12px; }
+      .zw-context-detail > .zw-detail { width:100%; position:static; max-height:none; overflow:visible; overflow-wrap:anywhere; }
+      .zw-text-button { text-align:left; padding:0; border:0; background:none; color:var(--zw-accent); font:inherit; font-weight:600; cursor:pointer; overflow-wrap:anywhere; }
+      .zw-text-button:hover { text-decoration:underline; }
+      .zw-saved-back { max-width:1120px; margin:0 auto; padding:16px 28px 0; }
+      .zw-schedule-options { position:relative; }
+      .zw-schedule-options summary { display:flex; align-items:center; gap:8px; }
+      .zw-schedule-options summary::after { content:'▾'; }
+      .zw-schedule-options-panel { display:grid; gap:4px; position:absolute; z-index:2; top:100%; left:0; padding:8px; margin-top:4px; border:1px solid var(--zw-divider); border-radius:8px; background:var(--zw-surface); }
+      .zw-root :is(button, summary, input, select, textarea):focus-visible, .zw-context-detail:focus-visible { outline:2px solid var(--zw-accent); outline-offset:2px; }
+      .zw-page button.zw-agenda-row { text-align:left; width:100%; font:inherit; color:inherit; cursor:pointer; border:1px solid transparent; }
+      .zw-page button.zw-agenda-row:hover { border-color:var(--zw-accent); }
+      .zw-agenda-row { flex-wrap:wrap; }
+      .zw-agenda-title { overflow-wrap:anywhere; min-width:0; }
+      .zw-next .zw-text-button { justify-self:start; font-size:16px; }
       .zw-page { max-width:1120px; margin:0 auto; padding:26px 28px 54px; }
       .zw-page-head { display:flex; align-items:flex-start; gap:16px; justify-content:space-between; margin-bottom:22px; }
       .zw-page-head h1 { margin:4px 0 0; font-size:28px; line-height:1.2; letter-spacing:-.02em; font-weight:650; }
@@ -5549,7 +5656,7 @@ window.__ModuleLoader__.load({
       .zw-allocation { background:var(--zw-accent-soft); }
       .zw-time { width:100px; flex:none; color:var(--zw-muted); font-size:12px; font-variant-numeric:tabular-nums; }
       .zw-agenda-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .zw-next { display:grid; gap:7px; padding:12px; border-radius:9px; background:var(--zw-accent-soft); cursor:pointer; }
+      .zw-next { display:grid; gap:8px; padding:12px; border-radius:9px; background:var(--zw-accent-soft); }
       .zw-next-kicker { color:var(--zw-accent); font-size:11px; }
       .zw-next strong { font-size:16px; font-weight:600; }
       .zw-inline-link { margin-top:12px; color:var(--zw-accent); font-size:12.5px; cursor:pointer; }
@@ -5802,6 +5909,12 @@ window.__ModuleLoader__.load({
         .zw-top-actions { margin-left:0; }
         .zw-stat-strip { grid-template-columns:1fr 1fr; }
         .zw-inbox-aside { order:2; }
+        .zw-nav-settings { margin-top:0; }
+        .zw-schedule-options[open] { flex-basis:100%; }
+        .zw-schedule-options-panel { position:static; grid-template-columns:repeat(auto-fit,minmax(96px,1fr)); }
+        .zw-view-layout.zw-has-detail { display:flex; flex-direction:column; }
+        .zw-view-body { width:100%; }
+        .zw-context-detail { order:-1; position:static; width:calc(100% - 24px); margin:12px; max-height:none; overflow:visible; }
       }
     `
 

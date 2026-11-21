@@ -88,7 +88,50 @@ const saveModelInUI = async () => {
   assert.equal(body.ok, true)
   return body.result
 }
-const nav = async id => { await page.getByTestId('nav-' + id).click(); await page.locator('main h1').first().waitFor() }
+const primaryIds = ['today', 'inbox', 'work', 'schedule', 'review']
+const topIds = ['search', 'focus', 'proposals']
+const parent = {
+  tasks: 'work', projects: 'work', goals: 'work', views: 'work',
+  habits: 'review', runs: 'proposals',
+  'settings-overview': 'settings', models: 'settings', data: 'settings', sync: 'settings',
+  automation: 'settings', agents: 'settings', privacy: 'settings', audit: 'settings',
+}
+const headings = {
+  today: '今天', inbox: '收集箱', work: '任务', tasks: '任务', projects: '项目', goals: '目标',
+  views: '保存视图', schedule: '日程', review: '回顾', habits: '习惯', proposals: '提案', runs: 'AI 运行',
+  search: '搜索', focus: '专注', settings: '设置', 'settings-overview': '设置', models: '模型',
+  data: '数据', sync: '同步', automation: '自动化', agents: 'Agent 与授权', privacy: '隐私', audit: '活动与恢复',
+}
+const sidebar = () => page.getByRole('navigation', { name: 'Zodo 业务入口' })
+const topbar = () => page.locator('.zw-topbar')
+const sectionNames = { work: '工作分类', review: '回顾分类', proposals: '提案和 AI 运行', settings: '设置分类' }
+const navEntry = id => {
+  if (topIds.includes(id)) return topbar().getByTestId('nav-' + id)
+  if (primaryIds.includes(id) || id === 'settings') return sidebar().getByTestId('nav-' + id)
+  const scope = id === 'views' ? page.locator('main') : page.getByRole('navigation', { name: sectionNames[parent[id]] })
+  return scope.getByTestId('nav-' + id)
+}
+const heading = id => page.locator('main').getByRole('heading', { level: 1, name: headings[id], exact: true })
+const nav = async id => {
+  if (parent[id]) await navEntry(parent[id]).click()
+  await navEntry(id).click()
+  await heading(id).waitFor()
+}
+const verifyCurrentNavigation = async id => {
+  const destination = parent[id] ?? id
+  if (!topIds.includes(destination)) {
+    assert.equal(await navEntry(destination).getAttribute('aria-current'), 'page', destination + ' active')
+  }
+  if (parent[id]) {
+    const section = id === 'views' ? 'tasks' : id
+    assert.equal(await navEntry(section).getAttribute('aria-current'), 'page', section + ' active')
+  }
+}
+const scheduleOptions = () => page.getByTestId('schedule-options')
+const openScheduleOptions = async () => {
+  const trigger = scheduleOptions()
+  if (!(await trigger.evaluate(node => node.parentElement.open))) await trigger.click()
+}
 const screenshot = name => page.screenshot({ path: path.join(output, name + '.png'), fullPage: true })
 
 try {
@@ -181,15 +224,14 @@ try {
     assert.equal(after.allocations.length, 0)
   })
 
-  await check('21 navigation surfaces mount without JS errors', async () => {
-    const ids = ['today','inbox','goals','schedule','review','tasks','projects','habits','views','automation','focus','proposals','runs','search','models','data','sync','settings','privacy','agents','audit']
-    assert.equal(await page.locator('[data-testid^="nav-"]').count(), ids.length)
-    for (const id of ids) {
+  await check('Grouped navigation reaches every surface without JS errors', async () => {
+    const readNavIds = scope => scope.locator('[data-testid^="nav-"]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-testid').slice(4)))
+    assert.deepEqual(await readNavIds(sidebar()), [...primaryIds, 'settings'])
+    assert.deepEqual((await readNavIds(topbar())).sort(), [...topIds].sort())
+    for (const id of Object.keys(headings)) {
       await nav(id)
-      assert.match(await page.getByTestId('nav-' + id).getAttribute('class'), /zw-nav-active/)
-      const heading = await page.locator('main h1').first().innerText()
-      assert.ok(heading.trim(), id + ' heading')
-      report.navigation.push({ id, heading })
+      await verifyCurrentNavigation(id)
+      report.navigation.push({ id, heading: await heading(id).innerText() })
     }
     assert.deepEqual(report.pageErrors, [])
   })
@@ -204,22 +246,38 @@ try {
     assert.equal((await snapshot()).inbox.length, 1)
   })
 
-  await check('Inbox manual clarification and task/goal/project conversion', async () => {
+  await check('Inbox tabs separate pending, needs clarification and converted entries', async () => {
     await nav('inbox')
     const state = await snapshot()
     const entry = state.inbox.find(row => row.text === 'Fixture isolated capture: contact printing shop')
     assert.ok(entry)
-    await page.getByTestId('inbox-row-' + entry.id).click()
+    const row = page.getByTestId('inbox-row-' + entry.id)
+    const tab = id => page.getByTestId('inbox-' + id)
+    await row.waitFor() // Pending is the initial tab.
+    await tab('clarify').click()
+    await row.waitFor({ state: 'hidden' })
+    await tab('history').click()
+    await row.waitFor({ state: 'hidden' })
+    await tab('pending').click()
+    await row.click()
     const detail = page.getByRole('dialog', { name: '收集详情' })
-    await detail.getByLabel('问题', { exact: true }).fill('Fixture clarification')
-    await detail.getByLabel('回答（可稍后）').fill('Keep source text')
-    const saved = page.waitForResponse(response => response.url().endsWith('/rpc') && response.request().postData()?.includes('capture.clarify'))
-    await detail.getByRole('button', { name: '保存澄清', exact: true }).click()
-    assert.equal((await saved).status(), 200)
-    assert.ok((await snapshot()).inbox.find(row => row.id === entry.id).clarifications.some(row => row.question === 'Fixture clarification'))
+    const saveClarification = async (question, answer = '') => {
+      await detail.getByLabel('问题', { exact: true }).fill(question)
+      await detail.getByLabel('回答（可稍后）').fill(answer)
+      const saved = page.waitForResponse(response => response.url().endsWith('/rpc') && response.request().postData()?.includes('capture.clarify'))
+      await detail.getByRole('button', { name: '保存澄清', exact: true }).click()
+      assert.equal((await saved).status(), 200)
+      await page.waitForFunction(() => [...document.querySelectorAll('[role="dialog"] input')].every(input => input.value === ''))
+    }
+    await saveClarification('Fixture clarification', 'Keep source text')
+    assert.ok((await snapshot()).inbox.find(item => item.id === entry.id).clarifications.some(item =>
+      item.question === 'Fixture clarification' && item.answer === 'Keep source text'))
+    await saveClarification('Fixture unresolved clarification')
     await detail.getByRole('button', { name: '关闭', exact: true }).last().click()
     await detail.waitFor({ state: 'hidden' })
-    await page.getByTestId('inbox-row-' + entry.id).click()
+    await row.waitFor({ state: 'hidden' })
+    await tab('clarify').click()
+    await row.click()
     await detail.getByRole('button', { name: '转换…', exact: true }).click()
     const convert = page.getByRole('dialog', { name: '处理收集内容' })
     await convert.getByLabel('任务标题').fill('Fixture converted task')
@@ -234,6 +292,11 @@ try {
     assert.ok(after.goals.some(row => row.title === 'Fixture converted goal'))
     assert.ok(after.projects.some(row => row.title === 'Fixture converted project'))
     assert.ok(after.tasks.some(row => row.title === 'Fixture converted task'))
+    await row.waitFor({ state: 'hidden' })
+    await tab('pending').click()
+    await row.waitFor({ state: 'hidden' })
+    await tab('history').click()
+    await row.getByText(entry.text, { exact: true }).waitFor()
     await nav('goals'); await page.getByText('Fixture converted goal', { exact: true }).waitFor()
     await screenshot('converted-goal-project')
   })
@@ -295,6 +358,29 @@ try {
     assert.equal((await snapshot()).tasks.find(row => row.id === taskId).archived, true)
     await detail.getByRole('button', { name: '恢复', exact: true }).click()
     await detail.getByRole('button', { name: '归档', exact: true }).waitFor()
+  })
+
+  await check('Today keeps task detail in context and hands planning off to Schedule', async () => {
+    assert.ok(taskId, 'create task prerequisite')
+    await nav('today')
+    const before = await snapshot()
+    const nextTask = page.getByTestId('today-next-task').locator('button.zw-text-button')
+    const title = await nextTask.innerText()
+    await nextTask.click()
+    await heading('today').waitFor()
+    const detail = page.getByRole('complementary', { name: '任务详情' })
+    await detail.getByRole('heading', { name: title, exact: true }).waitFor()
+    assert.equal(await heading('tasks').count(), 0)
+    for (const name of ['生成计划', '重新规划']) {
+      assert.equal(await page.getByRole('button', { name, exact: true }).count(), 0, name + ' belongs to Schedule')
+    }
+    await page.getByTestId('today-open-schedule').click()
+    await heading('schedule').waitFor()
+    await detail.waitFor({ state: 'hidden' })
+    for (const name of ['生成计划', '重新规划']) {
+      await page.getByRole('button', { name, exact: true }).waitFor()
+    }
+    assert.equal((await snapshot()).workspace.revision, before.workspace.revision)
   })
 
   await check('Capacity + plan preview + explicit approval/commit', async () => {
@@ -433,7 +519,11 @@ try {
     const lockedViewAfter = await snapshot()
     assert.equal(lockedViewAfter.workspace.revision, lockedViewBefore.workspace.revision)
     assert.deepEqual(lockedViewAfter.allocations, lockedViewBefore.allocations)
-    await page.getByRole('button', { name: '增加容量', exact: true }).click()
+    const addCapacity = page.getByRole('button', { name: '增加容量', exact: true })
+    await addCapacity.waitFor({ state: 'hidden' })
+    await openScheduleOptions()
+    await addCapacity.click()
+    await addCapacity.waitFor({ state: 'hidden' }) // The action closes the disclosure without a second click.
     const capacityEditor = page.getByRole('dialog', { name: '增加可用容量' })
     await capacityEditor.getByLabel('名称').fill('Fixture strict slot capacity')
     await capacityEditor.getByLabel('开始', { exact: true }).fill(`${day}T16:00`)
@@ -557,6 +647,13 @@ try {
     }
     page.on('request', record)
     try {
+      const options = scheduleOptions()
+      const addCapacity = page.getByRole('button', { name: '增加容量', exact: true })
+      await addCapacity.waitFor({ state: 'hidden' })
+      await options.press('Enter')
+      await addCapacity.waitFor()
+      await options.press('Enter')
+      await addCapacity.waitFor({ state: 'hidden' })
       await page.getByTestId('schedule-mode').selectOption('1')
       await page.getByTestId('schedule-date').fill(day); await waitDay(day)
       assert.equal(await page.locator('.zw-day').count(), 1)
@@ -820,7 +917,7 @@ try {
   await check('Search resolves committed task', async () => {
     await nav('search')
     await page.getByPlaceholder('搜索任务、目标、项目…').fill('Fixture task edited')
-    await page.getByRole('button', { name: '搜索', exact: true }).click()
+    await page.getByRole('main').getByRole('button', { name: '搜索', exact: true }).click()
     await page.locator('.zw-search-result').getByText('Fixture task edited', { exact: true }).waitFor()
   })
 
@@ -844,7 +941,15 @@ try {
     await projectDialog.waitFor({ state: 'hidden' })
     const project = (await snapshot()).projects.find(row => row.title === 'Fixture editor project')
     assert.equal(project.goal_id, goal.id)
+    await nav('projects')
+    await page.getByTestId('project-open-' + project.id).click()
+    const projectDetail = page.getByTestId('project-detail')
+    await projectDetail.getByRole('heading', { level: 1, name: project.title, exact: true }).waitFor()
+    await projectDetail.getByText('所属目标：' + goal.title, { exact: true }).waitFor()
+    await projectDetail.getByRole('heading', { name: '里程碑', exact: true }).waitFor()
     await screenshot('goal-project-editors')
+    await projectDetail.getByRole('button', { name: '返回项目', exact: true }).click()
+    await heading('projects').waitFor()
   })
 
   await check('Habit create and log preserve activity facts', async () => {
@@ -994,7 +1099,8 @@ try {
 
   await check('Independent settings defaults: DSH unselected, privacy deny-all, preflight only', async () => {
     await nav('models')
-    assert.equal(await page.locator('main h1').first().innerText(), '模型')
+    assert.equal(await heading('models').innerText(), '模型')
+    await page.getByTestId('model-dsh-select').waitFor()
     assert.equal(await page.getByTestId('model-source-dsh').isChecked(), true)
     assert.equal(await page.getByTestId('model-source-custom').isChecked(), false)
     assert.equal(await page.getByTestId('model-dsh-select').inputValue(), '')
@@ -1202,21 +1308,20 @@ try {
     await page.setViewportSize({ width: 1440, height: 1000 })
   })
 
-  await check('21 navigation actions at 390px, 800px and 600px container', async () => {
+  await check('Grouped navigation at 390px, 800px and 600px container', async () => {
     const sizes = [{ width: 390, height: 844 }, { width: 800, height: 1000 }, { width: 1440, height: 1000, container: 600 }]
     for (const size of sizes) {
       await page.setViewportSize({ width: size.width, height: size.height })
       await page.locator('#root').evaluate((element, width) => { element.style.width = width ? width + 'px' : '' }, size.container ?? null)
-      for (const { id } of report.navigation) {
+      for (const id of Object.keys(headings)) {
         await nav(id)
-        assert.match(await page.getByTestId('nav-' + id).getAttribute('class'), /zw-nav-active/)
-        assert.ok((await page.locator('main h1').first().innerText()).trim())
-        const metrics = await page.locator('nav[aria-label="Zodo 业务入口"]').evaluate(element => ({ navWidth: element.clientWidth, navScroll: element.scrollWidth, viewport: innerWidth, document: document.documentElement.scrollWidth }))
+        await verifyCurrentNavigation(id)
+        const metrics = await sidebar().evaluate(element => ({ navWidth: element.clientWidth, navScroll: element.scrollWidth, viewport: innerWidth, document: document.documentElement.scrollWidth }))
         assert.ok(metrics.navScroll <= metrics.navWidth + 1, id + ' nav overflow: ' + JSON.stringify(metrics))
         assert.ok(metrics.document <= metrics.viewport + 1, id + ' document overflow: ' + JSON.stringify(metrics))
       }
       report.responsiveNavigation ??= []
-      report.responsiveNavigation.push({ viewport: size.width, container: size.container ?? size.width, clicked: report.navigation.length, documentOverflow: false, navigationOverflow: false })
+      report.responsiveNavigation.push({ viewport: size.width, container: size.container ?? size.width, clicked: Object.keys(headings).length, documentOverflow: false, navigationOverflow: false })
       await screenshot('navigation-' + size.width + (size.container ? '-container600' : ''))
     }
     await page.locator('#root').evaluate(element => { element.style.width = '' })

@@ -218,7 +218,7 @@ test('first schedule guide advances through prerequisites and never treats histo
 
 test('first schedule CTA only opens existing editors or settings', () => {
   const start = source.indexOf('      const renderFirstSchedule =')
-  const end = source.indexOf('      const renderToday =', start)
+  const end = source.indexOf('      const renderTaskDetail =', start)
   const clean = (value) => JSON.parse(JSON.stringify(value))
   const task = { id: 'saved-task' }
   const trigger = { test: 'original button' }
@@ -227,13 +227,13 @@ test('first schedule CTA only opens existing editors or settings', () => {
     [{ kind: 'estimate', task }, { type: 'task', task, restoreFocus: trigger }],
     [{ kind: 'capacity' }, { type: 'capacity' }],
     [{ kind: 'schedule', day: '2026-11-24' }, { type: 'quick-schedule', day: '2026-11-24', guidedDraft: { start: '', end: '', capacity: '' } }],
-    [{ kind: 'timezone' }, 'settings'],
+    [{ kind: 'timezone' }, 'settings-overview'],
   ]) {
     const calls = []
     const tree = vm.runInNewContext(`${source.slice(start, end)}\nrenderFirstSchedule()`, {
       snapshot: {}, todayCheckedAt: 0, workspaceTimezone: () => 'Asia/Shanghai', firstScheduleStep: () => step, guidedScheduleDraft: () => ({ start: '', end: '', capacity: '' }),
       h: (tag, props, ...children) => ({ tag, props, children }), Section: 'Section', Button: 'Button', busy: false,
-      setModal: data => calls.push(data), setView: data => calls.push(data),
+      setModal: data => calls.push(data), navigate: data => calls.push(data),
     })
     assert.equal(tree.props.testid, 'first-schedule-guide')
     assert.deepEqual(calls, [], 'render is read-only')

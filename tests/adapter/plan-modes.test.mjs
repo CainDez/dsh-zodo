@@ -26,11 +26,14 @@ test('default, event-like and unrecognized inputs are additive; only exact repla
     assert.equal(f.modals[0].grant,null)
   }
 })
-test('Today and Schedule buttons explicitly wire modes and never pass click events as configuration',async()=>{
+test('Schedule owns both explicit planning modes; Today only navigates there',async()=>{
   const additive=source.split('\n').filter(line=>line.includes('onClick: () => openPlan(), disabled: busy'))
   const replan=source.split('\n').filter(line=>line.includes("onClick: () => openPlan('replan'), disabled: busy"))
-  assert.equal(additive.length,2)
-  assert.equal(replan.length,2)
+  assert.equal(additive.length,1)
+  assert.equal(replan.length,1)
+  const today=source.slice(source.indexOf('      const renderToday ='),source.indexOf('      const renderInbox ='))
+  assert.match(today,/today-open-schedule/)
+  assert.doesNotMatch(today,/openPlan/)
   assert.equal(source.includes('onClick: openPlan'),false)
   for(const [lines,expected] of [[additive,false],[replan,true]]) for(const line of lines) {
     const f=controller()

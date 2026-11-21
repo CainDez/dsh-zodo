@@ -152,7 +152,13 @@ try {
   phase = 'official-sidebar-zodo'
   await page.getByRole('button', { name: 'Zodo', exact: true }).click({ timeout: 12000 })
   console.log('PASS official-sidebar-zodo')
-  const heading = name => workbench.getByRole('heading', { name, exact: true })
+  const heading = name => workbench.getByRole('heading', { name, level: 1, exact: true })
+  const sidebar = workbench.getByRole('navigation', { name: 'Zodo 业务入口' })
+  const topbar = workbench.locator('.zw-topbar')
+  const openScheduleOptions = async () => {
+    const options = workbench.getByTestId('schedule-options')
+    if (!(await options.evaluate(node => node.parentElement.open))) await options.click()
+  }
   phase = 'official-today-heading'
   await heading('今天').waitFor()
   phase = 'official-core-connected'
@@ -277,8 +283,8 @@ try {
     await ensureHostInteractive()
     await checkKeyboard('today')
     await ensureHostInteractive()
-    phase = 'official-schedule-click'
-    await workbench.getByTestId('nav-schedule').click()
+    phase = 'official-today-open-schedule'
+    await workbench.getByTestId('today-open-schedule').click()
     phase = 'official-schedule-heading'
     await heading('日程').waitFor()
     await ensureHostInteractive()
@@ -309,7 +315,9 @@ try {
     const estimate = 37
     const showTasks = async () => {
       phase = 'official-save-tasks-navigation'
-      await workbench.getByTestId('nav-tasks').click()
+      await sidebar.getByTestId('nav-work').click()
+      await heading('任务').waitFor()
+      await workbench.locator('main').getByTestId('nav-tasks').click()
       await heading('任务').waitFor()
     }
     const checkRow = async (id) => {
@@ -373,6 +381,7 @@ try {
     assert.match(day, /^\d{4}-\d{2}-\d{2}$/)
     const capacityTitle = 'Official Web acceptance capacity'
     const instant = clock => Date.parse(`${day}T${clock}:00+08:00`)
+    await openScheduleOptions()
     await workbench.getByRole('button', { name: '增加容量', exact: true }).click()
     const capacityEditor = workbench.getByRole('dialog', { name: '增加可用容量', exact: true })
     await capacityEditor.getByLabel('名称', { exact: true }).fill(capacityTitle)
@@ -505,7 +514,7 @@ try {
       assert.deepEqual(await snapshot(), after)
 
       phase = 'official-discard-confirmation-cancel'
-      await workbench.getByTestId('nav-proposals').click()
+      await topbar.getByTestId('nav-proposals').click()
       await heading('提案').waitFor()
       const discard = workbench.getByTestId('proposal-discard-' + candidate.id)
       const confirmation = workbench.getByRole('dialog', { name: '确认放弃提案', exact: true })
@@ -632,6 +641,7 @@ try {
         nextCapacityDate.setTime(nextCapacityDate.getTime() + 86400000)
       }
       const nextDay = nextCapacityDate.toISOString().slice(0, 10)
+      await openScheduleOptions()
       await workbench.getByRole('button', { name: '增加容量', exact: true }).click()
       await capacityEditor.getByLabel('名称', { exact: true }).fill('Official Web week capacity')
       await capacityEditor.getByLabel('开始', { exact: true }).fill(nextDay + 'T14:00')
@@ -828,6 +838,7 @@ try {
     const importBusy = async (mode, events) => {
       const stage = 'official-busy-' + mode
       phase = stage + '-open-import-control'
+      await openScheduleOptions()
       await workbench.getByRole('button', { name: '导入忙碌', exact: true }).click()
       const editor = workbench.getByRole('dialog', { name: '导入忙碌快照', exact: true })
       phase = stage + '-editor-visible'
