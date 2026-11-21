@@ -107,7 +107,7 @@ window.__ModuleLoader__.load({
       return sessionPromise
     }
 
-    async function bridgeRpc(kind, envelope, retried = false) {
+    async function bridgeRpc(kind, envelope, retrySession = true) {
       await ensureSession()
       const response = await fetch(`${BRIDGE}/rpc`, {
         method: 'POST',
@@ -116,11 +116,11 @@ window.__ModuleLoader__.load({
         body: JSON.stringify({ kind, envelope }),
       })
       const body = await response.json().catch(() => undefined)
-      if (response.status === 401 && !retried) {
+      if (response.status === 401) {
         sessionPromise = null
         uiSession = null
         bridgeToken = null
-        return bridgeRpc(kind, envelope, true)
+        if (retrySession) return bridgeRpc(kind, envelope, false)
       }
       if (!response.ok || !body?.ok) {
         const error = new Error(body?.error?.message ?? `Zodo 请求失败 (${response.status})`)
@@ -143,7 +143,7 @@ window.__ModuleLoader__.load({
       })
     }
 
-    async function command(name, payload, baseRevision, key) {
+    async function command(name, payload, baseRevision, key, retrySession = true) {
       await ensureSession()
       const workspaceId = uiSession?.core?.workspace_id ?? 'ws_local'
       return bridgeRpc('command', {
@@ -155,7 +155,7 @@ window.__ModuleLoader__.load({
         operation_version: 1,
         base_revision: baseRevision ?? null,
         payload,
-      })
+      }, retrySession)
     }
 
     async function bridgeJson(pathname, options = {}, retried = false) {
@@ -491,6 +491,123 @@ window.__ModuleLoader__.load({
       return addDays(isoDate, -(day - 1))
     }
 
+    // BEGIN PURE AGENDA PROJECTION: also exercised directly by schedule-projection.test.mjs.
+    // Navigation is civil-date arithmetic; event boundaries are browser-local midnights.
+    const AGENDA_MIN = '0001-01-01'
+    const AGENDA_MAX = '9999-12-25' // Leave room for the complete seven-day window.
+
+    function agendaDate(value) {
+      if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+      const date = new Date(`${value}T12:00:00Z`)
+      return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? date : null
+    }
+
+    function agendaShift(value, days, length = 7) {
+      const maximum = length === 1 ? '9999-12-31' : AGENDA_MAX
+      const date = agendaDate(value)
+      if (!date || !Number.isSafeInteger(days)) return AGENDA_MIN
+      date.setUTCDate(date.getUTCDate() + days)
+      if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() > 9999) return days < 0 ? AGENDA_MIN : maximum
+      if (date.getUTCFullYear() < 1) return AGENDA_MIN
+      const result = date.toISOString().slice(0, 10)
+      return result < AGENDA_MIN ? AGENDA_MIN : result > maximum ? maximum : result
+    }
+
+    function agendaDays(start, length = 7) {
+      const count = length === 1 ? 1 : 7
+      const date = agendaDate(agendaShift(start, 0, count))
+      return Array.from({ length: count }, (_, index) => {
+        const day = new Date(date.getTime())
+        day.setUTCDate(day.getUTCDate() + index)
+        return day.toISOString().slice(0, 10)
+      })
+    }
+
+    function agendaEntries(snapshot, day) {
+      if (!agendaDate(day)) return []
+      const boundary = new Date(`${day}T00:00:00`)
+      const dayStart = boundary.getTime()
+      boundary.setDate(boundary.getDate() + 1)
+      const dayEnd = boundary.getTime()
+      const entries = []
+      for (const [kind, rows] of [
+        ['capacity', snapshot.capacity_blocks],
+        ['commitment', snapshot.commitments],
+        ['allocation', snapshot.allocations],
+        // Match Core planner's busy predicate. Project only interval data, never
+        // imported titles, notes, source IDs or external IDs into view models.
+        ['busy', (snapshot.calendar_events ?? []).filter(event => event.busy === true)
+          .map((event, index) => ({ id: `busy-${index}`, start: event.start, end: event.end }))],
+      ]) {
+        for (const row of rows ?? []) {
+          const start = typeof row.start === 'string' ? Date.parse(row.start) : NaN
+          const end = typeof row.end === 'string' ? Date.parse(row.end) : NaN
+          // Half-open intervals exclude midnight endings from the following day.
+          if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || start >= dayEnd || end <= dayStart) continue
+          entries.push({ kind, row, start, end,
+            visibleStart: Math.max(start, dayStart), visibleEnd: Math.min(end, dayEnd),
+            continuesBefore: start < dayStart, continuesAfter: end > dayEnd,
+            endsAtDayBoundary: end >= dayEnd,
+          })
+        }
+      }
+      // Compare instants, not offset-bearing strings or grouped event types.
+      return entries.sort((a, b) => a.start - b.start || a.end - b.end ||
+        a.kind.localeCompare(b.kind) || String(a.row.id).localeCompare(String(b.row.id)))
+    }
+    function calendarFreshness(source, now = Date.now()) {
+      const synced = typeof source.last_sync_at === 'string' ? Date.parse(source.last_sync_at) : NaN
+      const ttl = source.freshness_seconds
+      if (!Number.isFinite(synced) || synced > now || !Number.isFinite(ttl) || ttl < 0) return '未知'
+      return (now - synced) / 1000 > ttl ? '过期' : '新鲜'
+    }
+    // Read-only selection, not a feasibility check or a running focus session.
+    function todayNextAction(entries, tasks, suggestion, now) {
+      const scheduled = entries.filter(entry => entry.kind === 'allocation' && entry.end > now)
+        .map(entry => ({ entry, task: tasks.find(task => task.id === entry.row.task_id) }))
+        .find(candidate => candidate.task)
+      if (scheduled) return { ...scheduled, kind: scheduled.entry.start <= now ? 'scheduled-now' : 'scheduled-next' }
+      return suggestion ? { kind: 'suggestion', task: suggestion } : null
+    }
+    function outstandingWork(snapshot, now) {
+      const unknown = { rows: [], minutes: 0, unknown: true }
+      if (!Number.isFinite(now) || !Array.isArray(snapshot?.tasks) || !Array.isArray(snapshot?.allocations)) return unknown
+      const tasks = snapshot.tasks
+      if (tasks.some(task => !task || typeof task.id !== 'string')) return unknown
+      const rows = []
+      let hasUnknown = false
+      const validMinutes = value => Number.isSafeInteger(value) && value >= 0
+      const parents = new Set(tasks.filter(task => !task.archived).map(task => task.parent_id))
+      const reservations = new Map()
+      let malformedAllocation = false
+      for (const allocation of snapshot.allocations) {
+        if (!allocation || typeof allocation.task_id !== 'string') { malformedAllocation = true; continue }
+        const reserved = reservations.get(allocation.task_id) ?? { minutes: 0, invalid: false }
+        const start = typeof allocation.start === 'string' ? Date.parse(allocation.start) : NaN
+        const end = typeof allocation.end === 'string' ? Date.parse(allocation.end) : NaN
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !validMinutes(allocation.minutes)) {
+          reserved.invalid = true
+        } else if (end > now) {
+          // Core reserves the whole allocation until its end, including straddling
+          // intervals. Elapsed time is not evidence of task completion.
+          reserved.minutes += allocation.minutes
+        }
+        reservations.set(allocation.task_id, reserved)
+      }
+      for (const task of tasks) {
+        if (task.archived || task.status === 'done' || task.status === 'cancelled' || parents.has(task.id)) continue
+        const remaining = task.remaining_minutes ?? task.estimate_minutes
+        if (!validMinutes(remaining)) { hasUnknown = true; continue }
+        const reserved = reservations.get(task.id) ?? { minutes: 0, invalid: false }
+        if (malformedAllocation || reserved.invalid || !Number.isSafeInteger(reserved.minutes)) { hasUnknown = true; continue }
+        const minutes = Math.max(0, remaining - reserved.minutes)
+        if (minutes > 0) rows.push({ task, minutes })
+      }
+      const minutes = rows.reduce((sum, row) => sum + row.minutes, 0)
+      return Number.isSafeInteger(minutes) ? { rows, minutes, unknown: hasUnknown } : unknown
+    }
+    // END PURE AGENDA PROJECTION
+
     function statusLabel(status) {
       return ({ open: '待处理', in_progress: '进行中', done: '已完成', cancelled: '已取消' })[status] ?? status
     }
@@ -564,15 +681,19 @@ window.__ModuleLoader__.load({
       }, true)
     }
 
-    function Modal({ title, subtitle, children, footer, onClose, wide }) {
+    function Modal({ title, subtitle, children, footer, onClose, wide, restoreFocus }) {
       const ref = useRef(null)
       const restoreTarget = useRef(lastPointerButton.current ?? null)
       useEffect(() => {
         // Accepting dialog guidance: remember the trigger so closing returns focus instead of
         // dropping keyboard users on document.body. Cleanup runs for save, cancel and Escape alike.
-        restoreTarget.current = typeof HTMLElement !== 'undefined' && document.activeElement instanceof HTMLElement
-          ? document.activeElement
-          : null
+        // A caller that captured its button before rendering can survive a child
+        // autoFocus taking focus before this mount effect runs.
+        restoreTarget.current = restoreFocus ?? (
+          typeof HTMLElement !== 'undefined' && document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null
+        )
         return () => {
           const candidate = restoreTarget.current
           const pointer = lastPointerButton.current
@@ -690,7 +811,7 @@ window.__ModuleLoader__.load({
       return width
     }
 
-    function TaskEditor({ task, snapshot, projectId, onClose, send, busy }) {
+    function TaskEditor({ task, snapshot, projectId, onClose, send, busy, restoreFocus }) {
       const [form, setForm] = useState({
         title: task?.title ?? '',
         estimate: task?.estimate_minutes ?? 30,
@@ -734,6 +855,7 @@ window.__ModuleLoader__.load({
         title: task ? '编辑任务' : '新建任务',
         subtitle: '保存后由 Core 校验关系与版本。',
         onClose,
+        restoreFocus,
         footer: h(React.Fragment, null,
           h(Button, { onClick: onClose }, COPY.cancel),
           h(Button, { tone: 'primary', onClick: submit, disabled: busy, testid: 'task-save' }, COPY.save),
@@ -782,13 +904,13 @@ window.__ModuleLoader__.load({
       ))
     }
 
-    function defaultTimeForm(task, timeZone) {
+    function defaultTimeForm(task, timeZone, day) {
       const zoneUsable = isKnownTimezone(timeZone)
       const hardInstant = task?.hard_deadline ? new Date(task.hard_deadline).getTime() : null
       const hardKnown = hardInstant != null && Number.isFinite(hardInstant)
       const hardWall = hardKnown && zoneUsable ? wallClockInput(hardInstant, timeZone) : null
       return {
-        date: hardWall ? hardWall.slice(0, 10) : (task?.target_due ?? todayIso()),
+        date: hardWall ? hardWall.slice(0, 10) : (task?.target_due ?? (agendaDate(day) ? day : todayIso())),
         time: hardWall ? hardWall.slice(11, 16) : '',
         strength: task?.hard_deadline ? 'hard' : 'soft',
         notBefore: task?.not_before
@@ -801,16 +923,16 @@ window.__ModuleLoader__.load({
 
     // L04: 时间与时区编辑。Every save writes a complete TaskSpec (existing fields preserved) so
     // Core keeps its version/relationship validation; the dialog never sends a partial patch.
-    function TimeEditor({ task, tasks, snapshot, onClose, send, busy }) {
+    function TimeEditor({ task, tasks, day, snapshot, onClose, send, busy }) {
       const timeZone = workspaceTimezone(snapshot)
       const zoneValid = isKnownTimezone(timeZone)
       const [pickedId, setPickedId] = useState(task?.id ?? '')
       const selected = task ?? (tasks ?? []).find(candidate => candidate.id === pickedId) ?? null
-      const [form, setForm] = useState(() => defaultTimeForm(selected, timeZone))
+      const [form, setForm] = useState(() => defaultTimeForm(selected, timeZone, day))
       const [error, setError] = useState('')
       useEffect(() => {
-        setForm(defaultTimeForm(selected, timeZone))
-      }, [selected?.id])
+        setForm(defaultTimeForm(selected, timeZone, day))
+      }, [selected?.id, day])
       const dueResolution = useMemo(() => {
         if (!zoneValid || !form.date) return null
         return resolveWallTime(form.date, form.time || '00:00', timeZone)
@@ -954,6 +1076,7 @@ window.__ModuleLoader__.load({
       },
       error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
       !zoneValid ? h('div', { className: 'zw-alert zw-alert-error' }, `工作空间时区「${timeZone}」不是可用的 IANA 时区；请先在设置中修正，避免时间被错误换算。`) : null,
+      day ? h('p', { className: 'zw-fineprint', 'data-testid': 'time-date-context' }, `来自日程日期列 ${day}（本机时区）。这里只设置任务完成日期，不创建分配、不移动锁定安排，也不会开始专注。没有已有截止的任务默认使用相同日期标签，按工作空间时区 ${timeZone} 解释，不是跨时区时刻换算；已有截止与最早开始限制保留，请核对后保存。`) : null,
       taskPicker,
       selected ? h(React.Fragment, null,
         h('div', { className: 'zw-grid2' },
@@ -1207,47 +1330,282 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function CommitmentEditor({ onClose, send, busy }) {
-      const now = new Date()
-      const start = new Date(now.getTime() + 60 * 60 * 1000)
-      start.setMinutes(0, 0, 0)
-      const end = new Date(start.getTime() + 60 * 60 * 1000)
-      const [form, setForm] = useState({
+    // BEGIN APPOINTMENT DEFAULTS
+    function appointmentDefaults(day, timeZone, displayZone, now = Date.now()) {
+      let start
+      let end
+      if (day) {
+        const first = resolveWallTime(day, '09:00', displayZone)
+        const last = resolveWallTime(day, '10:00', displayZone)
+        // Never guess on missing or repeated display-zone clocks.
+        if (first.instants.length !== 1 || last.instants.length !== 1) return { start: '', end: '' }
+        start = first.instants[0]
+        end = last.instants[0]
+      } else {
+        const next = new Date(now + 60 * 60 * 1000)
+        next.setMinutes(0, 0, 0)
+        start = next.getTime()
+        end = start + 60 * 60 * 1000
+      }
+      return { start: wallClockInput(start, timeZone), end: wallClockInput(end, timeZone) }
+    }
+    // END APPOINTMENT DEFAULTS
+
+    function CommitmentEditor({ day, snapshot, onClose, send, busy }) {
+      const timeZone = workspaceTimezone(snapshot)
+      const displayZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      const zoneValid = isKnownTimezone(timeZone)
+      const [form, setForm] = useState(() => ({
         title: '固定预约',
-        start: localDateTimeInput(start),
-        end: localDateTimeInput(end),
-        locked: true,
-      })
+        ...(zoneValid ? appointmentDefaults(day, timeZone, displayZone) : { start: '', end: '' }),
+        startChoice: null, endChoice: null, locked: true,
+      }))
+      const resolutions = Object.fromEntries(['start', 'end'].map(key => [key,
+        zoneValid && form[key] ? resolveWallTime(form[key].slice(0, 10), form[key].slice(11, 16), timeZone) : { instants: [] },
+      ]))
+      const submitting = useRef(false)
+      const closeIfIdle = () => { if (!submitting.current && !busy) onClose() }
       const [error, setError] = useState('')
       const submit = async () => {
+        if (submitting.current || busy) return
         if (!form.title.trim()) return setError('请填写标题')
+        if (!zoneValid) return setError('请先修正工作空间 IANA 时区')
+        for (const key of ['start', 'end']) {
+          if (!resolutions[key].instants.length) return setError('开始或结束时间缺失或在此时区不存在，请重新选择')
+          if (resolutions[key].instants.length > 1 && !resolutions[key].instants.includes(form[`${key}Choice`])) return setError('当地钟点重复，请明确选择 UTC 时刻')
+        }
+        const startInstant = form.startChoice ?? resolutions.start.instants[0]
+        const endInstant = form.endChoice ?? resolutions.end.instants[0]
+        if (endInstant <= startInstant) return setError('结束时间必须晚于开始时间')
+        submitting.current = true
         try {
           await send('commitment.create', { commitment: {
             title: form.title.trim(),
-            start: toIso(form.start),
-            end: toIso(form.end),
+            start: new Date(startInstant).toISOString(),
+            end: new Date(endInstant).toISOString(),
             locked: form.locked,
           } })
           onClose()
         } catch (failure) {
           setError(failure.message)
+        } finally {
+          submitting.current = false
         }
       }
-      return h(Modal, { title: '新建固定预约', onClose,
+      return h(Modal, { title: '新建固定预约', onClose: closeIfIdle,
         footer: h(React.Fragment, null,
-          h(Button, { onClick: onClose }, COPY.cancel),
+          h(Button, { onClick: closeIfIdle, disabled: busy }, COPY.cancel),
           h(Button, { tone: 'primary', onClick: submit, disabled: busy }, COPY.save)) },
+        busy ? h('p', { className: 'zw-fineprint', role: 'status' }, '保存中，请等待完成后关闭。') : null,
         error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
+        h('p', { className: 'zw-fineprint' }, `输入时区：${timeZone}。日程显示时区：${displayZone}。${day ? `由所选日 ${day} 的本机 09:00–10:00 转换为初值，可编辑；不代表该时段可预约。` : '确认时间后保存，不会自动创建。'}`),
+        ['start', 'end'].map(key => resolutions[key].instants.length > 1 ? h(Field, { key, label: `${key === 'start' ? '开始' : '结束'}钟点重复，请选择 UTC 时刻` },
+          h('select', { value: form[`${key}Choice`] ?? '', onChange: event => setForm({ ...form, [`${key}Choice`]: event.target.value === '' ? null : Number(event.target.value) }) },
+            h('option', { value: '' }, '请选择'),
+            resolutions[key].instants.map(instant => h('option', { key: instant, value: instant }, new Date(instant).toISOString())),
+          )) : null),
         h(Field, { label: '标题', wide: true }, h('input', { value: form.title,
           onChange: event => setForm({ ...form, title: event.target.value }) })),
         h(Field, { label: '开始' }, h('input', { type: 'datetime-local', value: form.start,
-          onChange: event => setForm({ ...form, start: event.target.value }) })),
+          onChange: event => setForm({ ...form, start: event.target.value, startChoice: null }) })),
         h(Field, { label: '结束' }, h('input', { type: 'datetime-local', value: form.end,
-          onChange: event => setForm({ ...form, end: event.target.value }) })),
+          onChange: event => setForm({ ...form, end: event.target.value, endChoice: null }) })),
         h('label', { className: 'zw-check-line' },
           h('input', { type: 'checkbox', checked: form.locked, onChange: event => setForm({ ...form, locked: event.target.checked }) }),
           '锁定，不被自动移动',
         ),
+      )
+    }
+
+    // Strict quick scheduling creates a candidate only; normal approval owns commit.
+    // Hints are presentation only. Core diagnostics remain authoritative; never
+    // reflect arbitrary diagnostic values (which may contain private titles).
+    function scheduleRecovery(failure = {}) {
+      const code = String(failure.code ?? '').toUpperCase()
+      const message = String(failure.message ?? '').toLowerCase()
+      if (code === 'UNSUPPORTED_OPERATION' || /unknown (operation|variant)|unsupported/.test(message)) return 'Core 不支持严格安排，请升级后重新生成预览；不会使用宽松接口。'
+      if (['REVISION_CONFLICT', 'POLICY_CHANGED', 'APPROVAL_EXPIRED'].includes(code) || /task changed/.test(message)) return '数据、策略或批准依据已变化；刷新数据并核对保留的输入，再重新生成预览，不能重用旧批准。'
+      if (code === 'PERMISSION_DENIED') return '当前权限不足；检查授权后再生成预览，不会绕过权限。'
+      if (code === 'NOT_FOUND') return '所选任务或容量已不存在；刷新后重新选择，再生成预览。'
+      if (/start in the future/.test(message)) return '开始时间已到或已过；选择未来时段，再生成预览。'
+      if (/predecessor|dependency/.test(message)) return '前置工作未满足；先核实依赖完成情况或安排前置工作，再重新生成预览。'
+      if (/unblocked leaf|closed or archived/.test(message)) return '请选择未关闭、未归档且未手动阻塞的叶任务；不会替你解除阻塞。'
+      if (/task time constraints/.test(message)) return '所选时间违反最早开始或硬截止；调整时段，不会自动放宽任务限制。'
+      if (/workspace availability|timezone/.test(message)) return '检查工作空间时区、硬工作窗口与周末规则，选择允许的时段后重新预览。'
+      if (/overlap|external busy/.test(message)) return '所选时段与已有安排或忙碌区间冲突；改选时段，不会移动已有安排。'
+      if (/capacity/.test(message)) return '检查所选容量块的时间范围和剩余预算；换一个已有容量块或缩短时段。'
+      if (/remaining|estimate_minutes/.test(message)) return '检查任务剩余分钟及已有分配；补齐估时或缩短安排后重新预览。'
+      return '未得到有效严格预览。输入已保留；请核实 Core 状态与提案记录，再手动重新生成预览。不会自动重试或提交。'
+    }
+
+    // BEGIN PURE FIRST-SCHEDULE GUIDANCE
+    function manualScheduleTasks(snapshot) {
+      const allTasks = snapshot.tasks ?? []
+      const parents = new Set(allTasks.filter(task => !task.archived).map(task => task.parent_id))
+      return allTasks.filter(task => !task.archived && !task.blocked_manual &&
+        !['done', 'cancelled'].includes(task.status) && !parents.has(task.id))
+    }
+    function firstScheduleStep(snapshot, now, timeZone) {
+      if (!Array.isArray(snapshot?.allocations) || snapshot.allocations.length ||
+          !Array.isArray(snapshot.tasks) || !Array.isArray(snapshot.capacity_blocks) ||
+          !Number.isFinite(now)) return null
+      const tasks = manualScheduleTasks(snapshot)
+      if (!tasks.some(task => (task.remaining_minutes ?? task.estimate_minutes ?? 0) > 0)) {
+        const needsEstimate = tasks.find(task => task.remaining_minutes == null && task.estimate_minutes == null)
+        return needsEstimate ? { kind: 'estimate', task: needsEstimate } : { kind: 'task' }
+      }
+      const next = snapshot.capacity_blocks.reduce((best, block) => {
+        const start = typeof block.start === 'string' ? Date.parse(block.start) : NaN
+        const end = typeof block.end === 'string' ? Date.parse(block.end) : NaN
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= Math.max(now, start) ||
+            !(block.capacity_minutes > 0)) return best
+        return Math.min(best, Math.max(start, now))
+      }, Infinity)
+      if (!Number.isFinite(next)) return { kind: 'capacity' }
+      if (!isKnownTimezone(timeZone)) return { kind: 'timezone' }
+      const day = wallClockInput(next, timeZone).slice(0, 10)
+      return agendaDate(day) ? { kind: 'schedule', day } : { kind: 'timezone' }
+    }
+    function guidedScheduleDraft(snapshot, now, timeZone) {
+      const empty = { capacity: '', start: '', end: '' }
+      if (!Number.isFinite(now) || !isKnownTimezone(timeZone)) return empty
+      const minute = 60_000
+      const remaining = manualScheduleTasks(snapshot).map(task => task.remaining_minutes ?? task.estimate_minutes)
+        .filter(value => Number.isSafeInteger(value) && value > 0)
+      if (!remaining.length) return empty
+      const maxMinutes = remaining.reduce((min, value) => Math.min(min, value), 30)
+      const futureMinute = (Math.floor(now / minute) + 1) * minute
+      const blocks = (snapshot.capacity_blocks ?? []).map(block => ({
+        id: block.id, minutes: block.capacity_minutes,
+        start: Math.max(futureMinute, Math.ceil(Date.parse(block.start) / minute) * minute),
+        end: Math.floor(Date.parse(block.end) / minute) * minute,
+      })).filter(block => typeof block.id === 'string' && block.id &&
+        Number.isSafeInteger(block.minutes) && block.minutes > 0 &&
+        Number.isFinite(block.start) && Number.isFinite(block.end) && block.end - block.start >= minute)
+        .sort((left, right) => left.start - right.start || left.end - right.end || left.id.localeCompare(right.id))
+      const uniqueWall = instant => {
+        const wall = wallClockInput(instant, timeZone)
+        if (!agendaDate(wall.slice(0, 10))) return null
+        const { instants } = resolveWallTime(wall.slice(0, 10), wall.slice(11, 16), timeZone)
+        return instants.length === 1 && instants[0] === instant ? wall : null
+      }
+      for (const block of blocks) {
+        // Prefer the first minute. The last full minute is a bounded fallback
+        // when the first timestamp falls into a repeated local clock.
+        for (const startInstant of new Set([block.start, block.end - minute])) {
+          const start = uniqueWall(startInstant)
+          if (!start) continue
+          const preferred = Math.min(maxMinutes, block.minutes, (block.end - startInstant) / minute)
+          // If the preferred interval crosses a clock change, try one valid minute.
+          // Do not choose either occurrence of a repeated clock on the user's behalf.
+          for (const duration of new Set([preferred, 1])) {
+            const end = uniqueWall(startInstant + duration * minute)
+            if (end && Date.parse(end + 'Z') - Date.parse(start + 'Z') === duration * minute) {
+              return { capacity: block.id, start, end }
+            }
+          }
+        }
+      }
+      return empty
+    }
+    // END PURE FIRST-SCHEDULE GUIDANCE
+
+    function schedulePickerOptions(snapshot, form, timeZone) {
+      const tasks = manualScheduleTasks(snapshot)
+      const first = String(form.start ?? '').slice(0, 10)
+      const last = String(form.end ?? '').slice(0, 10)
+      const dateKnown = Boolean(agendaDate(first) && agendaDate(last) && first <= last && isKnownTimezone(timeZone))
+      const capacities = (snapshot.capacity_blocks ?? []).filter(block => {
+        const start = typeof block.start === 'string' ? Date.parse(block.start) : NaN
+        const end = typeof block.end === 'string' ? Date.parse(block.end) : NaN
+        if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return false
+        if (!dateKnown) return true // Do not clear a selection while the date is incomplete.
+        // Compare workspace civil dates, not browser-local dates or UTC prefixes.
+        // end - 1 preserves half-open midnight endings; multi-day blocks remain visible.
+        return wallClockInput(start, timeZone).slice(0, 10) <= last &&
+          wallClockInput(end - 1, timeZone).slice(0, 10) >= first
+      })
+      return { tasks, capacities, dateKnown }
+    }
+
+    function QuickSchedule({ day, guidedDraft, snapshot, send, busy, onClose, setModal }) {
+      const timeZone = workspaceTimezone(snapshot)
+      const zoneValid = isKnownTimezone(timeZone)
+      const pending = useRef(false)
+      const [form, setForm] = useState({ task: '', capacity: '', start: `${day}T09:00`, end: `${day}T10:00`, ...guidedDraft, startChoice: null, endChoice: null })
+      const [error, setError] = useState('')
+      const updateForm = next => {
+        if (pending.current || busy) return
+        const options = schedulePickerOptions(snapshot, next, timeZone)
+        const datesChanged = next.start.slice(0, 10) !== form.start.slice(0, 10) || next.end.slice(0, 10) !== form.end.slice(0, 10)
+        setForm(datesChanged && options.dateKnown && next.capacity && !options.capacities.some(block => block.id === next.capacity)
+          ? { ...next, capacity: '' } : next)
+      }
+      const { tasks, capacities, dateKnown } = schedulePickerOptions(snapshot, form, timeZone)
+      const selected = tasks.find(task => task.id === form.task)
+      const capacity = capacities.find(block => block.id === form.capacity)
+      const resolved = Object.fromEntries(['start', 'end'].map(key => [key, zoneValid && form[key]
+        ? resolveWallTime(form[key].slice(0, 10), form[key].slice(11, 16), timeZone) : { instants: [] }]))
+      const instant = key => resolved[key].instants.length === 1 ? resolved[key].instants[0]
+        : resolved[key].instants.includes(form[`${key}Choice`]) ? form[`${key}Choice`] : null
+      const start = instant('start'), end = instant('end')
+      const close = () => { if (!pending.current && !busy) onClose() }
+      const propose = async () => {
+        if (pending.current || busy) return
+        setError('')
+        if (!selected || !capacity) return setError('请选择任务和已有容量块；不会自动创建容量。')
+        if (!zoneValid || start == null || end == null) return setError('时间缺失、不存在或存在夏令时歧义；请修正并明确选择时刻。')
+        if (end <= start) return setError('结束必须晚于开始。')
+        if (!Number.isInteger(selected.version) || selected.version < 1) return setError('任务版本无效，请刷新后重试。')
+        pending.current = true
+        try {
+          const result = await send('proposal.create', {
+            intent: `安排任务「${selected.title}」到容量「${capacity.title}」：${form.start} 至 ${form.end}（${timeZone}）；UTC ${new Date(start).toISOString()} 至 ${new Date(end).toISOString()}`,
+            operations: [{ operation: 'allocation.schedule', payload: { allocation: {
+              task_id: selected.id, expected_task_version: selected.version, capacity_block_id: capacity.id,
+              start: new Date(start).toISOString(), end: new Date(end).toISOString(),
+            } } }],
+          })
+          const proposal = result.data?.proposal
+          if (!proposal || proposal.status !== 'validated') {
+            const hints = (proposal?.diagnostics ?? []).slice(0, 4).map(scheduleRecovery)
+            setError(`Core 未返回有效的严格安排提案，未安排任何时间。${[...new Set(hints.length ? hints : [scheduleRecovery()])].join(' ')} 输入已保留，修改后请生成新预览；不会使用宽松接口。`)
+            return
+          }
+          setModal({ type: 'plan', proposal, plan: null, grant: null })
+        } catch (failure) {
+          setError(`严格安排预览失败。${scheduleRecovery(failure)} 输入已保留。`)
+        } finally { pending.current = false }
+      }
+      return h(Modal, { title: '安排任务时段', onClose: close, wide: true,
+        footer: h(React.Fragment, null,
+          h(Button, { onClick: close, disabled: busy }, COPY.cancel),
+          h(Button, { onClick: propose, disabled: busy, testid: 'schedule-slot-preview' }, '生成严格预览')) },
+        error ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert' }, error) : null,
+        busy ? h('p', { role: 'status' }, '正在生成预览，请等待后关闭。') : null,
+        h('p', { className: 'zw-fineprint' }, guidedDraft ? (guidedDraft.start
+          ? `起止时刻是已有容量内的可编辑建议，按工作空间时区 ${timeZone} 显示；请核对后选任务并生成严格预览。`
+          : `没有可安全预填的整分钟时段。请按工作空间时区 ${timeZone} 手动选择容量及起止时刻。`)
+          : `所选日期标签 ${day} 来自本机日程；下面所有日期与钟点按工作空间时区 ${timeZone} 解释，不自动猜测跨时区对应时刻。请核对 UTC 预览。`),
+        h('fieldset', { disabled: busy, style: { border: 0, padding: 0, margin: 0, minWidth: 0 } },
+        h('legend', { className: 'zw-fineprint' }, '修改输入后须重新生成预览；保存中输入受保护'),
+        h(Field, { label: '任务' }, h('select', { value: form.task, onChange: event => updateForm({ ...form, task: event.target.value }), 'data-testid': 'schedule-slot-task' },
+          h('option', { value: '' }, '选择任务'), tasks.map(task => h('option', { key: task.id, value: task.id }, task.title)))),
+        h(Field, { label: '已有容量块' }, h('select', { value: form.capacity, onChange: event => updateForm({ ...form, capacity: event.target.value }), 'data-testid': 'schedule-slot-capacity' },
+          h('option', { value: '' }, '选择容量块'), capacities.map(block => h('option', { key: block.id, value: block.id }, `${block.title} · ${zoneValid ? wallClockText(Date.parse(block.start), timeZone) : block.start} 至 ${zoneValid ? wallClockText(Date.parse(block.end), timeZone) : block.end}`)))),
+        !tasks.length ? h('p', { role: 'status' }, '没有可选的开放叶任务；请先创建叶任务，或在任务详情检查归档、完成和手动阻塞状态。') : null,
+        !capacities.length ? h('p', { role: 'status' }, `所选工作空间日期范围没有候选容量块。请调整日期，或关闭此表单先创建容量，再回来选择。`) : null,
+        h('p', { className: 'zw-fineprint', 'data-testid': 'schedule-picker-scope' }, dateKnown
+          ? `容量候选按输入的开始至结束日期（${timeZone}）筛选，跨午夜容量保留；日期变化后不相交的选择会清空。候选不代表预算、依赖或冲突检查已通过。`
+          : '日期或时区尚未完整，暂不按日期缩小容量候选；请补齐后选择。'),
+        ['start', 'end'].map(key => h(Field, { key, label: key === 'start' ? '开始（工作空间时区）' : '结束（工作空间时区）' },
+          h('input', { type: 'datetime-local', value: form[key], onChange: event => updateForm({ ...form, [key]: event.target.value, [`${key}Choice`]: null }) }),
+          resolved[key].instants.length > 1 ? h('select', { value: form[`${key}Choice`] ?? '', onChange: event => updateForm({ ...form, [`${key}Choice`]: event.target.value === '' ? null : Number(event.target.value) }) },
+            h('option', { value: '' }, '钟点重复，请选择 UTC 时刻'), resolved[key].instants.map(value => h('option', { key: value, value }, new Date(value).toISOString()))) : null,
+        )),
+        ),
+        h('p', { 'data-testid': 'schedule-slot-utc' }, `UTC：${start == null ? '待确认' : new Date(start).toISOString()} 至 ${end == null ? '待确认' : new Date(end).toISOString()}`),
+        h('p', { className: 'zw-fineprint' }, '生成预览可能保存提案元数据，但不会分配时间。只有检查后批准并收到 Core 提交成功回执才保存安排。严格检查任务、依赖、容量和冲突；不移动已有安排、不开始专注、不写外部日历。忙碌快照可能过期，不能保证实时外部可用性。'),
       )
     }
 
@@ -1496,14 +1854,182 @@ window.__ModuleLoader__.load({
       )
     }
 
+    function allocationRemovalReason(row, now = Date.now()) {
+      if (row.locked !== false) return '此分配已锁定，不能删除。'
+      if (row.state !== 'planned') return '只有尚未开始的计划分配可以删除。'
+      const start = typeof row.start === 'string' ? Date.parse(row.start) : NaN
+      if (!Number.isFinite(start)) return '无法确认分配开始时间，请刷新后重试。'
+      return start <= now ? '此时段已到开始时间，不能删除。' : ''
+    }
+
+    function moveRecovery(failure = {}) {
+      const message = String(failure.message ?? '').toLowerCase()
+      if (/retained successor/.test(message)) return '新时段会影响已安排的后继任务。请选在后继任务开始前，或先检查其依赖和安排。'
+      if (/preserve its duration|destination is unchanged/.test(message)) return '请选择不同的目标，移动时必须保留原时长。'
+      if (/only unlocked planned/.test(message)) return '原分配已锁定、到达开始时间或状态已变。请刷新核对。'
+      if (/capacity/.test(message)) return '检查目标容量的时间和预算；请选择能容纳原时长的已有容量。'
+      if (/remaining|estimate_minutes/.test(message)) return '任务剩余时间或估时已变化；请刷新核对原分配和任务，不会缩短时段。'
+      return scheduleRecovery(failure)
+    }
+
+    function allocationMoveOperation(proposal) {
+      const operations = Array.isArray(proposal?.operations) ? proposal.operations : []
+      return operations.find(item => item?.operation === 'allocation.move')
+    }
+
+    // Approve a move only when the Core shows exactly the requested in-place change.
+    // Settlement/review uses this diff, not the user-editable intent text.
+    function allocationMoveDiff(proposal) {
+      const operation = allocationMoveOperation(proposal)
+      const diff = proposal?.preview?.diff ?? proposal?.preview
+      if (!operation || proposal.operations.length !== 1 ||
+          !Array.isArray(diff?.added) || diff.added.length !== 0 ||
+          !Array.isArray(diff?.removed) || diff.removed.length !== 0 ||
+          !Array.isArray(diff?.changed) || diff.changed.length !== 1) return null
+      const row = diff.changed[0]
+      const { id, start, end, capacity_block_id: capacity } = operation.payload ?? {}
+      const before = row?.before, after = row?.after
+      const times = [before?.start, before?.end, after?.start, after?.end, start, end].map(value => Date.parse(value))
+      if (row?.kind !== 'allocation' || typeof id !== 'string' || !id || row.id !== id ||
+          before?.id !== id || after?.id !== id ||
+          typeof before.task_id !== 'string' || before.task_id !== after.task_id ||
+          !Number.isSafeInteger(before.minutes) || before.minutes < 1 || before.minutes > 1440 ||
+          before.minutes !== after.minutes || !times.every(Number.isFinite) ||
+          after.capacity_block_id !== capacity || typeof capacity !== 'string' || !capacity ||
+          times[2] !== times[4] || times[3] !== times[5] ||
+          times[1] - times[0] !== before.minutes * 60_000 || times[3] - times[2] !== before.minutes * 60_000 ||
+          before.locked !== false || after.locked !== false || before.state !== 'planned' || after.state !== 'planned' ||
+          before.workspace_id !== after.workspace_id || before.created_at !== after.created_at ||
+          ['kind', 'id', 'actor_id'].some(key => before.source?.[key] !== after.source?.[key]) ||
+          (before.capacity_block_id === after.capacity_block_id && times[0] === times[2] && times[1] === times[3])) return null
+      return { before, after }
+    }
+
+    function moveDraftSlot(form, timeZone, minutes) {
+      const wall = form.start
+      if (!isKnownTimezone(timeZone) || typeof wall !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(wall) ||
+          !agendaDate(wall.slice(0, 10))) return { instants: [], start: null, end: null }
+      const { instants } = resolveWallTime(wall.slice(0, 10), wall.slice(11, 16), timeZone)
+      const start = instants.length === 1 ? instants[0] : instants.includes(form.startChoice) ? form.startChoice : null
+      return { instants, start, end: start === null ? null : start + minutes * 60_000 }
+    }
+
+    function moveSourceIssue(original, snapshot, now = Date.now()) {
+      const row = (snapshot.allocations ?? []).find(item => item.id === original.row.id)
+      const task = manualScheduleTasks(snapshot).find(item => item.id === original.row.task_id)
+      if (!row || ['id', 'task_id', 'start', 'end', 'minutes', 'capacity_block_id', 'updated_at'].some(key => row[key] !== original.row[key]) ||
+          task?.version !== original.taskVersion || !Number.isSafeInteger(task?.version) || task.version < 1 ||
+          workspaceTimezone(snapshot) !== original.timeZone) return '原分配、任务或时区已变化。输入仍保留，请关闭后从当前日程重新打开原分配核对。'
+      if (allocationRemovalReason(row, now)) return '原分配已锁定、到达开始时间或状态已变，不能移动。'
+      const minutes = row.minutes
+      if (!Number.isSafeInteger(minutes) || minutes < 1 || minutes > 1440 ||
+          Date.parse(row.end) - Date.parse(row.start) !== minutes * 60_000) return '原分配没有可保留的整分钟时长，不能移动。'
+      if (!isKnownTimezone(original.timeZone)) return '工作空间时区无效。请先检查设置，不能猜测时区。'
+      return ''
+    }
+
+    function MoveAllocation({ original, savedForm, snapshot, send, busy, onClose, setModal }) {
+      const [form, setForm] = useState(savedForm ?? { capacity: original.row.capacity_block_id ?? '', start: '', startChoice: null })
+      const [error, setError] = useState('')
+      const pending = useRef(false)
+      const now = Date.now()
+      const timeZone = original.timeZone
+      const { row, taskVersion } = original
+      const sourceIssue = moveSourceIssue(original, snapshot, now)
+      const draft = moveDraftSlot(form, timeZone, Number.isSafeInteger(row.minutes) ? row.minutes : 0)
+      const blocks = (snapshot.capacity_blocks ?? []).filter(block => typeof block.id === 'string' &&
+        Number.isFinite(Date.parse(block.start)) && Date.parse(block.end) > Math.max(Date.parse(block.start), now))
+      const capacity = blocks.find(block => block.id === form.capacity)
+      const setDraft = next => { if (!pending.current && !busy) setForm(next) }
+      const close = () => { if (!pending.current && !busy) onClose() }
+      const propose = async () => {
+        if (pending.current || busy) return
+        setError('')
+        const issue = moveSourceIssue(original, snapshot)
+        if (issue) return setError(issue)
+        if (!capacity) return setError('请选择已有容量；不会自动创建容量。')
+        if (draft.start === null) return setError('请填入有效开始时间；夏令时重复的钟点必须选定 UTC 时刻，不存在的钟点请改选。')
+        if (draft.start <= Date.now()) return setError('请选择严格晚于当前的未来开始时间。')
+        if (draft.start < Date.parse(capacity.start) || draft.end > Date.parse(capacity.end)) return setError('结束由原时长推算；整个新时段必须处于所选容量内。')
+        if (row.capacity_block_id === capacity.id && Date.parse(row.start) === draft.start) return setError('目标和原时段相同。请改变开始时间或容量。')
+        pending.current = true
+        try {
+          const result = await send('proposal.create', {
+            intent: `移动任务「${taskTitle(snapshot, row.task_id)}」的已安排时段`,
+            operations: [{ operation: 'allocation.move', payload: {
+              id: row.id, expected_task_version: taskVersion, capacity_block_id: capacity.id,
+              start: new Date(draft.start).toISOString(), end: new Date(draft.end).toISOString(),
+            } }],
+          })
+          const proposal = result.data?.proposal
+          if (proposal?.status !== 'validated') {
+            const hints = proposal?.diagnostics?.slice(0, 4).map(moveRecovery) ?? []
+            return setError(`移动预览无效，原分配未改。 ${[...new Set(hints)].join(' ') || moveRecovery()} 输入已保留。`)
+          }
+          const diff = allocationMoveDiff(proposal)
+          if (!diff || diff.before.id !== row.id || diff.before.task_id !== row.task_id ||
+              Date.parse(diff.before.start) !== Date.parse(row.start) || Date.parse(diff.before.end) !== Date.parse(row.end) ||
+              (diff.before.capacity_block_id ?? null) !== (row.capacity_block_id ?? null) ||
+              diff.after.capacity_block_id !== capacity.id || Date.parse(diff.after.start) !== draft.start || Date.parse(diff.after.end) !== draft.end) {
+            return setError('Core 返回的差异不能确认是所选移动，不允许批准。输入已保留，请核对提案与日程。')
+          }
+          setModal({ type: 'plan', proposal, plan: null, grant: null, moveEditor: { original, savedForm: form } })
+        } catch (failure) {
+          setError(`未能生成移动预览。 ${moveRecovery(failure)} 输入已保留。`)
+        } finally { pending.current = false }
+      }
+      const validZone = isKnownTimezone(timeZone)
+      const show = ms => validZone && Number.isFinite(ms) ? wallClockText(ms, timeZone) : '待确认'
+      return h(Modal, { title: '移动任务时段', subtitle: taskTitle(snapshot, row.task_id), onClose: close, wide: true,
+        footer: h(React.Fragment, null,
+          h(Button, { onClick: close, disabled: busy }, COPY.cancel),
+          h(Button, { onClick: propose, disabled: busy || Boolean(sourceIssue), testid: 'move-slot-preview' }, '生成移动预览')) },
+        (sourceIssue || error) ? h('p', { className: 'zw-alert zw-alert-error', role: 'alert' }, sourceIssue || error) : null,
+        h('p', { className: 'zw-fineprint' }, `保持原任务和 ${row.minutes} 分钟时长。输入时区：${timeZone}。只有确认差异并收到 Core 提交回执才算移动成功。`),
+        h('p', { 'data-testid': 'move-slot-original' }, `原时间：${show(Date.parse(row.start))} 至 ${show(Date.parse(row.end))}`),
+        h('fieldset', { disabled: busy, style: { border: 0, padding: 0, margin: 0, minWidth: 0 } },
+          h(Field, { label: '目标容量' }, h('select', { value: capacity?.id ?? '', 'data-testid': 'move-slot-capacity',
+            onChange: event => setDraft({ ...form, capacity: event.target.value }) },
+            h('option', { value: '' }, '选择已有容量'),
+            blocks.map(block => h('option', { key: block.id, value: block.id }, `${block.title} · ${show(Date.parse(block.start))} 至 ${show(Date.parse(block.end))}`)))),
+          h(Field, { label: '新开始（工作空间时区）' }, h('input', { type: 'datetime-local', value: form.start, 'data-testid': 'move-slot-start',
+            onChange: event => setDraft({ ...form, start: event.target.value, startChoice: null }) })),
+          draft.instants.length > 1 ? h(Field, { label: '钟点重复，请选 UTC 时刻' },
+            h('select', { value: form.startChoice ?? '', 'data-testid': 'move-slot-fold',
+              onChange: event => setDraft({ ...form, startChoice: event.target.value === '' ? null : Number(event.target.value) }) },
+            h('option', { value: '' }, '请选择'),
+            draft.instants.map(value => h('option', { key: value, value }, new Date(value).toISOString())))) : null,
+        ),
+        h('p', { 'data-testid': 'move-slot-end' }, `新结束（保持原时长）：${show(draft.end)}`),
+        h('p', { 'data-testid': 'move-slot-utc' }, draft.start === null || !Number.isFinite(draft.end) ? 'UTC：待确认' : `UTC：${new Date(draft.start).toISOString()} 至 ${new Date(draft.end).toISOString()}`),
+      )
+    }
+
     function TimeDetail({ kind, row, snapshot, onClose, send, busy, setModal }) {
       const title = kind === 'allocation' ? taskTitle(snapshot, row.task_id) : row.title
+      const [removeError, setRemoveError] = useState('')
+      const removalReason = kind === 'allocation' ? allocationRemovalReason(row) : ''
+      const original = kind === 'allocation' ? {
+        row,
+        timeZone: workspaceTimezone(snapshot),
+        taskVersion: (snapshot.tasks ?? []).find(task => task.id === row.task_id)?.version,
+      } : null
+      const moveIssue = original ? moveSourceIssue(original, snapshot) : ''
+      const openMove = () => {
+        if (!busy && original && !moveSourceIssue(original, snapshot)) setModal({ type: 'allocation-move', original })
+      }
       const remove = async () => {
+        if (kind === 'allocation') {
+          const reason = allocationRemovalReason(row)
+          if (reason) return setRemoveError(reason)
+          setRemoveError('')
+        }
         try {
           await send(kind === 'commitment' ? 'commitment.remove' : kind === 'capacity' ? 'capacity.remove' : 'allocation.remove', { id: row.id })
           onClose()
         } catch {
-          /* global error surface */
+          if (kind === 'allocation') setRemoveError('Core 未能删除此分配。请刷新并核对时段与锁定状态。')
+          // Other objects keep their existing global error surface.
         }
       }
       const toggleLock = async () => {
@@ -1526,8 +2052,9 @@ window.__ModuleLoader__.load({
             disabled: busy,
             testid: 'time-detail-task-time',
           }, '任务时间') : null,
+          original ? h(Button, { onClick: openMove, title: moveIssue || undefined, disabled: busy || Boolean(moveIssue), testid: 'time-detail-move' }, '移动时段') : null,
           kind === 'allocation' ? h(Button, { onClick: toggleLock, disabled: busy }, row.locked ? '解除锁定' : '锁定分配') : null,
-          h(Button, { tone: 'danger', onClick: remove, disabled: busy }, '删除'),
+          h(Button, { tone: 'danger', onClick: remove, disabled: busy || Boolean(removalReason) }, '删除'),
         ) },
         h('dl', { className: 'zw-kv' },
           h('dt', null, '类型'), h('dd', null, kind === 'commitment' ? '固定预约' : kind === 'capacity' ? '容量块' : '任务分配'),
@@ -1536,7 +2063,9 @@ window.__ModuleLoader__.load({
           h('dt', null, '说明'), h('dd', null, kind === 'capacity' ? `${row.capacity_minutes} 分钟容量` : kind === 'allocation' ? `${row.minutes} 分钟` : row.title),
           kind === 'allocation' ? h(React.Fragment, null, h('dt', null, '锁定'), h('dd', null, row.locked ? '已锁定' : '可调整')) : null,
         ),
-        h('p', { className: 'zw-fineprint' }, '删除只影响未来安排；已经开始的分配不会被计划器自动移动。'),
+        kind === 'allocation' ? h('p', { className: 'zw-fineprint' },
+          removalReason || '只能删除未锁定且尚未到开始时间的计划分配。') : null,
+        removeError ? h('p', { role: 'alert', className: 'zw-alert zw-alert-error' }, removeError) : null,
       )
     }
 
@@ -1698,7 +2227,46 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function ProposalsView({ snapshot, setModal, busy, runs }) {
+    function canDiscardProposal(proposal, uncertain) {
+      // Approval grants do not change the proposal's validated status.
+      return proposal?.status === 'validated' && !uncertain
+    }
+
+    function DiscardProposal({ proposal, available, onClose, onUncertain, send, busy }) {
+      const pending = useRef(false)
+      const blocked = useRef(false)
+      const [error, setError] = useState('')
+      const close = () => { if (!pending.current && !busy) onClose() }
+      const confirm = async () => {
+        if (!available || pending.current || blocked.current || busy) return
+        pending.current = true
+        try {
+          await send('proposal.reject', { proposal_id: proposal.id })
+          blocked.current = true
+          onClose()
+        } catch {
+          // The request may already have succeeded. Verify before attempting again.
+          blocked.current = true
+          onUncertain()
+          setError('未能确认提案是否已放弃。请关闭弹窗并刷新提案状态，不要重复提交。')
+        } finally {
+          pending.current = false
+        }
+      }
+      return h(Modal, { title: '确认放弃提案', onClose: close,
+        footer: h(React.Fragment, null,
+          h(Button, { onClick: close, disabled: busy }, COPY.cancel),
+          h(Button, { onClick: confirm, disabled: busy || !available || Boolean(error),
+            testid: 'proposal-discard-confirm' }, '确认放弃')),
+      },
+        h('p', null, proposal.intent),
+        h('p', null, '放弃后，这条提案及其已有批准不能再用于提交。已保存的日程不受影响。'),
+        error || !available ? h('p', { role: 'alert', className: 'zw-alert zw-alert-warn' },
+          error || '提案状态已变化，请关闭后查看最新状态。') : null,
+      )
+    }
+
+    function ProposalsView({ snapshot, setModal, busy, runs, uncertainProposals }) {
       const proposals = (snapshot.proposals ?? []).slice().sort((left, right) => {
         if (left.created_at !== right.created_at) return String(right.created_at).localeCompare(String(left.created_at))
         return (right.base_revision ?? 0) - (left.base_revision ?? 0)
@@ -1731,6 +2299,10 @@ window.__ModuleLoader__.load({
               proposal.diagnostics.map(item => item.message).join(' · ')) : null,
             h('div', { className: 'zw-action-row' },
               h(Button, { tone: 'primary', onClick: () => apply(proposal), disabled: busy || proposal.status === 'draft' }, '检查并批准'),
+              canDiscardProposal(proposal, uncertainProposals.has(proposal.id)) ? h(Button, {
+                onClick: () => setModal({ type: 'discard-proposal', proposal }),
+                disabled: busy, testid: `proposal-discard-${proposal.id}`,
+              }, '放弃此提案') : null,
               h(Button, {
                 onClick: () => setModal({
                   type: 'data-reference',
@@ -1745,7 +2317,7 @@ window.__ModuleLoader__.load({
         ) : h(Empty, null, '没有待确认的提案。'),
         proposals.length ? h(Section, { title: '最近历史' },
           proposals.filter(proposal => !pending.includes(proposal)).slice(0, 12).map(proposal =>
-            h('div', { className: 'zw-list-row', key: proposal.id },
+            h('div', { className: 'zw-list-row', key: proposal.id, 'data-testid': `proposal-history-${proposal.id}` },
               h('span', null, proposal.intent),
               h(Badge, { tone: proposal.status === 'applied' ? 'accent' : 'neutral' }, proposal.status),
             )),
@@ -1753,8 +2325,37 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function PlanModal({ proposal, plan, snapshotRevision, onClose, onApprove, busy, error, grant }) {
+    function PlanModal({ proposal, plan, snapshotRevision, onClose, onApprove, busy, error, grant, moveUncertain, onEditMove, onUncertainProposal }) {
       const [localError, setLocalError] = useState('')
+      const [blocked, setBlocked] = useState('')
+      const attempt = useRef({ pending: false, outcome: '' })
+      const closeIfIdle = () => { if (!attempt.current.pending && !busy) onClose() }
+      const isMove = Boolean(allocationMoveOperation(proposal))
+      const move = isMove ? allocationMoveDiff(proposal) : null
+      const unverifiedMove = isMove && !move
+      const settlementLocked = Boolean(grant || moveUncertain)
+      const editMove = () => {
+        if (onEditMove && !attempt.current.pending && !busy &&
+            (attempt.current.outcome === 'regenerate' || (!attempt.current.outcome && !settlementLocked))) onEditMove()
+      }
+      const approveOnce = async () => {
+        if (attempt.current.pending || attempt.current.outcome || busy || stale || settlementLocked || unverifiedMove) return
+        attempt.current.pending = true
+        setLocalError('')
+        try {
+          await onApprove()
+          attempt.current.outcome = 'complete'
+        } catch (failure) {
+          const regenerate = ['VALIDATION_FAILED', 'REVISION_CONFLICT', 'POLICY_CHANGED', 'APPROVAL_EXPIRED', 'APPROVAL_REQUIRED', 'PERMISSION_DENIED', 'NOT_FOUND'].includes(failure.code)
+          const outcome = regenerate ? 'regenerate' : 'uncertain'
+          attempt.current.outcome = outcome
+          if (outcome === 'uncertain') onUncertainProposal?.()
+          setBlocked(outcome)
+          setLocalError(regenerate
+            ? 'Core 拒绝了本次操作。请核对提案状态、时间、版本和权限；修正后重新生成预览并批准，不能重试旧批准。'
+            : '本次批准或提交结果不确定，可能已经生效。请关闭后刷新提案与日程核实结果；核实前不要重新提交或创建重复安排。')
+        } finally { attempt.current.pending = false }
+      }
       const stale = proposal.base_revision !== snapshotRevision
       const unplaced = plan?.unplaced ?? []
       const assignments = plan?.assignments ?? []
@@ -1762,36 +2363,73 @@ window.__ModuleLoader__.load({
       const changes = diff.changed ?? []
       const added = diff.added ?? []
       const removed = diff.removed ?? []
+      const previewSnapshot = stateSnapshotRef.current
+      const timeZone = isMove ? workspaceTimezone(previewSnapshot) : null
+      const timeLabel = value => isKnownTimezone(timeZone)
+        ? `${wallClockText(Date.parse(value), timeZone)}（UTC ${value}）`
+        : `UTC ${value}`
+      const capacityLabel = id => id == null ? '原分配未绑定容量'
+        : (previewSnapshot?.capacity_blocks ?? []).find(block => block.id === id)?.title ?? id
       return h(Modal, {
         title: plan ? '检查计划建议' : '检查提案',
-        subtitle: '这是尚未应用的候选；确认后才会写入正式事实。',
-        onClose,
+        subtitle: '这是尚未应用的候选；批准只是发起提交，收到 Core 成功回执后才算已保存。',
+        onClose: closeIfIdle,
         wide: true,
         footer: h(React.Fragment, null,
-          h(Button, { onClick: onClose }, '放弃预览'),
+          h(Button, { onClick: closeIfIdle, disabled: busy || attempt.current.pending }, blocked || settlementLocked ? '关闭并核实状态' : '放弃预览'),
           h(Button, {
             tone: 'primary',
-            onClick: async () => {
-              setLocalError('')
-              try {
-                await onApprove()
-              } catch (failure) {
-                setLocalError(failure.message)
-              }
-            },
-            disabled: busy || stale,
+            onClick: approveOnce,
+            disabled: busy || stale || settlementLocked || Boolean(blocked) || unverifiedMove || attempt.current.pending,
             testid: 'plan-apply',
-          }, stale ? '计划依据已变化' : (grant ? '重试提交' : COPY.approve)),
+          }, stale ? '计划依据已变化' : blocked === 'regenerate' ? '需要重新生成预览' : blocked || settlementLocked ? '先核实提交状态' : unverifiedMove ? '无法核实移动差异' : COPY.approve),
+          onEditMove && (blocked === 'regenerate' || (!settlementLocked && !blocked)) ? h(Button, {
+            onClick: editMove, disabled: busy || attempt.current.pending, testid: 'plan-edit-move',
+          }, '返回修改时段') : null,
         ),
       },
-      (error || localError) ? h('div', { className: 'zw-alert zw-alert-error' }, error || localError) : null,
+      h('p', { className: 'zw-fineprint', 'data-testid': 'plan-intent' }, proposal.intent),
+      unverifiedMove ? h('p', { className: 'zw-alert zw-alert-error', role: 'alert' }, 'Core 未提供一个可核实的原分配与目标差异，不能在这里批准移动。') : null,
+      move ? h(Section, { title: '核对原时段与新时段', testid: 'plan-move-diff' },
+        h('p', null, `${taskTitle(previewSnapshot, move.before.task_id)} · 保持 ${move.before.minutes} 分钟${isKnownTimezone(timeZone) ? ` · ${timeZone}` : ''}`),
+        h('dl', { className: 'zw-kv' },
+          ...[['修改前', move.before, 'before'], ['修改后', move.after, 'after']].flatMap(([label, row, key]) => [
+            h('dt', { key: key + '-label' }, label),
+            h('dd', { key, 'data-testid': 'plan-move-' + key },
+              h('strong', null, capacityLabel(row.capacity_block_id)),
+              h('p', null, `${timeLabel(row.start)} 至 ${timeLabel(row.end)}`)),
+          ]),
+        ),
+      ) : null,
+      settlementLocked && !attempt.current.pending && !blocked ? h('p', { className: 'zw-alert zw-alert-warn', role: 'alert' },
+        grant ? '已有批准记录，但不能仅凭旧批准判断提交结果。请关闭并刷新提案与日程核实，不直接重试。'
+          : '此前批准或提交结果还未核实。请关闭并刷新提案与日程；不要重新提交这个提案。') : null,
+      (error || localError) ? h('div', { className: 'zw-alert zw-alert-error' }, localError || error) : null,
       stale ? h('div', { className: 'zw-alert zw-alert-warn' },
         '计划依据已变化，请刷新后重新检查。旧批准不能用于新内容。') : null,
       h('div', { className: 'zw-plan-summary' },
-        h('div', null, h('strong', null, plan ? `${assignments.length} 个时间段` : `${added.length} 项新增`), h('span', null, plan ? '已排入' : '提案影响')),
+        h('div', null, h('strong', null, plan ? `${assignments.length} 个时间段` : `${added.length} 项新增`), h('span', null, plan ? '候选安排（未保存）' : '提案影响')),
         h('div', null, h('strong', null, plan ? `${assignments.reduce((sum, row) => sum + (row.minutes || 0), 0)} 分钟` : `${changes.length} 项修改`), h('span', null, plan ? '分配' : '变更')),
         h('div', null, h('strong', null, plan ? `${unplaced.reduce((sum, row) => sum + (row.minutes || 0), 0)} 分钟` : `${removed.length} 项移除`), h('span', null, plan ? '未排入' : '移除')),
         h('div', null, h('strong', null, `r${proposal.base_revision}`), h('span', null, '依据版本')),
+      ),
+      h(Section, { title: '确认前摘要' },
+        h('div', { 'data-testid': 'plan-change-summary' },
+          h('strong', null, '将改变什么'),
+          h('p', null, `本候选拟新增 ${added.length} 项、修改 ${changes.length} 项、移除 ${removed.length} 项；逐项内容见下方差异。移除是提案的一部分，不会在预览时执行。`),
+        ),
+        h('div', { 'data-testid': 'plan-fixed-summary' },
+          h('strong', null, '什么保持不变'),
+          h('p', null, '打开、检查或放弃此预览均不应用这些变更。差异之外的事实不由本摘要推断；是否允许提交仍由 Core 校验。'),
+          plan ? h('p', { className: 'zw-fineprint' }, '排程保护规则：固定预约、锁定和已开始的分配不应被自动移动。请核对实际差异；本摘要不是额外批准。') : null,
+        ),
+        h('div', { 'data-testid': 'plan-gap-summary' },
+          h('strong', null, '哪些尚未安排'),
+          h('p', null, plan ? (unplaced.length
+            ? `Core 报告 ${unplaced.length} 项未排入，共 ${unplaced.reduce((sum, row) => sum + (row.minutes || 0), 0)} 分钟；原因见下方，不能仅凭总量判断是容量不足。`
+            : '本候选未报告未排入项；这不代表所有任务均已完成，也不代表外部日历完整或当前可执行。')
+            : '这是一般提案，未提供排程缺口结论。'),
+        ),
       ),
       assignments.length ? h('div', { className: 'zw-table' },
         h('div', { className: 'zw-table-head' }, h('span', null, '时间'), h('span', null, '任务'), h('span', null, '分钟')),
@@ -1800,7 +2438,7 @@ window.__ModuleLoader__.load({
           h('span', null, taskTitle(stateSnapshotRef.current, row.task_id)),
           h('span', null, row.minutes),
         )),
-      ) : plan ? h(Empty, null, '没有可排入的容量。任务仍会保留。') : null,
+      ) : plan ? h(Empty, null, '本候选没有新增任务分配；请结合未排入原因、诊断和差异检查，不能据此断定没有容量。') : null,
       unplaced.length ? h(Section, { title: '未排入与原因' },
         unplaced.map((row, index) => h('div', { className: 'zw-list-row', key: index },
           h('span', null, taskTitle(stateSnapshotRef.current, row.task_id)),
@@ -3260,7 +3898,6 @@ window.__ModuleLoader__.load({
         timezone: snapshot.workspace.settings.timezone,
         weekend: snapshot.workspace.settings.weekend_policy,
         defaultEstimate: snapshot.workspace.settings.default_estimate_minutes,
-        dailyLimit: snapshot.workspace.settings.daily_limit_minutes ?? '',
       })
       const [error, setError] = useState('')
       const save = async () => {
@@ -3272,7 +3909,6 @@ window.__ModuleLoader__.load({
               timezone: form.timezone,
               weekend_policy: form.weekend,
               default_estimate_minutes: Number(form.defaultEstimate) || 30,
-              daily_limit_minutes: form.dailyLimit === '' ? null : Number(form.dailyLimit),
             },
             policy: null,
           })
@@ -3296,8 +3932,10 @@ window.__ModuleLoader__.load({
               h('option', { value: 'ask' }, '每次询问'), h('option', { value: 'allow' }, '允许'), h('option', { value: 'deny' }, '禁止'))),
             h(Field, { label: '默认估时（分钟）' }, h('input', { type: 'number', value: form.defaultEstimate,
               onChange: event => setForm({ ...form, defaultEstimate: event.target.value }) })),
-            h(Field, { label: '每日上限（可选）' }, h('input', { type: 'number', value: form.dailyLimit,
-              onChange: event => setForm({ ...form, dailyLimit: event.target.value }) })),
+            h('div', { 'data-testid': 'settings-daily-limit' },
+              h('span', null, `每日上限（保留值）：${snapshot.workspace.settings.daily_limit_minutes == null ? '未设置' : `${snapshot.workspace.settings.daily_limit_minutes} 分钟`}`),
+              h('p', { className: 'zw-fineprint' }, '尚未启用，不参与自动排程或指定时段安排。保存其他设置不会更改此保留值。'),
+            ),
           ),
           h('div', { className: 'zw-workwindows' },
             (snapshot.workspace.settings.work_windows ?? []).map((window, index) =>
@@ -3321,7 +3959,7 @@ window.__ModuleLoader__.load({
             ? h('div', { className: 'zw-list' }, snapshot.calendar_sources.map(source =>
                 h('div', { className: 'zw-list-row', key: source.id, 'data-testid': `settings-calendar-${source.id}` },
                   h('span', null, source.display_name),
-                  h('span', { className: 'zw-muted' }, `${source.provider} · ${source.writable ? '可写' : '只读'} · 同步 ${dateTimeFor(source.last_sync_at)}`),
+                  h('span', { className: 'zw-muted' }, `${source.provider} · ${source.writable ? '可写' : '只读'} · 同步 ${calendarFreshness(source) === '未知' ? '未知' : dateTimeFor(source.last_sync_at)}`),
                 )))
             : h(Empty, null, '尚未连接外部日历；忙碌快照仍可从日程页手动导入。'),
           h('p', { className: 'zw-fineprint' }, '时间连接只显示本地日历源快照；浏览器不直接访问外部账号，也不支持自动写入。'),
@@ -3673,7 +4311,10 @@ window.__ModuleLoader__.load({
       const [runsLoading, setRunsLoading] = useState(false)
       const [taskFilter, setTaskFilter] = useState({ text: '', status: '', tag: '', overdue: false })
       const [selectedTaskIds, setSelectedTaskIds] = useState([])
+      const [scheduleLength, setScheduleLength] = useState(7)
+      const [scheduleStart, setScheduleStart] = useState(() => agendaShift(todayIso(), 0))
       const settledRuns = useRef(new Set())
+      const uncertainProposals = useRef(new Set())
       stateSnapshotRef.current = snapshot
 
       useEffect(() => {
@@ -3701,7 +4342,7 @@ window.__ModuleLoader__.load({
         { id: 'capture', glyph: '＋', label: '收集一句话', hint: '原文进入 Inbox', run: () => setModal({ type: 'capture' }) },
         { id: 'task-new', glyph: '□', label: '新建任务', hint: '直接创建正式任务', run: () => setModal({ type: 'task', task: null }) },
         { id: 'goal-new', glyph: '◇', label: '新建目标', hint: 'Goal', run: () => setModal({ type: 'goal' }) },
-        { id: 'plan', glyph: '→', label: '生成计划预览', hint: '不写事实，需批准', run: () => { setModal(null); void openPlan() } },
+        { id: 'plan', glyph: '→', label: '生成计划预览', hint: '5 分钟后起规划 7 天；只补充、不移动已有分配；需批准', run: () => { setModal(null); void openPlan() } },
       ]
 
       useEffect(() => {
@@ -3775,12 +4416,12 @@ window.__ModuleLoader__.load({
       }, [runsActive, loadRuns])
 
       const baseRevision = snapshot?.workspace?.revision
-      const send = useCallback(async (operation, payload) => {
+      const send = useCallback(async (operation, payload, guardedMoveSettlement = false) => {
         setBusy(true)
         setError('')
         try {
-          const result = await command(operation, payload, snapshot?.workspace?.revision)
-          setNotice(`已保存 · r${result.revision} · ${result.operation_id.slice(0, 12)}`)
+          const result = await command(operation, payload, snapshot?.workspace?.revision, undefined, !guardedMoveSettlement && operation !== 'proposal.reject')
+          setNotice(`${['proposal.create', 'plan.propose'].includes(operation) ? '提案已记录 · 尚未应用' : '已保存'} · r${result.revision} · ${result.operation_id.slice(0, 12)}`)
           if (operation !== 'proposal.approve') await refresh()
           return result
         } catch (failure) {
@@ -3788,7 +4429,9 @@ window.__ModuleLoader__.load({
             setError('数据已改变，当前页面需要刷新；不会覆盖新状态。')
             await refresh()
           } else {
-            setError(failure.message)
+            const strictPreview = operation === 'proposal.create' && payload?.operations?.some(item => ['allocation.schedule', 'allocation.move'].includes(item.operation))
+            setError(strictPreview ? '严格排程预览失败；请查看弹窗中的处理建议，输入已保留。'
+              : guardedMoveSettlement ? '移动提交未确认；请查看提案核对说明。' : failure.message)
           }
           throw failure
         } finally {
@@ -3810,14 +4453,12 @@ window.__ModuleLoader__.load({
         return b.priority - a.priority
       })[0]
       const selectedTask = findTask(snapshot, selectedTaskId)
-      const todayCommitments = (snapshot?.commitments ?? []).filter(row => row.start.slice(0, 10) <= today && row.end.slice(0, 10) >= today)
-      const todayCapacity = (snapshot?.capacity_blocks ?? []).filter(row => row.start.slice(0, 10) <= today && row.end.slice(0, 10) >= today)
-      const todayAllocations = (snapshot?.allocations ?? []).filter(row => row.start.slice(0, 10) <= today && row.end.slice(0, 10) >= today)
-      const unplacedMinutes = activeTasks.reduce((sum, task) => {
-        const remaining = task.remaining_minutes ?? task.estimate_minutes ?? 0
-        const allocated = (snapshot?.allocations ?? []).filter(row => row.task_id === task.id).reduce((value, row) => value + row.minutes, 0)
-        return sum + Math.max(0, remaining - allocated)
-      }, 0)
+      const todayEntries = agendaEntries(snapshot ?? {}, today)
+      const todayCheckedAt = Date.now()
+      const todayAction = todayNextAction(todayEntries, activeTasks, nextTask, todayCheckedAt)
+      const todayAllocations = todayEntries.filter(entry => entry.kind === 'allocation').map(entry => entry.row)
+      const outstanding = outstandingWork(snapshot, todayCheckedAt)
+      const unplacedMinutes = outstanding.minutes
 
       const openTask = id => {
         setSelectedTaskId(id)
@@ -3862,16 +4503,21 @@ window.__ModuleLoader__.load({
         }
       }
 
-      const openPlan = async () => {
+      const openPlan = async (mode = 'additive') => {
+        const moveUnlocked = mode === 'replan'
         setError('')
         try {
-          const start = new Date()
+          // Leave an explicit review window; never shift a candidate after approval.
+          const start = new Date(Date.now() + 5 * 60 * 1000)
           const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000)
           const result = await send('plan.propose', {
             task_ids: [],
             horizon_start: start.toISOString(),
             horizon_end: end.toISOString(),
-            move_unlocked: true,
+            move_unlocked: moveUnlocked,
+            intent: moveUnlocked
+              ? '重新规划：允许重排范围内未来未锁定、未开始的分配；固定预约、锁定、已开始和过去事实保持不变。从生成时刻 5 分钟后起规划，保留 7 天范围供检查；预览需批准后提交，超过候选开始时间须重新生成。'
+              : '生成计划：仅补充安排，不移动或移除已有分配；容量不足会报告缺口。从生成时刻 5 分钟后起规划，保留 7 天范围供检查；预览需批准后提交，超过候选开始时间须重新生成。',
           })
           setModal({ type: 'plan', proposal: result.data.proposal, plan: result.data.plan, grant: null })
         } catch (failure) {
@@ -3882,15 +4528,16 @@ window.__ModuleLoader__.load({
       const approvePlan = async () => {
         const proposal = modal?.proposal
         if (!proposal) return
+        const isMove = Boolean(allocationMoveOperation(proposal))
         let grantId = modal.grant
         if (!grantId) {
-          const approved = await send('proposal.approve', { proposal_id: proposal.id })
+          const approved = await send('proposal.approve', { proposal_id: proposal.id }, isMove)
           grantId = approved.data.approval.id
           setModal({ ...modal, grant: grantId })
         }
-        const committed = await send('changes.commit', { proposal_id: proposal.id, approval_grant: grantId })
+        const committed = await send('changes.commit', { proposal_id: proposal.id, approval_grant: grantId }, isMove)
         setModal(null)
-        setNotice(`计划已应用 · ${committed.data.change_set_id} · r${committed.revision}`)
+        setNotice(`${isMove ? '时段已移动' : '计划已应用'} · ${committed.data.change_set_id} · r${committed.revision}`)
         await refresh()
       }
 
@@ -3981,6 +4628,24 @@ window.__ModuleLoader__.load({
           tasks.map(task => h(TaskRow, { key: task.id, snapshot, task, onSelect: openTask })))
       }
 
+      const renderFirstSchedule = () => {
+        const step = firstScheduleStep(snapshot, todayCheckedAt, workspaceTimezone(snapshot))
+        if (!step) return null
+        const actions = {
+          task: ['先建一个可以安排的任务，并填入预计分钟；不用先建项目或连接模型。', '新建任务', event => setModal({ type: 'task', task: null, restoreFocus: event.currentTarget })],
+          estimate: ['已有任务。给任务填入预计分钟，才能为它安排时段。', '补充任务估时', event => setModal({ type: 'task', task: step.task, restoreFocus: event.currentTarget })],
+          capacity: ['已有带估时的任务。先标出一段你愿意用来做任务的时间，也就是「容量」。日历空白不是容量。', '添加可用时间', () => setModal({ type: 'capacity' })],
+          timezone: ['已录入任务和容量，但无法识别工作空间时区。请先检查时区设置。', '查看工作空间设置', () => setView('settings')],
+          schedule: ['已有带估时的任务和未来容量。选择任务、容量和具体时段，先检查预览，再批准保存；是否可安排以 Core 检查为准。', '打开时段安排', () => setModal({ type: 'quick-schedule', day: step.day,
+            guidedDraft: guidedScheduleDraft(snapshot, Date.now(), workspaceTimezone(snapshot)) })],
+        }
+        const [description, label, open] = actions[step.kind]
+        return h(Section, { title: '安排第一项任务', testid: 'first-schedule-guide' },
+          h('p', null, description),
+          h(Button, { onClick: open, disabled: busy, testid: 'first-schedule-action' }, label),
+        )
+      }
+
       const renderToday = () => {
         const emptyWorkspace = !snapshot.tasks.length && !snapshot.goals.length && !snapshot.inbox.length && !snapshot.habits.length
         return h('div', { className: 'zw-page' },
@@ -3991,53 +4656,45 @@ window.__ModuleLoader__.load({
           ),
           h('div', { className: 'zw-head-actions' },
             h(Button, { onClick: () => setModal({ type: 'capture' }), disabled: busy }, '收集'),
-            h(Button, { onClick: openPlan, disabled: busy, tone: 'primary' }, COPY.plan),
-            h(Button, { onClick: openPlan, disabled: busy, title: '保持锁定/已开始/过去事实不变，重新计算本地计划' }, '重新规划'),
+            h(Button, { onClick: () => openPlan(), disabled: busy, tone: 'primary', title: '从现在 5 分钟后起规划 7 天，仅补充安排、不移动已有分配；先预览再批准' }, COPY.plan),
+            h(Button, { onClick: () => openPlan('replan'), disabled: busy, title: '从现在 5 分钟后起规划 7 天，允许重排未来未锁定、未开始分配；固定预约、锁定、已开始和过去事实保持不变，需预览批准' }, '重新规划'),
           ),
         ),
         error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
-        emptyWorkspace ? h(Section, { title: '第一次使用 Zodo' },
-          h('p', null, '先收集一句原文，或直接创建一个目标。所有操作都可以在没有模型时完成；模型只提出候选。'),
-          h('div', { className: 'zw-action-row' },
-            h(Button, { tone: 'primary', onClick: () => setModal({ type: 'capture' }) }, '收集第一句'),
-            h(Button, { onClick: () => setModal({ type: 'goal' }) }, '创建第一个目标'),
-            h(Button, { onClick: () => setModal({ type: 'task', task: null }) }, '创建一个任务'),
-          ),
-          h('p', { className: 'zw-fineprint' }, 'Core 是唯一事实源；这个工作台不会用样例数据伪装成你的工作。'),
-        ) : null,
+        renderFirstSchedule(),
+        emptyWorkspace ? h('p', { className: 'zw-fineprint' }, '也可以先用「收集」记录一句原文，再决定怎样处理。') : null,
         h('div', { className: 'zw-today-grid' },
           h(Section, { title: '承诺与容量', className: 'zw-span2' },
             h('div', { className: 'zw-agenda' },
-              todayCommitments.map(row => h('div', { className: 'zw-agenda-row', key: row.id },
-                h('span', { className: 'zw-time' }, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                h('span', { className: 'zw-agenda-title' }, row.title),
-                h(Badge, { tone: 'fixed' }, '固定'),
-              )),
-              todayCapacity.map(row => h('div', { className: 'zw-agenda-row', key: row.id },
-                h('span', { className: 'zw-time' }, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                h('span', { className: 'zw-agenda-title' }, row.title),
-                h(Badge, { tone: 'accent' }, `容量 ${row.capacity_minutes} 分`),
-              )),
-              todayAllocations.map(row => h('div', { className: 'zw-agenda-row zw-allocation', key: row.id },
-                h('span', { className: 'zw-time' }, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                h('span', { className: 'zw-agenda-title' }, taskTitle(snapshot, row.task_id)),
-                h(Badge, { tone: 'soft' }, '任务分配'),
-              )),
-              (todayCommitments.length + todayCapacity.length + todayAllocations.length) === 0
-                ? h(Empty, null, '今天没有固定安排或容量块。增加容量后可以生成计划。') : null,
+              todayEntries.map(entry => {
+                const { row, kind } = entry
+                return h('div', { className: `zw-agenda-row ${kind === 'allocation' ? 'zw-allocation' : ''}`, key: `${kind}:${row.id}` },
+                  h('span', { className: 'zw-time' }, `${timeFor(new Date(entry.visibleStart).toISOString())}–${entry.endsAtDayBoundary ? '24:00' : timeFor(new Date(entry.visibleEnd).toISOString())}`),
+                  h('span', { className: 'zw-agenda-title' }, kind === 'busy' ? '外部日历忙碌' : kind === 'allocation' ? taskTitle(snapshot, row.task_id) : row.title),
+                  h(Badge, { tone: kind === 'commitment' || kind === 'busy' ? 'fixed' : 'soft' }, kind === 'busy' ? '只读忙碌快照' : kind === 'commitment' ? '固定' : kind === 'capacity' ? `容量 ${row.capacity_minutes} 分（全段）` : '任务分配'),
+                  entry.continuesBefore || entry.continuesAfter ? h('small', null, [entry.continuesBefore ? '从前日延续' : '', entry.continuesAfter ? '延续至次日' : ''].filter(Boolean).join(' · ')) : null,
+                )
+              }),
+              todayEntries.length === 0 ? h(Empty, null, '今天暂无已知安排，空白不代表可预约。') : null,
+              h('p', { className: 'zw-fineprint' }, '按本机时区显示。外部忙碌为只读快照；来源缺失、未知或过期时不能据此判断可预约，请在日程中检查日历新鲜度。'),
             ),
           ),
           h(Section, { title: '下一步' },
-            nextTask ? h('div', { className: 'zw-next', onClick: () => openTask(nextTask.id), role: 'button', tabIndex: 0,
-              onKeyDown: event => { if (event.key === 'Enter') openTask(nextTask.id) } },
-              h('span', { className: 'zw-next-kicker' }, '最值得开始的一项'),
-              h('strong', null, nextTask.title),
-              h('span', { className: 'zw-muted' }, `${nextTask.remaining_minutes ?? nextTask.estimate_minutes ?? '—'} 分钟剩余`),
-              h(Button, { tone: 'primary', onClick: event => { event.stopPropagation(); focusStart(nextTask) }, disabled: busy, testid: 'today-focus' }, '开始专注'),
+            h('p', { className: 'zw-fineprint', 'data-testid': 'today-action-asof' }, `截至 ${dateTimeFor(new Date(todayCheckedAt).toISOString())} · 本次页面计算，非实时专注状态`),
+            todayAction ? h('div', { className: 'zw-next', onClick: () => openTask(todayAction.task.id), role: 'button', tabIndex: 0,
+              onKeyDown: event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openTask(todayAction.task.id) } },
+              'data-testid': 'today-next-task' },
+              h('span', { className: 'zw-next-kicker' }, todayAction.kind === 'scheduled-now' ? '计划时段覆盖当前时间' : todayAction.kind === 'scheduled-next' ? '今天下一项计划安排' : '按截止日期与优先级排序的建议'),
+              h('strong', null, todayAction.task.title),
+              todayAction.entry ? h('span', { className: 'zw-muted' }, `${dateTimeFor(todayAction.entry.row.start)}–${dateTimeFor(todayAction.entry.row.end)}`) : null,
+              h('span', { className: 'zw-muted' }, `${todayAction.task.remaining_minutes ?? todayAction.task.estimate_minutes ?? '—'} 分钟剩余`),
+              h('p', { className: 'zw-fineprint' }, todayAction.entry ? '这是已保存的计划，不代表正在专注，也不保证当前可执行。点击任务卡查看详情。' : '今天没有后续有效任务分配。建议不是可执行性判断；请核实依赖、最早开始时间与容量。点击任务卡查看详情。'),
+              h(Button, { tone: 'primary', onClick: event => { event.stopPropagation(); focusStart(todayAction.task) }, disabled: busy, testid: 'today-focus' }, '开始专注'),
             ) : h(Empty, null, '没有待办。可以从收集箱开始。'),
           ),
           h(Section, { title: '风险与未排入' },
-            unplacedMinutes > 0 ? h('div', { className: 'zw-alert zw-alert-warn' }, `还有 ${unplacedMinutes} 分钟工作量未排入。计划会如实报告缺口。`) : h('p', { className: 'zw-muted' }, '当前工作量都在容量内。'),
+            unplacedMinutes > 0 ? h('div', { className: 'zw-alert zw-alert-warn' }, `已知任务中有 ${unplacedMinutes} 分钟尚无未结束分配；这不是规划可行性结论。`) : h('p', { className: 'zw-muted' }, '已知任务未发现尚待分配分钟；不代表容量、依赖或日历约束均满足。'),
+            h('p', { className: 'zw-fineprint' }, `截至 ${dateTimeFor(new Date(todayCheckedAt).toISOString())}；只统计开放叶任务和未结束分配。${outstanding.unknown ? '部分数据缺失或无效，无法给出完整总量；请刷新并检查 Core 结果。' : '已结束分配不抵扣剩余工作。'}`),
             (snapshot.proposals ?? []).some(proposal => proposal.status === 'validated')
               ? h('div', { className: 'zw-proposal-banner', onClick: () => setView('proposals'), role: 'button', tabIndex: 0 },
                 h('strong', null, '有提案待你确认'),
@@ -4251,11 +4908,8 @@ window.__ModuleLoader__.load({
       }
 
       const renderSchedule = () => {
-        const days = Array.from({ length: 7 }, (_, index) => addDays(today, index))
-        const unplacedList = snapshot.tasks.filter(task => !task.archived && task.status !== 'done' && task.status !== 'cancelled').map(task => {
-          const allocation = snapshot.allocations.filter(row => row.task_id === task.id).reduce((sum, row) => sum + row.minutes, 0)
-          return { task, minutes: Math.max(0, (task.remaining_minutes ?? task.estimate_minutes ?? 0) - allocation) }
-        }).filter(row => row.minutes > 0)
+        const days = agendaDays(scheduleStart, scheduleLength)
+        const unplacedList = outstanding.rows
         return h('div', { className: 'zw-page' },
           h('header', { className: 'zw-page-head' },
             h('div', null, h('div', { className: 'zw-kicker' }, '容量、预约与任务分配'), h('h1', null, '日程')),
@@ -4266,63 +4920,74 @@ window.__ModuleLoader__.load({
               h(Button, { onClick: () => setModal({ type: 'busy' }), disabled: busy }, '导入忙碌'),
               h(Button, { onClick: () => setModal({ type: 'capacity-candidates' }), disabled: busy, testid: 'capacity-suggest' }, '建议容量'),
               h(Button, { onClick: () => setModal({ type: 'meeting-propose' }), disabled: busy, testid: 'meeting-propose' }, '提议会议'),
-              h(Button, { onClick: openPlan, disabled: busy, tone: 'primary' }, COPY.plan),
-            h(Button, { onClick: openPlan, disabled: busy, title: '保持锁定/已开始/过去事实不变，重新计算本地计划' }, '重新规划'),
+              h(Button, { onClick: () => openPlan(), disabled: busy, tone: 'primary', title: '从现在 5 分钟后起规划 7 天，仅补充安排、不移动已有分配；先预览再批准' }, COPY.plan),
+            h(Button, { onClick: () => openPlan('replan'), disabled: busy, title: '从现在 5 分钟后起规划 7 天，允许重排未来未锁定、未开始分配；固定预约、锁定、已开始和过去事实保持不变，需预览批准' }, '重新规划'),
             ),
           ),
-          h('div', { className: 'zw-week' },
+          renderFirstSchedule(),
+          h('div', { className: 'zw-head-actions', role: 'group', 'aria-label': '日程日期导航' },
+            h('label', null, '视图 ', h('select', { value: scheduleLength, 'aria-label': '日程视图', 'data-testid': 'schedule-mode', onChange: event => {
+              const length = event.target.value === '1' ? 1 : 7
+              setScheduleLength(length)
+              setScheduleStart(value => agendaShift(value, 0, length))
+            } }, h('option', { value: 7 }, '7 天'), h('option', { value: 1 }, '单日（适合窄面板）'))),
+            h('label', null, '起始日期 ', h('input', { type: 'date', value: scheduleStart, min: AGENDA_MIN,
+              max: scheduleLength === 1 ? '9999-12-31' : AGENDA_MAX, 'aria-label': '日程起始日期', 'data-testid': 'schedule-date',
+              onChange: event => { if (agendaDate(event.target.value)) setScheduleStart(agendaShift(event.target.value, 0, scheduleLength)) } })),
+            h(Button, { onClick: () => setScheduleStart(value => agendaShift(value, -scheduleLength, scheduleLength)), disabled: scheduleStart <= AGENDA_MIN, testid: 'schedule-previous' }, scheduleLength === 1 ? '前一天' : '前 7 天'),
+            h(Button, { onClick: () => setScheduleStart(agendaShift(today, 0, scheduleLength)), testid: 'schedule-today' }, '今天'),
+            h(Button, { onClick: () => setScheduleStart(value => agendaShift(value, scheduleLength, scheduleLength)), disabled: scheduleStart >= (scheduleLength === 1 ? '9999-12-31' : AGENDA_MAX), testid: 'schedule-next' }, scheduleLength === 1 ? '后一天' : '后 7 天'),
+            h('span', { 'aria-live': 'polite', 'data-testid': 'schedule-range' }, scheduleLength === 1 ? days[0] : `${days[0]} 至 ${days[6]}`),
+          ),
+          h('p', { className: 'zw-fineprint' }, '按本机时区显示；跨日安排分段展示，详情保留完整时间。外部日历仅显示只读忙碌区间；空白不代表可预约，来源缺失、未知或过期时请先核实日历。'),
+          h('div', { className: `zw-week ${scheduleLength === 1 ? 'zw-single' : ''}` },
             days.map(day => {
-              const commitments = snapshot.commitments.filter(row => row.start.slice(0, 10) === day)
-              const capacity = snapshot.capacity_blocks.filter(row => row.start.slice(0, 10) === day)
-              const allocations = snapshot.allocations.filter(row => row.start.slice(0, 10) === day)
-              return h('div', { className: `zw-day ${day === today ? 'zw-day-today' : ''}`, key: day },
+              const entries = agendaEntries(snapshot, day)
+              return h('div', { className: `zw-day ${day === today ? 'zw-day-today' : ''}`, key: day, 'data-testid': `schedule-day-${day}` },
                 h('div', { className: 'zw-day-head' }, h('strong', null, dateForLocal(`${day}T12:00:00`)), h('span', null, new Intl.DateTimeFormat('zh-CN', { weekday: 'short' }).format(new Date(`${day}T12:00:00`)))),
-                capacity.map(row => h('div', { className: 'zw-slot zw-slot-capacity', key: row.id, role: 'button', tabIndex: 0,
-                  onClick: () => setModal({ type: 'time-detail', kind: 'capacity', row }),
-                  onKeyDown: event => { if (event.key === 'Enter' || event.key === ' ') setModal({ type: 'time-detail', kind: 'capacity', row }) },
-                  'data-testid': `time-capacity-${row.id}` },
-                  h('strong', null, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                  h('span', null, row.title),
-                  h('em', null, `${row.capacity_minutes} 分容量`),
-                )),
-                commitments.map(row => h('div', { className: 'zw-slot zw-slot-fixed', key: row.id, role: 'button', tabIndex: 0,
-                  onClick: () => setModal({ type: 'time-detail', kind: 'commitment', row }),
-                  onKeyDown: event => { if (event.key === 'Enter' || event.key === ' ') setModal({ type: 'time-detail', kind: 'commitment', row }) },
-                  'data-testid': `time-commitment-${row.id}` },
-                  h('strong', null, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                  h('span', null, row.title),
-                  h('em', null, '固定预约'),
-                )),
-                allocations.map(row => h('div', { className: 'zw-slot zw-slot-allocation', key: row.id, role: 'button', tabIndex: 0,
-                  onClick: () => setModal({ type: 'time-detail', kind: 'allocation', row }),
-                  onKeyDown: event => { if (event.key === 'Enter' || event.key === ' ') setModal({ type: 'time-detail', kind: 'allocation', row }) },
-                  'data-testid': `time-allocation-${row.id}` },
-                  h('strong', null, `${timeFor(row.start)}–${timeFor(row.end)}`),
-                  h('span', null, taskTitle(snapshot, row.task_id)),
-                  h('em', null, `${row.minutes} 分钟`),
-                )),
-                (commitments.length + capacity.length + allocations.length) === 0 ? h('div', { className: 'zw-day-empty' }, '空闲') : null,
+                h(Button, { onClick: () => setModal({ type: 'quick-schedule', day }), disabled: busy, testid: `schedule-slot-${day}` }, '安排任务时段'),
+                h(Button, { onClick: () => setModal({ type: 'time', day, task: null, tasks: activeTasks }), disabled: busy, testid: `schedule-task-date-${day}` }, '设置任务日期'),
+                h(Button, { onClick: () => setModal({ type: 'commitment', day }), disabled: busy, testid: `schedule-add-appointment-${day}` }, '新增预约'),
+                entries.map(entry => {
+                  const { row, kind } = entry
+                  if (kind === 'busy') return h('div', { className: 'zw-slot zw-slot-fixed', key: row.id, 'data-testid': 'time-busy' },
+                    h('strong', null, `${timeFor(new Date(entry.visibleStart).toISOString())}–${entry.endsAtDayBoundary ? '24:00' : timeFor(new Date(entry.visibleEnd).toISOString())}`),
+                    h('span', null, '外部日历忙碌'), h('em', null, '只读忙碌快照'),
+                    entry.continuesBefore || entry.continuesAfter ? h('small', null, [entry.continuesBefore ? '从前日延续' : '', entry.continuesAfter ? '延续至次日' : ''].filter(Boolean).join(' · ')) : null,
+                  )
+                  const openDetail = () => setModal({ type: 'time-detail', kind, row })
+                  return h('div', { className: `zw-slot zw-slot-${kind === 'commitment' ? 'fixed' : kind}`, key: `${kind}:${row.id}`, role: 'button', tabIndex: 0,
+                    onClick: openDetail,
+                    onKeyDown: event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openDetail() } },
+                    'data-testid': `time-${kind}-${row.id}` },
+                    h('strong', null, `${timeFor(new Date(entry.visibleStart).toISOString())}–${entry.endsAtDayBoundary ? '24:00' : timeFor(new Date(entry.visibleEnd).toISOString())}`),
+                    h('span', null, kind === 'allocation' ? taskTitle(snapshot, row.task_id) : row.title),
+                    h('em', null, kind === 'commitment' ? '固定预约' : kind === 'capacity' ? `${row.capacity_minutes} 分容量（全段）` : `${row.minutes} 分钟（全段）`),
+                    entry.continuesBefore || entry.continuesAfter ? h('small', null, [entry.continuesBefore ? '从前日延续' : '', entry.continuesAfter ? '延续至次日' : ''].filter(Boolean).join(' · ')) : null,
+                  )
+                }),
+                entries.length === 0 ? h('div', { className: 'zw-day-empty' }, '暂无已知安排') : null,
               )
             }),
           ),
           h('div', { className: 'zw-schedule-foot' },
             h(Section, { title: '未排入工作' },
+              h('p', { className: 'zw-fineprint' }, `截至 ${dateTimeFor(new Date(todayCheckedAt).toISOString())}；开放叶任务按未结束分配计算。${outstanding.unknown ? '部分数据缺失或无效，以下仅为已知项，无法给出完整总量。' : '已结束分配不抵扣剩余工作。'} 最终以 Core 规划结果为准。`),
               unplacedList.length ? unplacedList.map(row => h('div', { className: 'zw-list-row', key: row.task.id },
                 h('span', null, row.task.title), h(Badge, { tone: 'warn' }, `${row.minutes} 分钟`),
-              )) : h(Empty, null, '已安排或无需安排。'),
+              )) : h(Empty, null, '已知项未发现尚待分配分钟；不代表规划可行。'),
             ),
             h(Section, { title: '日历新鲜度' },
               snapshot.calendar_sources?.length ? snapshot.calendar_sources.map(source => {
-                const eventCount = (snapshot.calendar_events ?? []).filter(event => event.source_id === source.id).length
-                const ageSeconds = Math.max(0, (Date.now() - new Date(source.last_sync_at).getTime()) / 1000)
-                const stale = Number.isFinite(ageSeconds) && ageSeconds > (source.freshness_seconds ?? 0)
+                const eventCount = (snapshot.calendar_events ?? []).filter(event => event.source_id === source.id && event.busy === true).length
+                const freshness = calendarFreshness(source)
                 return h('div', { className: 'zw-list-row', key: source.id, 'data-testid': `calendar-source-${source.id}` },
                   h('span', null, source.display_name),
-                  h('span', { className: 'zw-muted' }, `${eventCount} 个忙碌事件 · 同步 ${dateTimeFor(source.last_sync_at)}`),
-                  h(Badge, { tone: stale ? 'warn' : 'accent' }, stale ? '过期' : '新鲜'),
+                  h('span', { className: 'zw-muted' }, `${eventCount} 个忙碌事件 · 同步 ${freshness === '未知' ? '未知' : dateTimeFor(source.last_sync_at)}`),
+                  h(Badge, { tone: freshness === '新鲜' ? 'accent' : 'warn' }, freshness),
                   h(Badge, { tone: 'neutral' }, source.provider),
                 )
-              }) : h(Empty, null, '没有外部日历快照。忙碌导入是只读的，不会移动固定事实。'),
+              }) : h(Empty, null, '没有外部日历来源，无法判断日历覆盖情况。忙碌导入是只读的，空白不代表可预约。'),
             ),
           ),
         )
@@ -4489,7 +5154,7 @@ window.__ModuleLoader__.load({
           case 'automation': return h(AutomationView, { snapshot, send, busy, setModal, report: setNotice })
           case 'tasks': return renderTasks()
           case 'schedule': return renderSchedule()
-          case 'proposals': return h(ProposalsView, { snapshot, setModal, busy, runs })
+          case 'proposals': return h(ProposalsView, { snapshot, setModal, busy, runs, uncertainProposals: uncertainProposals.current })
           case 'runs': return h(RunsView, {
             runs,
             loading: runsLoading,
@@ -4521,8 +5186,8 @@ window.__ModuleLoader__.load({
         switch (modal.type) {
           case 'command': return h(CommandPalette, { onClose: closeModal, actions: commandActions })
           case 'capture': return h(CaptureEditor, { onClose: closeModal, send, busy })
-          case 'task': return h(TaskEditor, { task: modal.task ?? null, projectId: modal.projectId, snapshot: { ...snapshot, projects: snapshot.projects, tasks: snapshot.tasks }, onClose: closeModal, send, busy })
-          case 'time': return h(TimeEditor, { task: modal.task ?? null, tasks: modal.tasks ?? snapshot.tasks, snapshot, onClose: closeModal, send, busy })
+          case 'task': return h(TaskEditor, { task: modal.task ?? null, projectId: modal.projectId, restoreFocus: modal.restoreFocus, snapshot: { ...snapshot, projects: snapshot.projects, tasks: snapshot.tasks }, onClose: closeModal, send, busy })
+          case 'time': return h(TimeEditor, { day: modal.day, task: modal.task ?? null, tasks: modal.tasks ?? snapshot.tasks, snapshot, onClose: closeModal, send, busy })
           case 'goal': return h(GoalEditor, { goal: modal.goal ?? null, onClose: closeModal, send, busy })
           case 'project': return h(ProjectEditor, { project: modal.project ?? null, goals: snapshot.goals, goalId: modal.goalId, onClose: closeModal, send, busy })
           case 'inbox-detail': return h(InboxDetail, { key: modal.entry.id, entry: modal.entry, onClose: closeModal, send, busy, setModal })
@@ -4531,13 +5196,21 @@ window.__ModuleLoader__.load({
           case 'dependency': return h(DependencyEditor, { task: modal.task, snapshot, onClose: closeModal, send, busy })
           case 'reminder': return h(ReminderEditor, { task: modal.task, onClose: closeModal, send, busy })
           case 'blocked': return h(BlockedEditor, { task: modal.task, onClose: closeModal, send, busy })
-          case 'commitment': return h(CommitmentEditor, { onClose: closeModal, send, busy })
+          case 'commitment': return h(CommitmentEditor, { day: modal.day, snapshot, onClose: closeModal, send, busy })
+          case 'quick-schedule': return h(QuickSchedule, { day: modal.day, guidedDraft: modal.guidedDraft, snapshot, send, busy, onClose: closeModal, setModal })
+          case 'allocation-move': return h(MoveAllocation, { original: modal.original, savedForm: modal.savedForm, snapshot, send, busy, onClose: closeModal, setModal })
           case 'capacity': return h(CapacityEditor, { onClose: closeModal, send, busy })
           case 'capacity-candidates': return h(CapacitySuggestions, { onClose: closeModal, send, busy })
           case 'meeting-propose': return h(MeetingProposal, { onClose: closeModal, send, busy, setView, report: setNotice })
           case 'duplicate-suggestions': return h(DuplicateSuggestions, { onClose: closeModal, send, busy, refresh })
           case 'busy': return h(BusyImportEditor, { onClose: closeModal, send, busy })
           case 'recurrence': return h(RecurrenceEditor, { onClose: closeModal, send, busy })
+          case 'discard-proposal': return h(DiscardProposal, {
+            proposal: modal.proposal,
+            available: canDiscardProposal((snapshot.proposals ?? []).find(row => row.id === modal.proposal.id),
+              uncertainProposals.current.has(modal.proposal.id)),
+            onClose: closeModal, onUncertain: () => uncertainProposals.current.add(modal.proposal.id), send, busy,
+          })
           case 'plan': return h(PlanModal, {
             proposal: modal.proposal,
             plan: modal.plan,
@@ -4546,7 +5219,11 @@ window.__ModuleLoader__.load({
             onApprove: approvePlan,
             busy,
             error,
-            grant: modal.grant,
+            grant: modal.grant || (Boolean(allocationMoveOperation(modal.proposal)) &&
+              (snapshot.approval_grants ?? []).some(grant => grant.proposal_id === modal.proposal.id)),
+            moveUncertain: uncertainProposals.current.has(modal.proposal.id),
+            onEditMove: modal.moveEditor ? () => setModal({ type: 'allocation-move', ...modal.moveEditor }) : undefined,
+            onUncertainProposal: () => uncertainProposals.current.add(modal.proposal.id),
           })
           case 'occurrence-move': return h(OccurrenceMove, { occurrence: modal.occurrence, task: modal.task, onClose: closeModal, send, busy })
           case 'recurrence-scope': return h(RecurrenceScopeDialog, { task: modal.task, snapshot, onClose: closeModal, send, busy, setModal })
@@ -4941,6 +5618,10 @@ window.__ModuleLoader__.load({
       .zw-list-row:last-child { border-bottom:0; }
       .zw-toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
       .zw-week { display:grid; grid-template-columns:repeat(7,minmax(96px,1fr)); gap:6px; overflow:auto; padding-bottom:4px; }
+      .zw-week.zw-single { grid-template-columns:minmax(0,1fr); overflow:visible; min-width:0; }
+      .zw-single .zw-day { min-width:0; overflow-wrap:anywhere; }
+      .zw-single .zw-day-head { flex-wrap:wrap; gap:4px; }
+      .zw-single .zw-slot, .zw-single button { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
       .zw-day { min-height:250px; background:var(--zw-surface); border:1px solid var(--zw-divider); border-radius:10px; padding:8px; }
       .zw-day-today { border-color:#A8CFC9; box-shadow:inset 0 0 0 1px #A8CFC9; }
       .zw-day-head { display:flex; justify-content:space-between; align-items:baseline; padding-bottom:7px; margin-bottom:5px; border-bottom:1px solid #F0F3F2; }

@@ -1188,6 +1188,11 @@ impl<'a> Application<'a> {
                 let planned = plan(&world, &input, now)?;
                 let operation = ChangeOp::PlanApply {
                     replace_task_ids: planned.replace_task_ids.clone(),
+                    expected_removed_allocation_ids: Some(crate::apply::plan_removal_ids(
+                        &world,
+                        &planned.replace_task_ids,
+                        now,
+                    )),
                     assignments: planned.assignments.clone(),
                     unplaced: planned.unplaced.clone(),
                 };
@@ -1845,7 +1850,7 @@ impl<'a> Application<'a> {
                 "capacity_blocks": world.capacity_blocks.iter().filter(|item| item.start < *end && item.end > *start).collect::<Vec<_>>(),
                 "allocations": world.allocations.iter().filter(|item| item.start < *end && item.end > *start).collect::<Vec<_>>(),
                 "calendar_events": world.calendar_events.iter().filter(|item| item.start < *end && item.end > *start).collect::<Vec<_>>(),
-                "unplaced": unplaced_summary(world),
+                "unplaced": unplaced_summary(world, self.clock.now()),
                 "calendar_freshness": world.calendar_sources,
             })),
             QueryPayload::CapacityCandidates {
@@ -2426,6 +2431,23 @@ impl<'a> Application<'a> {
                 operations,
             )
         };
+        // Plan effects depend on the clock as well as the workspace revision. Do not issue
+        // approval for a legacy/unbound plan or a preview whose removals/start times changed.
+        // Evaluate on a clone; neither facts nor approval-bound operation bytes are rewritten.
+        if operations
+            .iter()
+            .any(|operation| matches!(operation, ChangeOp::PlanApply { .. }))
+        {
+            let mut replay = world.clone();
+            apply_operations(
+                &mut replay,
+                &operations,
+                &ctx.principal_id,
+                &ctx.channel,
+                now,
+                self.ids,
+            )?;
+        }
         let ttl = ttl_seconds.unwrap_or(900).clamp(30, 24 * 3600);
         let grant_expiry = (now + Duration::seconds(ttl)).min(expires_at);
         let grant = ApprovalGrant {
@@ -3242,19 +3264,14 @@ fn derived_blocked(world: &World, task: &crate::model::Task) -> bool {
         })
 }
 
-fn unplaced_summary(world: &World) -> Vec<Value> {
+fn unplaced_summary(world: &World, now: DateTime<Utc>) -> Vec<Value> {
     let mut result = Vec::new();
     for task in world.open_leaf_tasks() {
         let remaining = task
             .remaining_minutes
             .or(task.estimate_minutes)
             .unwrap_or(0);
-        let allocated: u32 = world
-            .allocations
-            .iter()
-            .filter(|allocation| allocation.task_id == task.id)
-            .map(|allocation| allocation.minutes)
-            .sum();
+        let allocated = world.allocation_minutes_for_task(&task.id, Some(now));
         if remaining > allocated {
             result.push(json!({
                 "task_id": task.id,
@@ -3270,7 +3287,7 @@ fn build_review_facts(
     world: &World,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-    _now: DateTime<Utc>,
+    now: DateTime<Utc>,
     tz: Tz,
 ) -> ReviewFacts {
     let mut facts = ReviewFacts::empty();
@@ -3380,7 +3397,7 @@ fn build_review_facts(
             .unwrap_or(0)
             .min(100)
     };
-    facts.unplaced_minutes = unplaced_summary(world)
+    facts.unplaced_minutes = unplaced_summary(world, now)
         .iter()
         .filter_map(|value| value.get("unplaced_minutes").and_then(Value::as_u64))
         .sum::<u64>() as u32;

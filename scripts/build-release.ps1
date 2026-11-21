@@ -4,6 +4,15 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $release = Join-Path $root 'artifacts/release'
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+  throw 'Release packaging requires Windows and the x86_64-pc-windows-msvc Rust target/toolchain.'
+}
+$cargoTarget = 'x86_64-pc-windows-msvc'
+# A fresh owned directory prevents stale binaries and ignores inherited target-dir defaults.
+# Cargo's explicit --target also overrides build.target/CARGO_BUILD_TARGET selection.
+$buildDirectory = Join-Path ([IO.Path]::GetTempPath()) ('zodo-release-build-' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $buildDirectory | Out-Null
+$cargoOutput = Join-Path $buildDirectory "$cargoTarget/release"
 Push-Location $root
 try {
   Write-Host 'Building Rust Core and non-UI native ABI...'
@@ -11,12 +20,12 @@ try {
   try {
     # Cargo writes progress to stderr; Windows PowerShell 5 must not mistake that for failure.
     $ErrorActionPreference = 'Continue'
-    cargo build --release --workspace --locked 2>&1 | Out-Host
+    cargo build --release --workspace --locked --target $cargoTarget --target-dir $buildDirectory 2>&1 | Out-Host
     $buildCode = $LASTEXITCODE
   } finally { $ErrorActionPreference = $savedPreference }
   if ($buildCode -ne 0) { throw 'cargo build failed' }
-  $core = Join-Path $root 'target/release/zodo.exe'
-  $ffi = Join-Path $root 'target/release/zodo_ffi.dll'
+  $core = Join-Path $cargoOutput 'zodo.exe'
+  $ffi = Join-Path $cargoOutput 'zodo_ffi.dll'
   foreach ($file in @($core, $ffi)) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Required binary missing: $file" }
   }
@@ -37,7 +46,13 @@ try {
   foreach ($file in @('package.json', 'cordis.patch.yml', 'client.js', 'index.js', 'privacy.js', 'host-gateway.js', 'icon.svg', 'README.md')) {
     Copy-Item -LiteralPath (Join-Path $plugin $file) -Destination (Join-Path $stage $file)
   }
-  Copy-Item -LiteralPath (Join-Path $plugin 'locale') -Destination (Join-Path $stage 'locale') -Recurse
+  $locales = @(Get-ChildItem -LiteralPath (Join-Path $plugin 'locale') -Filter '*.json' -File)
+  if ($locales.Count -eq 0) { throw 'No locale JSON resources found' }
+  $localeStage = Join-Path $stage 'locale'
+  New-Item -ItemType Directory -Path $localeStage | Out-Null
+  foreach ($locale in $locales) {
+    Copy-Item -LiteralPath $locale.FullName -Destination $localeStage
+  }
   Copy-Item -LiteralPath $core -Destination (Join-Path $stage 'bin/win32-x64/zodo-core.exe')
   Compress-Archive -Path (Join-Path $stage '*') -DestinationPath (Join-Path $release $pluginName)
   Remove-Item -LiteralPath $stage -Recurse -Force
@@ -54,6 +69,8 @@ try {
     commit = $commit
     working_tree_dirty = $dirty
     rustc = $rustc
+    cargo_target = $cargoTarget
+    cargo_profile = 'release'
     ui = 'deepseek-harness-plugin-only'
     artifacts = @('zodo.exe', 'zodo_ffi.dll', $pluginName)
     note = 'Build checkpoint only, not exhaustive acceptance. No standalone UI client is shipped.'
@@ -63,4 +80,8 @@ try {
     "$hash  $($_.Name)"
   } | Set-Content -LiteralPath (Join-Path $release 'SHA256SUMS.txt') -Encoding ASCII
   Write-Host "Core and DSH-only release written to $release"
-} finally { Pop-Location }
+} finally {
+  Pop-Location
+  # Remove only this invocation's owned build tree; never the caller's Cargo target.
+  Remove-Item -LiteralPath $buildDirectory -Recurse -Force
+}

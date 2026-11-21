@@ -13,11 +13,11 @@ Details: [model and privacy settings](<../../../docs/MODEL_SETTINGS.md>).
 
 ## Package
 
-The package includes the Host entry, browser UI, privacy guards, authenticated Host model gateway, locale/icon, manifest, bundle patch and a Windows Core binary. No retired A0 probe or old right-sidebar tab is shipped. Version and Host requirement are reported from the package manifest rather than hardcoded historical locks.
+The package includes the Host entry, browser UI, privacy guards, authenticated Host model gateway, locale/icon, manifest, bundle patch and one platform-specific Core binary. No retired A0 probe or old right-sidebar tab is shipped. Version and Host requirement are reported from the package manifest rather than hardcoded historical locks.
 
-Build from the repository root with `powershell -NoProfile -File scripts/build-release.ps1`. The release script packages only the explicit file list; runtime directories, database, backups, invocation tokens and model credentials are not release assets.
+Build the Windows package from the repository root with `powershell -NoProfile -File scripts/build-release.ps1`. For a Linux x64 development package, use `python3 scripts/build-linux-plugin.py artifacts/linux-x64` and follow the [platform notes](<../../../docs/RELEASE.md>). The release script packages only the explicit file list; runtime directories, database, backups, invocation tokens and model credentials are not release assets.
 
-Install the generated ZIP through DSH bundle management or use the repository development link. Loading new Host modules may require a full DSH restart when no development watcher is active. Rebuilding a fixture or starting another server does not update the actual desktop Host.
+For Linux verification, unpack the ZIP into a disposable directory with its Unix modes preserved. Use the local package form supported by the target DSH runtime and an isolated profile; do not assume the ZIP itself is an installable DSH package. The repository development link is also available. Loading new Host modules may require a full DSH restart when no development watcher is active. Rebuilding a fixture or starting another server does not update the actual desktop Host.
 
 ## Host model boundary
 

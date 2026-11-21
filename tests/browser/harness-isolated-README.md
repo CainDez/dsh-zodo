@@ -15,15 +15,76 @@ Tests create their own origin and data directory and always stop the Core/server
 
 For an explicitly managed manual fixture, `node tests/browser/harness-isolated-fixture.mjs --serve` prints its unique loopback URL. POST `/__fixture/shutdown` stops the owned server and Core and removes its data. It also has a 30-minute maximum lifetime. The optional `?fixture_view=models` query navigates the throwaway client to that page without writing settings. Never use it as a replacement for the current DSH GUI. In DSH run_code, import `startFixture()` and keep the process alive through browser inspection before `finally { await fixture.stop() }`; that process starts with an empty environment, so provide valid SystemRoot and TEMP/TMP values before startup.
 
+## Supported runner and reproducible evidence
+
+Use a disposable development/CI machine with working local TCP and Unix sockets,
+an already provisioned supported Chrome/Chromium, Node, pnpm, and Rust. The normal
+Playwright browser launch must work under that runner's existing security policy.
+On Linux the fixture explicitly requests Playwright's Chromium sandbox; it does
+not fall back to a weaker launch. The branch-scoped [Linux x64 workflow](../../.github/workflows/zodo-linux-x64-browser.yml)
+uses the hosted `ubuntu-22.04` image's existing Chrome, builds the exact triggering
+revision, and verifies the same-build Core. It publishes no screenshots, raw logs
+or artifacts. A passing run covers the React/bridge/Core fixture only, never
+official DSH Desktop or account-backed behavior.
+
+A Chromium `socket() failed: Operation not permitted`, `ptrace: Operation not
+permitted`, or `No usable sandbox` startup error is an **environment blocker**,
+not a failed UI assertion and not a successful test. Do not disable host syscall
+restrictions, change security settings, add browser-security bypass flags, attach
+to an authenticated browser profile, or use a real DSH installation to work around
+it. Move the unchanged isolated fixture to a properly provisioned runner instead.
+A connected computer or a working web browser alone is not proof it supports this
+local Core/Playwright fixture. Cloud-browser UI tools cannot substitute for the
+suite unless they can actually reach its owned loopback origin and run its checks.
+
+Example Linux run from the repository root, after checking out the exact commit
+being validated (no live Host or calendar is required):
+
+```sh
+# Use the checked-in lockfiles for BOTH dependency trees.
+pnpm --dir tests/browser install --frozen-lockfile --ignore-scripts
+pnpm --dir tests/browser/harness-fixture-runtime install --frozen-lockfile --ignore-scripts
+# Keep this target separate from concurrent builds/checks.
+export CARGO_TARGET_DIR="$(mktemp -d /tmp/zodo-fixture-target.XXXXXX)"
+cargo build --locked --release --bin zodo
+export ZODO_FIXTURE_CORE_BIN="$CARGO_TARGET_DIR/release/zodo"
+export ZODO_CHROME="$(command -v google-chrome || command -v chromium)"
+test -x "$ZODO_CHROME" && test -x "$ZODO_FIXTURE_CORE_BIN"
+node --test tests/browser/harness-isolated-diagnostics.test.mjs
+node tests/browser/harness-isolated-regression.mjs
+```
+
+Record `git rev-parse HEAD`, `git status --short`, the runner OS, and the resulting
+`report.json` alongside screenshots. The report includes Node/browser versions
+(when launch succeeds), timezone, Core/client/bridge hashes, executed cases and
+cleanup confirmation. The supplied Core must be built from the same checkout;
+a binary hash alone does not prove source equivalence. Do not share raw stderr
+without review, because browser launcher output can include local paths.
+
+Report statuses are `passed`, `failed` (assertions), `blocked` (recognized browser
+prerequisites/security limitations), `error` (other fatal execution failures), or
+`not-run`. A fatal startup reports a sanitized `fatal.stage`, `fatal.code` and
+next-step guidance even when `executed` is zero. Zero failed assertions alone is
+never a passing result. Case failures remain in `cases`; unknown startup errors
+are not silently labeled security limitations. Failures produce a nonzero exit.
+If dependency imports fail before the runner starts, Node stderr is the evidence;
+no report is guaranteed for that earlier failure.
+
+Agenda coverage additionally checks previous/next/today date windows in
+Asia/Shanghai, row visibility and keyboard/click drilldown, no command RPC during
+navigation, and unchanged Core revision/data. Pure projection tests cover DST,
+midnight endings and offset chronology separately; neither substitutes for a
+successful rendered browser run.
+
 ## Coverage and limits
 
-**28 cases / 21 navigation entries.** The original non-settings coverage remains: same-origin/cookie gates, credential non-exposure, empty Core boot, navigation mounting, capture/manual clarification/conversion to task+goal+project, task validation/create/edit/complete/reopen/archive/restore, explicit goal/project editors, habit create/log, saved-view create/apply, one-run automation budget exhaustion, focus start/pause/resume/finish without completing the task, JSON/CSV downloads and SQLite backup hashes, capacity and preview-before-approval plan commit, search, responsive navigation/dialogs, offline draft reload/recovery, JavaScript errors and unexpected external browser requests. Archive/restore is used rather than permanent task deletion.
+**21 navigation entries; the report records the executed case count.** The original non-settings coverage remains: same-origin/cookie gates, credential non-exposure, empty Core boot, navigation mounting, capture/manual clarification/conversion to task+goal+project, task validation/create/edit/complete/reopen/archive/restore, explicit goal/project editors, habit create/log, saved-view create/apply, one-run automation budget exhaustion, focus start/pause/resume/finish without completing the task, JSON/CSV downloads and SQLite backup hashes, capacity and preview-before-approval plan commit, search, responsive navigation/dialogs, offline draft reload/recovery, JavaScript errors and unexpected external browser requests. Archive/restore is used rather than permanent task deletion.
 
 Responsive coverage clicks all 21 entries at 390px and 800px viewports and a 600px workbench container inside a 1440px viewport. It checks active state, headings and document/nav horizontal overflow. These are navigation/action checks, not exhaustive proofs of every control on every page.
 
 ### Independent model-source and privacy settings
 
-The two original catalog cases are updated for source selection. Eight former dual-mode cases are replaced, keeping the total at 28:
+The two original catalog cases are updated for source selection. Eight former dual-mode cases are replaced:
 
 1. **Catalog selection is draft-only.** A mocked subscription provider/model is supported and selectable through the DSH dropdown without copying an HTTP endpoint or requesting a key. The catalog has schema `zodo.harness-model-catalog/1`, `groups` with supported provider/model rows, and no `default_route`. Discard restores the unselected saved source.
 2. **Catalog failure/retry.** An injected 503 shows a visible error, retains saved model configuration and recovers using the refresh control.

@@ -94,13 +94,18 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
 
     let mut fixed_allocations = Vec::new();
     let mut fixed_minutes: BTreeMap<String, u32> = BTreeMap::new();
+    let mut fixed_end: BTreeMap<String, DateTime<Utc>> = BTreeMap::new();
     for allocation in &world.allocations {
         if removed_allocations.contains(&allocation.id) {
             continue;
         }
         fixed_allocations.push(allocation.id.clone());
-        if scope.contains(allocation.task_id.as_str()) && allocation.end > now {
+        if allocation.reserves_work_at(now) {
             *fixed_minutes.entry(allocation.task_id.clone()).or_default() += allocation.minutes;
+            fixed_end
+                .entry(allocation.task_id.clone())
+                .and_modify(|end| *end = (*end).max(allocation.end))
+                .or_insert(allocation.end);
         }
     }
 
@@ -147,9 +152,15 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
                         !matches!(
                             task.status,
                             crate::model::TaskStatus::Done | crate::model::TaskStatus::Cancelled
-                        ) && !world.allocations.iter().any(|allocation| {
-                            allocation.task_id == *predecessor_id && allocation.end > now
-                        })
+                        ) && {
+                            let required = task
+                                .remaining_minutes
+                                .or(task.estimate_minutes)
+                                .unwrap_or(0);
+                            required == 0
+                                || fixed_minutes.get(predecessor_id).copied().unwrap_or(0)
+                                    < required
+                        }
                     }) {
                         blocked = true;
                         break;
@@ -201,12 +212,15 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
         let mut remaining = total.saturating_sub(already);
         let earliest = effective_earliest(world, &task_id, input, now, &scheduled_end);
         if remaining == 0 {
-            scheduled_end.insert(task_id.clone(), earliest);
+            scheduled_end.insert(
+                task_id.clone(),
+                earliest.max(fixed_end.get(&task_id).copied().unwrap_or(earliest)),
+            );
             continue;
         }
         let hard = task.hard_deadline;
         let mut chunk_start = earliest;
-        let mut last_end = earliest;
+        let mut last_end = earliest.max(fixed_end.get(&task_id).copied().unwrap_or(earliest));
         while remaining > 0 {
             let Some((slot_index, start, end)) = choose_slot(
                 &mut slots,
@@ -243,10 +257,13 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
             });
             remaining -= take;
             chunk_start = allocation_end;
-            last_end = allocation_end;
+            last_end = last_end.max(allocation_end);
             if slots[slot_index].capacity_left == 0 || allocation_end >= slots[slot_index].end {
                 slots[slot_index].capacity_left = 0;
             }
+            // Different capacity blocks may describe the same wall-clock time. A new
+            // assignment reserves that interval globally, not only in its source block.
+            reserve_interval(&mut slots, start, allocation_end);
         }
         if remaining > 0 {
             let reason = if hard.is_some_and(|deadline| deadline <= input.horizon_end) {
@@ -266,7 +283,11 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
                 task_id: Some(task_id.clone()),
             });
         }
-        scheduled_end.insert(task_id.clone(), last_end);
+        // A dependency is satisfied only once all remaining work has a scheduled finish.
+        // A partial placement must not release successors into the leftover capacity.
+        if remaining == 0 {
+            scheduled_end.insert(task_id.clone(), last_end);
+        }
     }
 
     if visited.len() < replace_task_ids.len() {
@@ -298,8 +319,51 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
         unplaced,
         fixed_allocations,
         diagnostics,
-        replace_task_ids: replace_task_ids.clone(),
+        // This field authorizes deletion at apply time, not merely the planning scope.
+        // Retain mode is additive, including when every task is already fully scheduled.
+        replace_task_ids: if input.move_unlocked {
+            replace_task_ids
+        } else {
+            Vec::new()
+        },
     })
+}
+
+/// Remove a newly assigned interval from all remaining slots. Splitting preserves free
+/// time on both sides, while distributing (never duplicating) each slot's minute budget.
+/// The source slot has already consumed its minutes and advanced its cursor.
+fn reserve_interval(slots: &mut Vec<Slot>, start: DateTime<Utc>, end: DateTime<Utc>) {
+    let mut available = Vec::with_capacity(slots.len());
+    for slot in slots.drain(..) {
+        if slot.capacity_left == 0 || slot.cursor >= slot.end {
+            continue;
+        }
+        if end <= slot.cursor || start >= slot.end {
+            available.push(slot);
+            continue;
+        }
+        let mut budget = slot.capacity_left;
+        for (free_start, free_end) in [
+            (slot.cursor, start.min(slot.end)),
+            (end.max(slot.cursor), slot.end),
+        ] {
+            let minutes = (free_end - free_start).num_minutes().max(0) as u32;
+            let usable = budget.min(minutes);
+            if usable == 0 {
+                continue;
+            }
+            available.push(Slot {
+                capacity_block_id: slot.capacity_block_id.clone(),
+                start: free_start,
+                end: free_start + Duration::minutes(i64::from(usable)),
+                cursor: free_start,
+                capacity_left: usable,
+            });
+            budget -= usable;
+        }
+    }
+    available.sort_by_key(|slot| slot.start);
+    *slots = available;
 }
 
 fn sort_key(
@@ -398,7 +462,18 @@ fn build_slots(
         if cursor < end {
             free.push((cursor, end));
         }
-        let mut capacity_left = block.capacity_minutes;
+        // Match allocation validation: retained allocations consume the block's minute
+        // budget as well as its wall-clock availability, including historical allocations.
+        let used: u32 = world
+            .allocations
+            .iter()
+            .filter(|allocation| {
+                allocation.capacity_block_id.as_deref() == Some(block.id.as_str())
+                    && !removed_allocations.contains(&allocation.id)
+            })
+            .map(|allocation| allocation.minutes)
+            .sum();
+        let mut capacity_left = block.capacity_minutes.saturating_sub(used);
         for (free_start, free_end) in free {
             for (allowed_start, allowed_end) in
                 workspace_allowed_ranges(world, free_start, free_end)
@@ -432,7 +507,7 @@ fn build_slots(
 
 /// Hard work windows and weekend policy are availability constraints. Soft windows are only a
 /// preference and never silently become hard exclusions.
-fn workspace_allowed_ranges(
+pub(crate) fn workspace_allowed_ranges(
     world: &World,
     start: DateTime<Utc>,
     end: DateTime<Utc>,

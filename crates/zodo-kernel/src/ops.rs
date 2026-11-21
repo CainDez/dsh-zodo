@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
@@ -454,6 +454,88 @@ impl AllocationDraft {
     }
 }
 
+/// Exact, additive user-confirmed scheduling. Unlike manual/history allocation writes,
+/// this operation carries no override, caller-chosen identity, or mutable duration field.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduledAllocation {
+    pub task_id: String,
+    pub expected_task_version: u64,
+    pub capacity_block_id: String,
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+}
+
+impl ScheduledAllocation {
+    pub fn validate(&self) -> Result<()> {
+        if self.task_id.trim().is_empty() || self.capacity_block_id.trim().is_empty() {
+            return Err(ZodoError::validation(
+                "task and existing capacity IDs are required",
+            ));
+        }
+        validate_exact_allocation_slot(
+            self.expected_task_version,
+            &self.capacity_block_id,
+            self.start,
+            self.end,
+        )
+    }
+}
+
+/// Strictly move an existing allocation in place. Identity, task and duration are
+/// always resolved from the original allocation, not accepted from the caller.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AllocationMove {
+    pub id: String,
+    pub expected_task_version: u64,
+    pub capacity_block_id: String,
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+}
+
+impl AllocationMove {
+    pub fn validate(&self) -> Result<()> {
+        if self.id.trim().is_empty() {
+            return Err(ZodoError::validation("existing allocation ID is required"));
+        }
+        validate_exact_allocation_slot(
+            self.expected_task_version,
+            &self.capacity_block_id,
+            self.start,
+            self.end,
+        )
+    }
+}
+
+fn validate_exact_allocation_slot(
+    expected_task_version: u64,
+    capacity_block_id: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<()> {
+    if capacity_block_id.trim().is_empty() {
+        return Err(ZodoError::validation("existing capacity ID is required"));
+    }
+    if expected_task_version == 0 {
+        return Err(ZodoError::validation(
+            "expected_task_version must be positive",
+        ));
+    }
+    if start.second() != 0 || end.second() != 0 || start.nanosecond() != 0 || end.nanosecond() != 0
+    {
+        return Err(ZodoError::validation(
+            "scheduled interval must use whole-minute boundaries",
+        ));
+    }
+    if !(1..=1440).contains(&(end - start).num_minutes()) {
+        return Err(ZodoError::validation(
+            "scheduled interval must be 1..1440 minutes",
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct NoteSpec {
@@ -553,6 +635,10 @@ pub enum ChangeOp {
     CapacityRemove { id: String },
     #[serde(rename = "allocation.create")]
     AllocationCreate { allocation: AllocationDraft },
+    #[serde(rename = "allocation.schedule")]
+    AllocationSchedule { allocation: ScheduledAllocation },
+    #[serde(rename = "allocation.move")]
+    AllocationMove(AllocationMove),
     #[serde(rename = "allocation.update")]
     AllocationUpdate {
         id: String,
@@ -582,6 +668,10 @@ pub enum ChangeOp {
     #[serde(rename = "plan.apply")]
     PlanApply {
         replace_task_ids: Vec<String>,
+        /// Approval-bound exact deletion set. Missing on legacy serialized operations.
+        /// Omit None when reserializing so old approval hashes are not rewritten.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        expected_removed_allocation_ids: Option<Vec<String>>,
         assignments: Vec<AllocationDraft>,
         unplaced: Vec<UnplacedWork>,
     },
@@ -648,6 +738,8 @@ impl ChangeOp {
             Self::AllocationCreate { allocation } | Self::AllocationUpdate { allocation, .. } => {
                 allocation.validate()
             }
+            Self::AllocationSchedule { allocation } => allocation.validate(),
+            Self::AllocationMove(input) => input.validate(),
             Self::AllocationRemove { .. } | Self::AllocationSetLocked { .. } => Ok(()),
             Self::NoteCreate { note } | Self::NoteUpdate { note, .. } => note.validate(),
             Self::TaskArchive { .. } | Self::TaskSetBlocked { .. } => Ok(()),
@@ -660,9 +752,19 @@ impl ChangeOp {
             Self::ReminderCancel { .. } => Ok(()),
             Self::PlanApply {
                 replace_task_ids,
+                expected_removed_allocation_ids,
                 assignments,
                 ..
             } => {
+                if let Some(expected) = expected_removed_allocation_ids {
+                    let unique: std::collections::BTreeSet<_> = expected.iter().collect();
+                    if expected.len() > 2000
+                        || unique.len() != expected.len()
+                        || expected.iter().any(|id| id.trim().is_empty())
+                    {
+                        return Err(ZodoError::validation("invalid plan deletion binding"));
+                    }
+                }
                 if replace_task_ids.len() > MAX_BATCH || assignments.len() > 2000 {
                     return Err(ZodoError::validation("plan proposal is too large"));
                 }
@@ -677,7 +779,9 @@ impl ChangeOp {
     pub fn effects(&self) -> Vec<String> {
         match self {
             Self::ReminderCreate { .. } => vec!["reminder".to_string()],
-            Self::PlanApply { .. } => vec!["schedule".to_string()],
+            Self::PlanApply { .. } | Self::AllocationSchedule { .. } | Self::AllocationMove(_) => {
+                vec!["schedule".to_string()]
+            }
             _ => Vec::new(),
         }
     }

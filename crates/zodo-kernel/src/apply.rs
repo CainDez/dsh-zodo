@@ -398,6 +398,15 @@ pub fn apply_change(
             let id = create_allocation(world, allocation, &source, now, ids)?;
             outcome.record("allocation", &id, "created");
         }
+        ChangeOp::AllocationSchedule { allocation } => {
+            let draft = validate_scheduled_allocation(world, allocation, now)?;
+            let id = create_allocation(world, &draft, &source, now, ids)?;
+            outcome.record("allocation", &id, "created");
+        }
+        ChangeOp::AllocationMove(input) => {
+            move_allocation(world, input, now)?;
+            outcome.record("allocation", &input.id, "moved");
+        }
         ChangeOp::AllocationUpdate { id, allocation } => {
             update_allocation(world, id, allocation, source.clone(), now)?;
             outcome.record("allocation", id, "updated");
@@ -409,11 +418,7 @@ pub fn apply_change(
                 .position(|value| value.id == *id)
                 .ok_or_else(|| ZodoError::not_found("allocation", id))?;
             let allocation = world.allocations[position].clone();
-            if allocation.locked || allocation.state != AllocationState::Planned {
-                return Err(ZodoError::validation(
-                    "locked or started allocations cannot be removed by a plan",
-                ));
-            }
+            require_manual_allocation_editable(&allocation, now)?;
             world.allocations.remove(position);
             outcome.record("allocation", id, "removed");
         }
@@ -537,12 +542,14 @@ pub fn apply_change(
         }
         ChangeOp::PlanApply {
             replace_task_ids,
+            expected_removed_allocation_ids,
             assignments,
             unplaced,
         } => {
             apply_plan(
                 world,
                 replace_task_ids,
+                expected_removed_allocation_ids.as_deref(),
                 assignments,
                 unplaced,
                 now,
@@ -954,6 +961,200 @@ fn update_capacity(
     Ok(())
 }
 
+/// Rechecked during both proposal validation and commit. Only the eventual allocation is
+/// appended; no task, existing allocation, capacity, activity, or provider fact is modified.
+fn validate_scheduled_allocation(
+    world: &World,
+    input: &crate::ops::ScheduledAllocation,
+    now: DateTime<Utc>,
+) -> Result<AllocationDraft> {
+    input.validate()?;
+    if input.start <= now {
+        return Err(ZodoError::validation(
+            "scheduled interval must start in the future",
+        ));
+    }
+    let task = world
+        .task(&input.task_id)
+        .ok_or_else(|| ZodoError::not_found("task", &input.task_id))?;
+    if task.version != input.expected_task_version {
+        return Err(ZodoError::new(
+            crate::error::ErrorCode::RevisionConflict,
+            "task changed; refresh and create a new scheduling proposal",
+        ));
+    }
+    if !world.is_leaf(&task.id) || task.blocked_manual {
+        return Err(ZodoError::validation(
+            "only an unblocked leaf task can be scheduled",
+        ));
+    }
+    if task.not_before.is_some_and(|start| input.start < start)
+        || task.hard_deadline.is_some_and(|end| input.end > end)
+    {
+        return Err(ZodoError::validation(
+            "scheduled interval violates task time constraints",
+        ));
+    }
+    // Match planner dependency semantics: completed/cancelled predecessors are satisfied;
+    // otherwise all remaining work must have outstanding reservations ending before us.
+    // An elapsed plan is never treated as proof that predecessor work was completed.
+    for dependency in world.dependencies_of(&task.id) {
+        let predecessor = world
+            .task(&dependency.predecessor_id)
+            .ok_or_else(|| ZodoError::not_found("task", &dependency.predecessor_id))?;
+        if matches!(predecessor.status, TaskStatus::Done | TaskStatus::Cancelled) {
+            continue;
+        }
+        let required = predecessor
+            .remaining_minutes
+            .or(predecessor.estimate_minutes)
+            .unwrap_or(0);
+        let mut reserved = 0_u64;
+        let mut latest_end = now;
+        for allocation in world.allocations.iter().filter(|allocation| {
+            allocation.task_id == predecessor.id && allocation.reserves_work_at(now)
+        }) {
+            reserved += u64::from(allocation.minutes);
+            latest_end = latest_end.max(allocation.end);
+        }
+        if predecessor.archived
+            || predecessor.blocked_manual
+            || required == 0
+            || reserved < u64::from(required)
+            || latest_end > input.start
+        {
+            return Err(ZodoError::validation(
+                "predecessor work is not fully scheduled before this interval",
+            ));
+        }
+    }
+    if world.workspace.settings.timezone.parse::<Tz>().is_err() {
+        return Err(ZodoError::validation(
+            "workspace timezone must be valid before scheduling",
+        ));
+    }
+    if crate::planner::workspace_allowed_ranges(world, input.start, input.end)
+        != vec![(input.start, input.end)]
+    {
+        return Err(ZodoError::validation(
+            "scheduled interval is outside workspace availability",
+        ));
+    }
+    // Existing allocation validation remains authoritative for membership/budget, open-task
+    // work bounds, and overlap with allocations, commitments, and imported busy events.
+    Ok(AllocationDraft {
+        id: None,
+        task_id: input.task_id.clone(),
+        capacity_block_id: Some(input.capacity_block_id.clone()),
+        start: input.start,
+        end: input.end,
+        minutes: (input.end - input.start).num_minutes() as u32,
+        locked: false,
+    })
+}
+
+fn move_allocation(
+    world: &mut World,
+    input: &crate::ops::AllocationMove,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    input.validate()?;
+    let position = world
+        .allocations
+        .iter()
+        .position(|row| row.id == input.id)
+        .ok_or_else(|| ZodoError::not_found("allocation", &input.id))?;
+    let original = &world.allocations[position];
+    require_manual_allocation_editable(original, now)?;
+    if original.capacity_block_id.as_deref() == Some(input.capacity_block_id.as_str())
+        && original.start == input.start
+        && original.end == input.end
+    {
+        return Err(ZodoError::validation(
+            "the selected destination is unchanged",
+        ));
+    }
+    let draft = validate_scheduled_allocation(
+        world,
+        &crate::ops::ScheduledAllocation {
+            task_id: original.task_id.clone(),
+            expected_task_version: input.expected_task_version,
+            capacity_block_id: input.capacity_block_id.clone(),
+            start: input.start,
+            end: input.end,
+        },
+        now,
+    )?;
+    if draft.minutes != original.minutes || draft.end - draft.start != original.end - original.start
+    {
+        return Err(ZodoError::validation(
+            "moving an allocation must preserve its duration",
+        ));
+    }
+    validate_allocation(world, &draft, Some(&original.id), now)?;
+    validate_move_successors(world, original, &draft, now)?;
+
+    let allocation = &mut world.allocations[position];
+    allocation.capacity_block_id = draft.capacity_block_id;
+    allocation.start = draft.start;
+    allocation.end = draft.end;
+    allocation.updated_at = now;
+    Ok(())
+}
+
+fn validate_move_successors(
+    world: &World,
+    original: &Allocation,
+    draft: &AllocationDraft,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    // Do not move successor records. Conservatively apply the same dependency
+    // rule used for adding a strict slot to the projected predecessor schedule.
+    let mut earliest_start = None::<DateTime<Utc>>;
+    for dependency in world.successors_of(&original.task_id) {
+        let successor = world
+            .task(&dependency.successor_id)
+            .ok_or_else(|| ZodoError::not_found("task", &dependency.successor_id))?;
+        if successor.archived
+            || matches!(successor.status, TaskStatus::Done | TaskStatus::Cancelled)
+        {
+            continue;
+        }
+        for allocation in world
+            .allocations
+            .iter()
+            .filter(|row| row.task_id == successor.id && row.reserves_work_at(now))
+        {
+            earliest_start =
+                Some(earliest_start.map_or(allocation.start, |start| start.min(allocation.start)));
+        }
+    }
+    let Some(earliest_start) = earliest_start else {
+        return Ok(());
+    };
+    let task = world
+        .task(&original.task_id)
+        .ok_or_else(|| ZodoError::not_found("task", &original.task_id))?;
+    let required = task
+        .remaining_minutes
+        .or(task.estimate_minutes)
+        .unwrap_or(0);
+    let (reserved, latest_end) = world
+        .allocations
+        .iter()
+        .filter(|row| row.id != original.id && row.task_id == task.id && row.reserves_work_at(now))
+        .fold(
+            (u64::from(draft.minutes), draft.end),
+            |(minutes, end), row| (minutes + u64::from(row.minutes), end.max(row.end)),
+        );
+    if required == 0 || reserved < u64::from(required) || latest_end > earliest_start {
+        return Err(ZodoError::validation(
+            "move would leave predecessor work incompletely scheduled before a retained successor interval",
+        ));
+    }
+    Ok(())
+}
+
 fn create_allocation(
     world: &mut World,
     draft: &AllocationDraft,
@@ -961,7 +1162,7 @@ fn create_allocation(
     now: DateTime<Utc>,
     ids: &dyn IdSource,
 ) -> Result<String> {
-    validate_allocation(world, draft, None)?;
+    validate_allocation(world, draft, None, now)?;
     let id = draft.id.clone().unwrap_or_else(|| ids.next("alc"));
     world.allocations.push(Allocation {
         id: id.clone(),
@@ -980,6 +1181,19 @@ fn create_allocation(
     Ok(id)
 }
 
+// Keep past and in-progress allocation facts immutable for manual changes, even
+// if their persisted state remains Planned. Planner replacement has its own
+// preview/replay boundary and is intentionally not changed here.
+fn require_manual_allocation_editable(allocation: &Allocation, now: DateTime<Utc>) -> Result<()> {
+    if allocation.locked || allocation.state != AllocationState::Planned || allocation.start <= now
+    {
+        return Err(ZodoError::validation(
+            "only unlocked planned allocations starting in the future can be updated or removed",
+        ));
+    }
+    Ok(())
+}
+
 fn update_allocation(
     world: &mut World,
     id: &str,
@@ -993,12 +1207,13 @@ fn update_allocation(
         .find(|value| value.id == id)
         .ok_or_else(|| ZodoError::not_found("allocation", id))?
         .clone();
-    if existing.locked || existing.state == AllocationState::Started {
+    require_manual_allocation_editable(&existing, now)?;
+    if draft.start <= now {
         return Err(ZodoError::validation(
-            "locked or started allocations need an explicit unlock and a new plan",
+            "new allocation start must be in the future",
         ));
     }
-    validate_allocation(world, draft, Some(id))?;
+    validate_allocation(world, draft, Some(id), now)?;
     let allocation = world
         .allocations
         .iter_mut()
@@ -1018,6 +1233,7 @@ fn validate_allocation(
     world: &World,
     draft: &AllocationDraft,
     ignore_id: Option<&str>,
+    now: DateTime<Utc>,
 ) -> Result<()> {
     draft.validate()?;
     let task = world
@@ -1045,7 +1261,11 @@ fn validate_allocation(
         .allocations
         .iter()
         .filter(|allocation| {
-            allocation.task_id == draft.task_id && Some(allocation.id.as_str()) != ignore_id
+            allocation.task_id == draft.task_id
+                && Some(allocation.id.as_str()) != ignore_id
+                // Current/future reservations are bounded by outstanding work, not schedule
+                // history. Explicit historical writes retain their existing all-time bound.
+                && (draft.end <= now || allocation.reserves_work_at(now))
         })
         .map(|allocation| allocation.minutes)
         .sum();
@@ -1118,20 +1338,15 @@ fn overlaps(
     a_start < b_end && b_start < a_end
 }
 
-fn apply_plan(
-    world: &mut World,
+/// Exact eligible replacement IDs at one command instant; used for both approval binding
+/// and replay. Crossing a start boundary must not silently change the approved deletion set.
+pub(crate) fn plan_removal_ids(
+    world: &World,
     replace_task_ids: &[String],
-    assignments: &[AllocationDraft],
-    unplaced: &[UnplacedWork],
     now: DateTime<Utc>,
-    ids: &dyn IdSource,
-    source: &SourceRef,
-    outcome: &mut ApplyOutcome,
-) -> Result<()> {
-    // Remove only future, unlocked planned allocations for tasks that this proposal claims. Fixed
-    // facts (started, locked, past) remain untouched; unrelated tasks are never re-planned.
+) -> Vec<String> {
     let replace: BTreeSet<&str> = replace_task_ids.iter().map(String::as_str).collect();
-    let removed: Vec<String> = world
+    let mut removed: Vec<String> = world
         .allocations
         .iter()
         .filter(|allocation| {
@@ -1142,6 +1357,44 @@ fn apply_plan(
         })
         .map(|allocation| allocation.id.clone())
         .collect();
+    removed.sort();
+    removed
+}
+
+fn apply_plan(
+    world: &mut World,
+    replace_task_ids: &[String],
+    expected_removed_allocation_ids: Option<&[String]>,
+    assignments: &[AllocationDraft],
+    unplaced: &[UnplacedWork],
+    now: DateTime<Utc>,
+    ids: &dyn IdSource,
+    source: &SourceRef,
+    outcome: &mut ApplyOutcome,
+) -> Result<()> {
+    // Remove only future, unlocked planned allocations for tasks that this proposal claims. Fixed
+    // facts (started, locked, past) remain untouched; unrelated tasks are never re-planned.
+    let expected = expected_removed_allocation_ids.ok_or_else(|| {
+        ZodoError::new(
+            crate::error::ErrorCode::ApprovalRequired,
+            "legacy plan has no deletion binding; regenerate plan and approve its new preview",
+        )
+    })?;
+    let removed = plan_removal_ids(world, replace_task_ids, now);
+    let mut expected = expected.to_vec();
+    expected.sort();
+    if expected != removed {
+        return Err(ZodoError::new(
+            crate::error::ErrorCode::ApprovalRequired,
+            "plan deletion effects changed with time; regenerate plan and approve its new preview",
+        ));
+    }
+    if assignments.iter().any(|allocation| allocation.start < now) {
+        return Err(ZodoError::new(
+            crate::error::ErrorCode::ApprovalRequired,
+            "planned interval has already started; regenerate plan and approve its new preview",
+        ));
+    }
     for id in removed {
         world.allocations.retain(|allocation| allocation.id != id);
         outcome.record("allocation", &id, "removed_by_plan");

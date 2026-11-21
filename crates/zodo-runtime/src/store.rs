@@ -7,7 +7,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::Value;
 use zodo_kernel::commands::ResultStatus;
 use zodo_kernel::error::{ErrorCode, Result, ZodoError};
-use zodo_kernel::model::{Workspace, World};
+use zodo_kernel::model::{PrivacyPolicy, Workspace, WorkspaceSettings, World};
 use zodo_kernel::ports::{
     AuditRecord, EffectRecord, EventRecord, NewAudit, NewEffect, NewEvent, ReceiptInsert,
     SaveOptions, SaveOutcome, Store, StoredReceipt,
@@ -289,6 +289,74 @@ fn parse_status(value: &str) -> ResultStatus {
     serde_json::from_value(serde_json::json!(value)).unwrap_or(ResultStatus::Committed)
 }
 
+// The 0.2.0-dev.1 workspace row predates independent per-scope content consent. Match only
+// its known persistence format: do not accept these fields in commands or imports.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum LegacyModelRoute {
+    LocalOnly,
+    CloudAssisted,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyPrivacyPolicy {
+    #[serde(rename = "model_route")]
+    _model_route: LegacyModelRoute,
+    #[serde(rename = "allowed_cloud_providers")]
+    _allowed_cloud_providers: Vec<String>,
+    #[serde(rename = "diagnostic_capture")]
+    _diagnostic_capture: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LegacyWorkspace {
+    id: String,
+    name: String,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    revision: u64,
+    policy_revision: u64,
+    settings: WorkspaceSettings,
+    #[serde(rename = "policy")]
+    _policy: LegacyPrivacyPolicy,
+    is_demo: bool,
+}
+
+fn read_stored_workspace(json: &str) -> Result<Workspace> {
+    if let Ok(workspace) = serde_json::from_str::<Workspace>(json) {
+        return Ok(workspace);
+    }
+    let invalid = || {
+        ZodoError::new(
+            ErrorCode::StorageFailure,
+            "invalid persisted workspace format",
+        )
+    };
+    // Derived structs also accept positional arrays. Only accept legacy objects
+    // and parse from the original input so serde still detects duplicate fields.
+    let shape: Value = serde_json::from_str(json).map_err(|_| invalid())?;
+    if !shape.get("policy").is_some_and(Value::is_object) {
+        return Err(invalid());
+    }
+    let legacy: LegacyWorkspace = serde_json::from_str(json).map_err(|_| invalid())?;
+    // No old route/provider or diagnostic preference confers current consent.
+    // Reading does not change the row; a normal transactional save writes the
+    // current format. Do not assume the saved row can be opened by an older Core.
+    Ok(Workspace {
+        id: legacy.id,
+        name: legacy.name,
+        created_at: legacy.created_at,
+        updated_at: legacy.updated_at,
+        revision: legacy.revision,
+        policy_revision: legacy.policy_revision,
+        settings: legacy.settings,
+        policy: PrivacyPolicy::default(),
+        is_demo: legacy.is_demo,
+    })
+}
+
 impl Store for SqliteStore {
     fn load_world(&mut self, workspace_id: &str) -> Result<Option<World>> {
         let workspace_row = self
@@ -303,7 +371,7 @@ impl Store for SqliteStore {
         let Some(workspace_json) = workspace_row else {
             return Ok(None);
         };
-        let workspace: Workspace = serde_json::from_str(&workspace_json).map_err(storage_error)?;
+        let workspace = read_stored_workspace(&workspace_json)?;
         let mut statement = self
             .connection
             .prepare("SELECT kind, id, json FROM entities WHERE workspace_id = ?1")
@@ -732,6 +800,170 @@ mod tests {
         let loaded = store.load_world("ws_test").unwrap().unwrap();
         assert_eq!(loaded.workspace.id, "ws_test");
         assert_eq!(loaded.workspace.revision, 0);
+    }
+
+    fn legacy_world_row(policy: Value) -> String {
+        let mut workspace = Workspace::new("ws".into(), "Existing".into(), Utc::now());
+        workspace.revision = 12;
+        workspace.policy_revision = 7;
+        workspace.settings.timezone = "Europe/Paris".into();
+        let mut row = serde_json::to_value(workspace).unwrap();
+        row["policy"] = policy;
+        row.to_string()
+    }
+
+    #[test]
+    fn loads_legacy_policy_without_granting_consent_or_rewriting_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("legacy.sqlite3");
+        let mut store = SqliteStore::open(&path).unwrap();
+        let row = legacy_world_row(serde_json::json!({
+            "model_route": "cloud_assisted",
+            "allowed_cloud_providers": ["legacy-provider"],
+            "diagnostic_capture": true
+        }));
+        store
+            .raw_connection()
+            .execute(
+                "INSERT INTO workspaces (id,name,timezone,revision,policy_revision,json,updated_at)
+             VALUES ('ws','Existing','Europe/Paris',12,7,?1,'2026-01-01T00:00:00Z')",
+                [&row],
+            )
+            .unwrap();
+        let history = serde_json::json!({"route": "cloud_assisted", "provider": "legacy-provider"});
+        store
+            .raw_connection()
+            .execute(
+                "INSERT INTO runs (id,workspace_id,state,intent,input_json,checkpoint_json,
+               output_json,created_at,updated_at) VALUES
+               ('run_old','ws','succeeded','decompose','{}',?1,?1,
+                '2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",
+                [history.to_string()],
+            )
+            .unwrap();
+        store
+            .append_run_step("run_old", "legacy", &history)
+            .unwrap();
+        let row_json = |store: &SqliteStore| -> String {
+            store
+                .raw_connection()
+                .query_row("SELECT json FROM workspaces WHERE id='ws'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap()
+        };
+        let mut loaded = store.get_or_create_default("ws", "unused").unwrap();
+        assert_eq!(loaded.workspace.id, "ws");
+        assert_eq!(loaded.workspace.name, "Existing");
+        assert_eq!(loaded.workspace.settings.timezone, "Europe/Paris");
+        assert_eq!(loaded.workspace.revision, 12);
+        assert_eq!(loaded.workspace.policy_revision, 7);
+        assert_eq!(loaded.workspace.policy, PrivacyPolicy::default());
+        assert_eq!(row_json(&store), row, "read must not change persisted row");
+        assert!(
+            store
+                .save(
+                    &loaded,
+                    SaveOptions {
+                        expected_revision: 11,
+                        bump_revision: true
+                    },
+                    None,
+                    &[],
+                    &[],
+                    &[],
+                )
+                .is_err()
+        );
+        assert_eq!(row_json(&store), row, "failed save must not normalize row");
+        loaded.workspace.revision += 1;
+        store
+            .save(
+                &loaded,
+                SaveOptions {
+                    expected_revision: 12,
+                    bump_revision: true,
+                },
+                None,
+                &[],
+                &[],
+                &[],
+            )
+            .unwrap();
+        drop(store);
+
+        let mut store = SqliteStore::open(&path).unwrap();
+        let current: Workspace = serde_json::from_str(&row_json(&store)).unwrap();
+        assert_eq!(current, loaded.workspace);
+        assert_eq!(store.load_world("ws").unwrap().unwrap().workspace, current);
+        let run = store.get_run("run_old").unwrap().unwrap();
+        assert_eq!(run.checkpoint.as_ref(), Some(&history));
+        assert_eq!(run.output.as_ref(), Some(&history));
+        let step_json: String = store
+            .raw_connection()
+            .query_row(
+                "SELECT payload_json FROM run_steps WHERE run_id='run_old'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&step_json).unwrap(), history);
+    }
+
+    #[test]
+    fn rejects_malformed_or_mixed_legacy_policies_without_rewriting_data() {
+        use serde_json::json;
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = SqliteStore::open(dir.path().join("invalid.sqlite3")).unwrap();
+        let old = json!({
+            "model_route": "local_only",
+            "allowed_cloud_providers": [],
+            "diagnostic_capture": false
+        });
+        let good = legacy_world_row(old.clone());
+        assert_eq!(
+            read_stored_workspace(&good).unwrap().policy,
+            PrivacyPolicy::default()
+        );
+        let mut rows = vec![legacy_world_row(json!(["local_only", [], false]))];
+        for (key, value) in [
+            ("model_route", json!("unknown")),
+            ("allowed_cloud_providers", json!([42])),
+            ("diagnostic_capture", json!("true")),
+            (
+                "model_access",
+                json!({"goals":true,"projects":true,"captures":true}),
+            ),
+            ("unexpected", json!(true)),
+        ] {
+            let mut invalid = old.clone();
+            invalid[key] = value;
+            rows.push(legacy_world_row(invalid));
+        }
+        let mut missing = old;
+        missing.as_object_mut().unwrap().remove("model_route");
+        rows.push(legacy_world_row(missing));
+        rows.push(good.replacen(
+            "\"model_route\":\"local_only\"",
+            "\"model_route\":\"cloud_assisted\",\"model_route\":\"local_only\"",
+            1,
+        ));
+        for row in rows {
+            store.raw_connection().execute(
+                "INSERT OR REPLACE INTO workspaces (id,name,timezone,revision,policy_revision,json,updated_at)
+                 VALUES ('ws','Existing','Europe/Paris',12,7,?1,'2026-01-01T00:00:00Z')",
+                [&row],
+            ).unwrap();
+            let err = store.get_or_create_default("ws", "unused").err().unwrap();
+            assert_eq!(err.code, ErrorCode::StorageFailure);
+            let untouched: String = store
+                .raw_connection()
+                .query_row("SELECT json FROM workspaces WHERE id='ws'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(untouched, row);
+        }
     }
 
     #[test]
