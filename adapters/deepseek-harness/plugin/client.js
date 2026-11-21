@@ -175,17 +175,19 @@ window.__ModuleLoader__.load({
         return bridgeJson(pathname, options, true)
       }
       if (!response.ok || !body?.ok) {
-        const error = new Error(body?.error?.message ?? `Zodo 请求失败 (${response.status})`)
-        error.code = body?.error?.code ?? `HTTP_${response.status}`
+        const failure = body?.error ?? body?.result?.error
+        const error = new Error(failure?.message ?? `Zodo 请求失败 (${response.status})`)
+        error.code = failure?.code ?? `HTTP_${response.status}`
+        error.requestId = body?.request_id ?? body?.result?.request_id
         throw error
       }
       return body.result ?? body
     }
 
-    async function startRun(intent, input) {
+    async function startRun(intent, input, idempotencyKey = newId('run')) {
       return bridgeJson('/runs', {
         method: 'POST',
-        body: JSON.stringify({ intent, input, idempotency_key: newId('run') }),
+        body: JSON.stringify({ intent, input, idempotency_key: idempotencyKey }),
       })
     }
 
@@ -679,7 +681,7 @@ window.__ModuleLoader__.load({
       }, true)
     }
 
-    function Modal({ title, subtitle, children, footer, onClose, wide, restoreFocus }) {
+    function Modal({ title, subtitle, children, footer, onClose, wide, restoreFocus, className = '' }) {
       const ref = useRef(null)
       const restoreTarget = useRef(lastPointerButton.current ?? null)
       useEffect(() => {
@@ -720,7 +722,7 @@ window.__ModuleLoader__.load({
         if (event.target === event.currentTarget) onClose()
       } },
       h('section', {
-        className: `zw-modal ${wide ? 'zw-modal-wide' : ''}`,
+        className: `zw-modal ${wide ? 'zw-modal-wide' : ''} ${className}`,
         role: 'dialog',
         'aria-modal': 'true',
         'aria-label': title,
@@ -1253,7 +1255,7 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function InboxConvert({ entry, snapshot, onClose, send, busy }) {
+    function InboxConvert({ entry, clarifyContext, snapshot, onClose, send, busy, setModal }) {
       const [title, setTitle] = useState(entry.text.slice(0, 80))
       const [estimate, setEstimate] = useState(30)
       const [makeGoal, setMakeGoal] = useState(false)
@@ -1261,6 +1263,13 @@ window.__ModuleLoader__.load({
       const [makeProject, setMakeProject] = useState(false)
       const [projectTitle, setProjectTitle] = useState('')
       const [error, setError] = useState('')
+      const summary = clarifyContext?.summary ?? null
+      const confirmed = Array.isArray(summary?.confirmed) ? summary.confirmed : []
+      const pending = Array.isArray(summary?.pending) ? summary.pending : []
+      const undecided = Array.isArray(summary?.undecided) ? summary.undecided : []
+      const hasSummary = confirmed.length > 0 || pending.length > 0 || undecided.length > 0
+      const hasMissing = pending.length > 0 || undecided.length > 0
+      const kindLabel = ({ task: '任务', note: '笔记', goal: '目标', keep: '保持原样' })[clarifyContext?.suggestedKind] ?? null
       const submit = async () => {
         setError('')
         const tasks = title.trim() ? [{
@@ -1283,10 +1292,36 @@ window.__ModuleLoader__.load({
       }
       return h(Modal, { title: '处理收集内容', subtitle: '原文保留，明确提交后才生成正式工作对象。', onClose, wide: true,
         footer: h(React.Fragment, null,
+          setModal ? h(Button, { onClick: () => setModal({ type: 'inbox-detail', entry }), testid: 'convert-back-to-clarify' }, '返回继续澄清') : null,
           h(Button, { onClick: onClose }, COPY.cancel),
           h(Button, { tone: 'primary', onClick: submit, disabled: busy }, '提交转换')) },
         error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
         h('div', { className: 'zw-quote' }, entry.text),
+        hasSummary ? h('div', { className: 'zw-clarify-ref', 'data-testid': 'convert-clarify-summary' },
+          h('div', { className: 'zw-clarify-ref-head' },
+            h('strong', null, '澄清摘要（只供参考，不擅填未确认项）'),
+            kindLabel ? h(Badge, { tone: 'accent' }, '建议类型：' + kindLabel) : null,
+          ),
+          hasMissing ? h('p', { className: 'zw-fineprint' }, '当前仍有待补充或明确待定项；可带缺项直接转换，也可返回继续澄清。') : null,
+          confirmed.length ? h('div', { className: 'zw-clarify-ref-group' },
+            h('span', { className: 'zw-badge zw-badge-accent' }, '已明确 ' + confirmed.length),
+            h('ul', { className: 'zw-clarify-ref-list' },
+              confirmed.map((item, idx) => h('li', { key: idx }, item.topic + '：' + item.value)),
+            ),
+          ) : null,
+          pending.length ? h('div', { className: 'zw-clarify-ref-group' },
+            h('span', { className: 'zw-badge zw-badge-warn' }, '待补充 ' + pending.length),
+            h('ul', { className: 'zw-clarify-ref-list' },
+              pending.map((item, idx) => h('li', { key: idx }, item)),
+            ),
+          ) : null,
+          undecided.length ? h('div', { className: 'zw-clarify-ref-group' },
+            h('span', { className: 'zw-badge' }, '明确待定 ' + undecided.length),
+            h('ul', { className: 'zw-clarify-ref-list' },
+              undecided.map((item, idx) => h('li', { key: idx }, item)),
+            ),
+          ) : null,
+        ) : null,
         h(Field, { label: '任务标题', wide: true }, h('input', { value: title, autoFocus: true,
           onChange: event => setTitle(event.target.value) })),
         h(Field, { label: '预计分钟' }, h('input', { type: 'number', min: 1, value: estimate,
@@ -2323,7 +2358,7 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function PlanModal({ proposal, plan, snapshotRevision, onClose, onApprove, busy, error, grant, moveUncertain, onEditMove, onUncertainProposal }) {
+    function PlanModal({ proposal, plan, snapshotRevision, onClose, onApprove, busy, error, grant, moveUncertain, onEditMove, onUncertainProposal, returnLabel }) {
       const [localError, setLocalError] = useState('')
       const [blocked, setBlocked] = useState('')
       const attempt = useRef({ pending: false, outcome: '' })
@@ -2374,7 +2409,7 @@ window.__ModuleLoader__.load({
         onClose: closeIfIdle,
         wide: true,
         footer: h(React.Fragment, null,
-          h(Button, { onClick: closeIfIdle, disabled: busy || attempt.current.pending }, blocked || settlementLocked ? '关闭并核实状态' : '放弃预览'),
+          h(Button, { onClick: closeIfIdle, disabled: busy || attempt.current.pending }, blocked || settlementLocked ? '关闭并核实状态' : (returnLabel ?? '放弃预览')),
           h(Button, {
             tone: 'primary',
             onClick: approveOnce,
@@ -4576,17 +4611,9 @@ window.__ModuleLoader__.load({
         await refresh()
       }
 
-      const startAiDecompose = async goal => {
+      const startAiDecompose = goal => {
         setError('')
-        try {
-          const horizon = goal.target_due ? `${goal.target_due}T23:59:59Z` : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-          await startRun('goal.decompose', { goal_id: goal.id, horizon_end: horizon })
-          setView('runs')
-          setNotice('AI 拆解已入队；模型只生成提案，需要你检查后批准。')
-          await loadRuns()
-        } catch (failure) {
-          setError(failure.message)
-        }
+        setModal({ type: 'goal-conversation', goal })
       }
 
       const cancelAiRun = async id => {
@@ -5265,8 +5292,20 @@ window.__ModuleLoader__.load({
           case 'time': return h(TimeEditor, { day: modal.day, task: modal.task ?? null, tasks: modal.tasks ?? snapshot.tasks, snapshot, onClose: closeModal, send, busy })
           case 'goal': return h(GoalEditor, { goal: modal.goal ?? null, onClose: closeModal, send, busy })
           case 'project': return h(ProjectEditor, { project: modal.project ?? null, goals: snapshot.goals, goalId: modal.goalId, onClose: closeModal, send, busy })
-          case 'inbox-detail': return h(InboxDetail, { key: modal.entry.id, entry: modal.entry, onClose: closeModal, send, busy, setModal })
-          case 'inbox-convert': return h(InboxConvert, { entry: modal.entry, snapshot, onClose: closeModal, send, busy })
+          case 'inbox-detail': return h(AiConversation, { key: 'inbox:' + modal.entry.id,
+            entry: snapshot.inbox.find(entry => entry.id === modal.entry.id) ?? modal.entry, onClose: closeModal, send, busy, setModal })
+          case 'goal-conversation': return h(AiConversation, { key: 'goal:' + modal.goal.id,
+            goal: snapshot.goals.find(goal => goal.id === modal.goal.id) ?? modal.goal, onClose: closeModal, busy, setModal,
+            proposals: snapshot.proposals ?? [],
+            onReview: async proposalId => {
+              const result = await query('workspace.snapshot', {})
+              setSnapshot(result.data)
+              const proposal = (result.data.proposals ?? []).find(row => row.id === proposalId && row.status === 'validated')
+              if (!proposal) throw new Error('此候选已处理或不可用，请重新生成预览。')
+              setModal(current => current === modal ? { type: 'plan', proposal, plan: null, grant: null, resumeConversation: modal } : current)
+            },
+          })
+          case 'inbox-convert': return h(InboxConvert, { entry: modal.entry, clarifyContext: modal.clarifyContext ?? null, snapshot, onClose: closeModal, send, busy, setModal })
           case 'progress': return h(ProgressEditor, { task: modal.task, onClose: closeModal, send, busy })
           case 'dependency': return h(DependencyEditor, { task: modal.task, snapshot, onClose: closeModal, send, busy })
           case 'reminder': return h(ReminderEditor, { task: modal.task, onClose: closeModal, send, busy })
@@ -5290,7 +5329,8 @@ window.__ModuleLoader__.load({
             proposal: modal.proposal,
             plan: modal.plan,
             snapshotRevision: snapshot.workspace.revision,
-            onClose: closeModal,
+            onClose: modal.resumeConversation ? () => setModal(modal.resumeConversation) : closeModal,
+            returnLabel: modal.resumeConversation ? '返回继续讨论' : undefined,
             onApprove: approvePlan,
             busy,
             error,
@@ -5365,129 +5405,434 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function InboxDetail({ entry, onClose, send, busy, setModal }) {
+    function AiConversation({ entry, goal, onClose, send, busy, setModal, proposals = [], onReview }) {
+      const goalMode = Boolean(goal)
+      const subjectId = goal?.id ?? entry.id
+      const readOnly = !goalMode && ['processed', 'dismissed'].includes(entry.status)
+      const intent = goalMode ? 'goal.decompose' : 'capture.clarify'
+      const storageId = (goalMode ? 'goal:' : '') + subjectId
+      const draftKey = 'zodo.clarify.draft.v1:' + storageId
+      const pendingFailKey = 'zodo.clarify.pending.v1:' + storageId
+      const readStored = key => {
+        try { return window.localStorage.getItem(key) ?? '' } catch { return '' }
+      }
+      const writeStored = (key, value) => {
+        try {
+          if (value) window.localStorage.setItem(key, value)
+          else window.localStorage.removeItem(key)
+        } catch { /* ignore storage errors */ }
+      }
       const [question, setQuestion] = useState('')
       const [answer, setAnswer] = useState('')
+      const [manualOpen, setManualOpen] = useState(false)
+      const [manualError, setManualError] = useState('')
+      const [loadingHistory, setLoadingHistory] = useState(true)
+      const [messages, setMessages] = useState([])
+      const [summary, setSummary] = useState(null)
+      const [suggestedKind, setSuggestedKind] = useState(null)
+      const [quickReplies, setQuickReplies] = useState([])
+      const [draft, setDraftState] = useState(() => readStored(draftKey))
+      const [summaryOpen, setSummaryOpen] = useState(false)
+      const [highlightedIndex, setHighlightedIndex] = useState(-1)
       const [clarifying, setClarifying] = useState(false)
       const [clarifyRun, setClarifyRun] = useState(null)
-      const [clarifyQuestions, setClarifyQuestions] = useState([])
       const [clarifyError, setClarifyError] = useState('')
+      const [lastRequestMessages, setLastRequestMessages] = useState(null)
+      const [lastStage, setLastStage] = useState('discuss')
+      const [previewId, setPreviewId] = useState(null)
+      const [historyError, setHistoryError] = useState('')
+      const [historyAttempt, setHistoryAttempt] = useState(0)
+      const inFlight = useRef(false)
+      const requestKey = useRef(null)
       const alive = useRef(true)
-      useEffect(() => () => { alive.current = false }, [])
+      const scrollRef = useRef(null)
+      const inputRef = useRef(null)
+      const msgRefs = useRef({})
+      useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
+      const setDraft = value => {
+        setDraftState(value)
+        writeStored(draftKey, value)
+      }
       const clarifyKindLabel = kind => ({
         task: '任务', note: '笔记', goal: '目标', keep: '保持原样',
       })[kind] ?? kind
-      const pollClarify = async runId => {
-        for (let attempt = 0; attempt < 90; attempt += 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000))
-          if (!alive.current) return
-          try {
-            const run = await getRun(runId)
-            if (!alive.current) return
-            setClarifyRun(run)
-            if (run.state === 'succeeded') {
-              setClarifyQuestions(run.output?.questions ?? run.checkpoint?.questions ?? [])
-              setClarifying(false)
-              return
-            }
-            if (['failed', 'cancelled', 'interrupted'].includes(run.state)) {
-              setClarifyError(run.error?.message ?? `AI 运行 ${run.state}`)
-              setClarifying(false)
-              return
-            }
-          } catch (failure) {
-            if (!alive.current) return
-            setClarifyError(failure.message)
-            setClarifying(false)
-            return
-          }
+      const scrollToBottom = () => {
+        setTimeout(() => {
+          if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+        }, 0)
+      }
+      const applySucceededRun = (run, baseMessages) => {
+        const out = run.output ?? run.checkpoint ?? {}
+        const preview = goalMode && run.input?.conversation_stage === 'preview'
+        if (preview) {
+          if (typeof out.proposal_id !== 'string') throw new Error('Core 未返回可审阅的提案。')
+          setPreviewId(out.proposal_id)
+          setMessages(baseMessages)
+        } else {
+          const questions = Array.isArray(out.questions) ? out.questions : []
+          const reply = out.reply?.trim() || questions.map((q, i) => (i + 1) + '. ' + q).join('\n') || '暂无必须追问的事项，可以继续补充或预览。'
+          setMessages([...baseMessages, { role: 'assistant', content: reply, runId: run.id }])
+          setSummary(out.summary ?? { pending: questions })
+          setSuggestedKind(out.suggested_kind ?? null)
+          setQuickReplies(Array.isArray(out.quick_replies) ? out.quick_replies : [])
         }
-        if (alive.current) {
-          setClarifyError('AI 澄清运行超过 90 秒仍未结束；可在 AI 运行页继续查看。')
-          setClarifying(false)
+        setClarifyError('')
+        setLastRequestMessages(null)
+        requestKey.current = null
+        writeStored(pendingFailKey, '')
+        scrollToBottom()
+      }
+      const wireMessages = rows => rows.map(({ role, content }) => ({ role, content }))
+      const pendingRequest = () => {
+        try { return JSON.parse(readStored(pendingFailKey) || 'null') } catch { return null }
+      }
+      const isActive = run => ['queued', 'running', 'waiting_input'].includes(run?.state)
+      const settleRun = (run, base) => {
+        if (run.state === 'succeeded') applySucceededRun(run, base)
+        else {
+          setLastStage(run.input?.conversation_stage ?? 'discuss')
+          setLastRequestMessages(base)
+          setClarifyError(run.state === 'cancelled' ? '本轮已停止，可以重试。' : run.error?.message ?? '本轮未完成，可以重试。')
+          requestKey.current = null
+          writeStored(pendingFailKey, '')
         }
       }
-      const startClarify = async () => {
+      const pollClarify = async (runId, base, isCurrent = () => alive.current) => {
+        try {
+          for (let attempt = 0; attempt < 90 && isCurrent(); attempt += 1) {
+            const run = await getRun(runId)
+            if (!isCurrent()) return
+            setClarifyRun(run)
+            if (!isActive(run)) { settleRun(run, base); return }
+            await new Promise(resolve => setTimeout(resolve, 1000))
+          }
+          if (isCurrent()) setHistoryError('这轮仍在运行。检查进度后再继续，不会重复启动。')
+        } catch {
+          if (isCurrent()) setHistoryError('暂时无法确认运行状态。请检查进度，不要重复发送。')
+        } finally {
+          if (isCurrent()) { inFlight.current = false; setClarifying(false) }
+        }
+      }
+      useEffect(() => {
+        let cancelled = false
+        const isCurrent = () => !cancelled && alive.current
+        setLoadingHistory(true)
+        setHistoryError('')
+        ;(async () => {
+          try {
+            const allRuns = await listRuns()
+            if (!isCurrent()) return
+            const linked = allRuns.filter(run => run.intent === intent && (goalMode
+              ? run.input?.goal_id === subjectId && ['discuss', 'preview'].includes(run.input?.conversation_stage)
+              : run.input?.inbox_id === subjectId))
+              .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+            const discussion = linked.find(run => run.state === 'succeeded' && run.input?.conversation_stage !== 'preview')
+            if (discussion?.output?.summary) setSummary(discussion.output.summary)
+            if (discussion?.output?.suggested_kind) setSuggestedKind(discussion.output.suggested_kind)
+            const latest = linked[0]
+            const pending = pendingRequest()
+            if (latest) {
+              setClarifyRun(latest)
+              const base = Array.isArray(latest.input?.messages) ? latest.input.messages : []
+              setMessages(base)
+              if (isActive(latest)) {
+                inFlight.current = true
+                setClarifying(true)
+                void pollClarify(latest.id, base, isCurrent)
+              } else if (pending && pending.afterRunId === latest.id && Array.isArray(pending.messages)) {
+                setMessages(pending.messages)
+                setLastRequestMessages(pending.messages)
+                setLastStage(pending.stage ?? 'discuss')
+                requestKey.current = pending.key ? pending : null
+                setClarifyError('上一轮发送结果未知；重试会复用同一请求。')
+              } else settleRun(latest, base)
+            } else if (pending && Array.isArray(pending.messages)) {
+              setMessages(pending.messages)
+              setLastRequestMessages(pending.messages)
+              setLastStage(pending.stage ?? 'discuss')
+              requestKey.current = pending.key ? pending : null
+              setClarifyError('上一轮发送未完成，可以重试。')
+            }
+          } catch {
+            if (isCurrent()) setHistoryError('暂时无法读取对话。请检查进度后再发送。')
+          } finally {
+            if (isCurrent()) setLoadingHistory(false)
+          }
+        })()
+        return () => { cancelled = true }
+      }, [subjectId, historyAttempt])
+      const dispatchClarify = async (nextMessages, stage = 'discuss', retry = false) => {
+        if (inFlight.current || busy || readOnly || loadingHistory || historyError) return
+        const wire = wireMessages(nextMessages)
+        if (wire.length > 40 || wire.some(msg => [...msg.content].length > 2000) || wire.reduce((n, msg) => n + [...msg.content].length, 0) > 24000) {
+          setClarifyError('对话已达到长度上限，未发送新内容。可审阅当前结果，或缩短本次回复。')
+          return
+        }
+        const input = goalMode
+          ? { goal_id: subjectId, conversation_stage: stage, messages: wire, ...(goal.target_due ? { horizon_end: goal.target_due } : {}) }
+          : { text: entry.text, inbox_id: subjectId, messages: wire }
+        const pending = retry && requestKey.current ? requestKey.current : { key: newId('run'), afterRunId: clarifyRun?.id ?? null, stage, messages: wire, input }
+        inFlight.current = true
+        requestKey.current = pending
+        writeStored(pendingFailKey, JSON.stringify(pending))
         setClarifying(true)
         setClarifyError('')
-        setClarifyQuestions([])
-        setClarifyRun(null)
+        setPreviewId(null)
+        setQuickReplies([])
+        setLastStage(stage)
+        setLastRequestMessages(nextMessages)
+        setMessages(nextMessages)
+        if (stage === 'discuss' && !retry && nextMessages.at(-1)?.role === 'user') setDraft('')
+        scrollToBottom()
         try {
-          const result = await startRun('capture.clarify', { text: entry.text })
+          const result = await startRun(intent, pending.input ?? input, pending.key)
+          if (!alive.current) return
           const run = result?.run ?? result
-          if (!alive.current) return
+          if (!run?.id) throw new Error('未收到运行编号')
           setClarifyRun(run)
-          await pollClarify(run.id)
+          writeStored(pendingFailKey, '')
+          await pollClarify(run.id, nextMessages)
         } catch (failure) {
-          if (!alive.current) return
-          setClarifyError(failure.message)
-          setClarifying(false)
+          if (alive.current) {
+            if (failure.code && ['VALIDATION_FAILED', 'PERMISSION_DENIED', 'UNSUPPORTED_OPERATION'].includes(failure.code)) {
+              requestKey.current = null
+              writeStored(pendingFailKey, '')
+            }
+            setClarifyError(failure.message)
+          }
+        } finally {
+          if (alive.current) { inFlight.current = false; setClarifying(false) }
         }
       }
+      const startClarify = () => dispatchClarify(messages)
+      const sendReply = () => {
+        const text = draft.trim()
+        if (!text || requestKey.current) return
+        void dispatchClarify([...messages, { role: 'user', content: text }])
+      }
+      const retryClarify = () => dispatchClarify(lastRequestMessages ?? messages, lastStage, true)
+      const stopClarify = async () => {
+        if (clarifying && isActive(clarifyRun)) {
+          try { await cancelRun(clarifyRun.id) } catch { /* polling resolves the outcome */ }
+        }
+      }
+      const jumpToQuote = quote => {
+        if (!quote) return
+        const needle = String(quote).trim()
+        const idx = messages.findIndex((m, i) => m.role === 'user' && m.content.includes(needle))
+        const targetIdx = idx >= 0 ? idx : messages.map((m, i) => (m.role === 'user' ? i : -1)).filter(i => i >= 0).pop()
+        if (targetIdx == null || targetIdx < 0) return
+        setHighlightedIndex(targetIdx)
+        const node = msgRefs.current[targetIdx]
+        if (node && typeof node.scrollIntoView === 'function') node.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setTimeout(() => { if (alive.current) setHighlightedIndex(curr => (curr === targetIdx ? -1 : curr)) }, 2400)
+      }
       const clarify = async () => {
+        if (!question.trim()) return setManualError('请写下要澄清的问题')
+        setManualError('')
         try {
-          await send('capture.clarify', { id: entry.id, question, answer: answer || null })
+          await send('capture.clarify', { id: entry.id, question: question.trim(), answer: answer.trim() || null })
           setQuestion('')
           setAnswer('')
-        } catch {
-          // The workbench error banner owns the failure.
+          setManualOpen(false)
+        } catch (failure) {
+          setManualError(failure.message)
         }
       }
       const dismiss = async () => {
         await send('capture.dismiss', { id: entry.id, reason: '用户明确忽略' })
         onClose()
       }
-      const clarifyOutput = clarifyRun?.output ?? null
-      return h(Modal, { title: '收集详情', subtitle: `来源 · ${entry.source?.kind ?? 'user'} · ${dateTimeFor(entry.created_at)}`, onClose, wide: true,
+      const confirmed = Array.isArray(summary?.confirmed) ? summary.confirmed : []
+      const pending = Array.isArray(summary?.pending) ? summary.pending : []
+      const undecided = Array.isArray(summary?.undecided) ? summary.undecided : []
+      const hasSummary = confirmed.length > 0 || pending.length > 0 || undecided.length > 0
+      const sectionStatus = clarifying ? { label: '等待模型', tone: 'warn' }
+        : clarifyError ? { label: '回复失败', tone: 'danger' }
+          : messages.length > 0 ? { label: '进行中', tone: 'accent' }
+            : { label: '尚未开始', tone: 'neutral' }
+      const statusLabel = goalMode ? '目标' : (inboxStatusLabels[entry.status] ?? entry.status)
+      const showCompose = !readOnly && (messages.length > 0 || clarifying || Boolean(clarifyError))
+      const canAct = !busy && !clarifying && !loadingHistory && !historyError && !requestKey.current
+      const knownProposal = proposals.find(proposal => proposal.id === previewId)
+      const canReview = previewId && (!knownProposal || knownProposal.status === 'validated')
+      return h(Modal, { title: goalMode ? 'AI 目标拆解' : '收集详情',
+        subtitle: goalMode ? '先讨论目标，再审阅任务候选。' : '收集箱 · ' + dateTimeFor(entry.created_at), onClose, wide: true, className: 'zw-modal-clarify',
         footer: h(React.Fragment, null,
-          h(Button, { onClick: onClose }, COPY.close),
-          h(Button, { tone: 'danger', onClick: dismiss, disabled: busy || clarifying }, '忽略'),
-          h(Button, { tone: 'primary', onClick: () => setModal({ type: 'inbox-convert', entry }), disabled: busy || clarifying }, '转换…')) },
-        h('div', { className: 'zw-quote' }, entry.text),
-        h('div', { className: 'zw-card-meta' }, h(Badge, { tone: entry.status === 'needs_clarification' ? 'warn' : 'neutral' }, entry.status)),
-        h(Section, { title: 'AI 澄清（只提问，不写事实）' },
-          h('p', { className: 'zw-fineprint' }, '运行意图 capture.clarify：把这段原文发给 Core 模型网关，返回需要澄清的问题。它不创建任务/目标/笔记，不产生提案，也不自动批准；转换仍需你明确操作。'),
-          clarifyError ? h('div', { className: 'zw-alert zw-alert-error' }, clarifyError) : null,
-          clarifyRun ? h('div', { className: 'zw-card-meta' },
-            h('span', { className: 'zw-mono' }, clarifyRun.id),
-            h(Badge, { tone: clarifyRun.state === 'succeeded' ? 'accent' : clarifyRun.state === 'failed' ? 'danger' : 'neutral' }, clarifyRun.state),
-            clarifyOutput?.provider ? h('span', null, `${clarifyOutput.provider} · ${clarifyOutput.route}`) : null,
-            clarifyOutput?.facts_written === false ? h(Badge, { tone: 'warn' }, 'facts_written: false') : null,
+          !goalMode && !readOnly ? h('div', { className: 'zw-clarify-foot-left' },
+            h('button', {
+              type: 'button',
+              className: 'zw-link',
+              onClick: () => setManualOpen(prev => !prev),
+              'data-testid': 'inbox-manual-toggle',
+            }, manualOpen ? '收起人工补充' : '人工补充…'),
           ) : null,
-          clarifying ? h('div', { className: 'zw-ai-progress' }, h('span', { className: 'zw-spinner' }), h('span', null, '模型正在生成澄清问题…'), null) : null,
-          clarifyQuestions.length ? h('div', { className: 'zw-list' },
-            clarifyQuestions.map((text, index) => h('div', { className: 'zw-list-row', key: index },
-              h('span', null, `${index + 1}. ${text}`),
-              h(Badge, { tone: 'neutral' }, '未回答'),
+          h('div', { className: 'zw-clarify-foot-right' },
+            !goalMode && !readOnly ? h(Button, { tone: 'danger', onClick: dismiss, disabled: busy || clarifying }, '忽略') : null,
+            h(Button, { onClick: onClose }, COPY.close),
+            goalMode ? h(Button, { tone: 'primary', disabled: !canAct || !messages.length || Boolean(draft.trim()),
+              testid: 'goal-conversation-preview', onClick: async () => {
+                if (!canReview) { void dispatchClarify(messages, 'preview'); return }
+                try { await onReview(previewId) } catch (failure) { setPreviewId(null); setClarifyError(failure.message) }
+              },
+            }, canReview ? '审阅任务候选' : '生成任务预览') : !readOnly ? h(Button, {
+              tone: 'primary',
+              onClick: () => setModal({ type: 'inbox-convert', entry, clarifyContext: { summary, suggestedKind } }),
+              disabled: busy || clarifying,
+              testid: 'inbox-convert-open',
+            }, '转换…') : null,
+          )) },
+        h('div', { className: 'zw-clarify-top' },
+          h('div', { className: 'zw-quote zw-clarify-original' },
+            h('div', { className: 'zw-clarify-original-head' },
+              h('span', { className: 'zw-fineprint', style: { margin: 0 } }, goalMode ? '拆解对象' : '收集原文'),
+              h(Badge, { tone: entry?.status === 'needs_clarification' ? 'warn' : 'neutral' }, statusLabel),
+            ),
+            h('strong', null, goalMode ? goal.title : entry.text),
+          ),
+          h('div', { className: 'zw-clarify-bar' },
+            h('div', { className: 'zw-clarify-bar-title' },
+              h('strong', null, goalMode ? '拆解对话' : 'AI 澄清'),
+              h(Badge, { tone: sectionStatus.tone, 'data-testid': 'clarify-status-badge' }, sectionStatus.label),
+              clarifyRun?.output?.facts_written === false ? h(Badge, { tone: 'warn' }, '只读 · 不写事实') : null,
+            ),
+            hasSummary ? h('button', {
+              type: 'button',
+              className: 'zw-btn zw-btn-compact',
+              onClick: () => setSummaryOpen(prev => !prev),
+              'aria-expanded': summaryOpen,
+              'data-testid': 'clarify-summary-toggle',
+            }, (summaryOpen ? '收起摘要' : '展开摘要') + '（已明确 ' + confirmed.length + ' · 待补充 ' + pending.length + (undecided.length ? ' · 待定 ' + undecided.length : '') + '）') : null,
+          ),
+          summaryOpen && hasSummary ? h('div', { className: 'zw-clarify-summary', 'data-testid': 'clarify-summary-panel' },
+            !goalMode && suggestedKind ? h('p', { className: 'zw-fineprint', style: { marginTop: 0 } }, '模型建议类型：' + clarifyKindLabel(suggestedKind) + '（只供参考，不自动转换）') : null,
+            confirmed.length ? h('div', { className: 'zw-clarify-summary-group' },
+              h('span', { className: 'zw-badge zw-badge-accent' }, '已明确'),
+              h('div', { className: 'zw-clarify-summary-items' },
+                confirmed.map((item, idx) => h('div', { className: 'zw-clarify-summary-item', key: idx },
+                  h('span', null, h('strong', null, item.topic + '：'), item.value),
+                  item.source_quote ? h('button', {
+                    type: 'button',
+                    className: 'zw-link',
+                    onClick: () => jumpToQuote(item.source_quote),
+                    'data-testid': 'clarify-quote-jump-' + idx,
+                  }, '回看原话') : null,
+                )),
+              ),
+            ) : null,
+            pending.length ? h('div', { className: 'zw-clarify-summary-group' },
+              h('span', { className: 'zw-badge zw-badge-warn' }, '待补充'),
+              h('ul', { className: 'zw-clarify-ref-list' },
+                pending.map((item, idx) => h('li', { key: idx }, item)),
+              ),
+            ) : null,
+            undecided.length ? h('div', { className: 'zw-clarify-summary-group' },
+              h('span', { className: 'zw-badge' }, '明确待定'),
+              h('ul', { className: 'zw-clarify-ref-list' },
+                undecided.map((item, idx) => h('li', { key: idx }, item)),
+              ),
+            ) : null,
+          ) : null,
+        ),
+        h('div', { className: 'zw-clarify-scroll', ref: scrollRef, tabIndex: 0, 'aria-label': '澄清对话内容', 'data-testid': 'clarify-scroll' },
+          loadingHistory && !messages.length ? h('div', { className: 'zw-ai-progress' }, h('span', { className: 'zw-spinner' }), h('span', null, '正在读取历史澄清记录…')) : null,
+          historyError ? h('div', { className: 'zw-alert zw-alert-warn', role: 'alert' }, historyError,
+            h(Button, { onClick: () => setHistoryAttempt(value => value + 1), disabled: loadingHistory }, '检查进度')) : null,
+          readOnly && !messages.length && !loadingHistory ? h(Empty, null, '这是处理记录，没有已保存的 AI 对话。') : null,
+          !readOnly && !historyError && !loadingHistory && !messages.length && !clarifying && !clarifyError ? h('div', { className: 'zw-clarify-empty' },
+            h('h3', null, '先聊清楚，再决定怎么处理'),
+            h('p', { className: 'zw-muted' }, 'AI 会先问影响执行的问题。你可以一次回答多项，稍后回来接着聊。'),
+            h(Button, {
+              tone: 'primary',
+              onClick: startClarify,
+              disabled: !canAct,
+              testid: goalMode ? 'goal-conversation-start' : 'inbox-ai-clarify',
+            }, goalMode ? '开始讨论' : '开始澄清'),
+            h('p', { className: 'zw-fineprint' }, goalMode
+              ? '开始后，目标信息和你在这里发送的内容按现有隐私授权交给所选模型；讨论不创建任务。'
+              : '开始后，原文和你在这里发送的内容按现有隐私授权交给所选模型；对话不自动创建任务。'),
+          ) : null,
+          messages.length ? h('div', { className: 'zw-clarify-thread', 'data-testid': 'clarify-thread' },
+            messages.map((msg, idx) => h('div', {
+              key: idx,
+              ref: el => { msgRefs.current[idx] = el },
+              className: 'zw-clarify-msg ' + (msg.role === 'user' ? 'zw-clarify-msg-user' : 'zw-clarify-msg-ai') + (highlightedIndex === idx ? ' zw-clarify-msg-highlight' : ''),
+              'data-testid': 'clarify-msg-' + msg.role + '-' + idx,
+            },
+              h('div', { className: 'zw-clarify-msg-role' }, msg.role === 'user' ? '我' : 'AI 澄清'),
+              h('div', { className: 'zw-clarify-msg-body' }, msg.content),
             )),
           ) : null,
-          clarifyRun?.state === 'succeeded' && !clarifyQuestions.length
-            ? h('Empty', null, '模型没有返回澄清问题；原文可以继续手工处理。') : null,
-          clarifyOutput?.suggested_kind
-            ? h('p', { className: 'zw-fineprint' }, `模型建议类型：${clarifyKindLabel(clarifyOutput.suggested_kind)}（只是建议，不自动转换）`) : null,
-          clarifyOutput?.assumptions?.length
-            ? h('p', { className: 'zw-fineprint' }, `模型假设 ${clarifyOutput.assumptions.length} 条：${clarifyOutput.assumptions.slice(0, 3).join(' · ')}`) : null,
-          h('div', { className: 'zw-action-row' },
-            h(Button, {
-              onClick: startClarify,
-              disabled: busy || clarifying || entry.status === 'dismissed',
-              testid: 'inbox-ai-clarify',
-            }, clarifying ? '正在澄清…' : 'AI 澄清'),
-            clarifyRun ? h('span', { className: 'zw-fineprint' }, '运行只读；不会写入事实。') : null,
+          clarifying ? h('div', { className: 'zw-ai-progress', 'data-testid': 'clarify-waiting' },
+            h('span', { className: 'zw-spinner' }),
+            h('span', null, messages.length ? '模型正在结合回复整理下一步问题…' : '模型正在生成首批澄清问题…'),
+            h(Button, { onClick: stopClarify, testid: 'inbox-clarify-stop' }, '停止'),
+          ) : null,
+          clarifyError ? h('div', { className: 'zw-alert zw-alert-error zw-clarify-fail', role: 'alert', 'data-testid': 'clarify-error' },
+            h('div', null, h('strong', null, 'AI 回复失败：'), clarifyError),
+            h(Button, { onClick: retryClarify, disabled: busy || clarifying || readOnly || loadingHistory || Boolean(historyError), testid: 'inbox-clarify-retry' }, '重试'),
+          ) : null,
+          entry?.clarifications?.length ? h('div', { className: 'zw-clarify-manual-list' },
+            h('p', { className: 'zw-fineprint', style: { marginBottom: '6px' } }, '已有人工澄清记录（不参与覆盖对话）'),
+            entry.clarifications.map(item => h('div', { className: 'zw-list-row', key: item.id },
+              h('span', null, item.question), h(Badge, { tone: item.answer ? 'accent' : 'warn' }, item.answer ?? '未回答'),
+            )),
+          ) : null,
+          entry?.converted_refs?.length ? h('div', { className: 'zw-clarify-manual-list' },
+            h('p', { className: 'zw-fineprint', style: { marginBottom: '6px' } }, '已转换到'),
+            entry.converted_refs.map(ref => h('div', { className: 'zw-list-row', key: ref.id }, h('span', null, ref.kind + ' · ' + ref.id))),
+          ) : null,
+        ),
+        !readOnly && manualOpen ? h('div', { className: 'zw-clarify-manual-drawer', 'data-testid': 'inbox-manual-panel' },
+          h('div', { className: 'zw-clarify-bar-title', style: { marginBottom: '8px' } },
+            h('strong', null, '人工补充澄清'),
+            h('span', { className: 'zw-fineprint', style: { margin: 0 } }, '直接记录到该收集条目，无需模型'),
           ),
-        ),
-        entry.clarifications?.length ? h(Section, { title: '已有澄清' },
-          entry.clarifications.map(item => h('div', { className: 'zw-list-row', key: item.id },
-            h('span', null, item.question), h(Badge, { tone: item.answer ? 'accent' : 'warn' }, item.answer ?? '未回答'),
-          )),
+          manualError ? h('div', { className: 'zw-alert zw-alert-error' }, manualError) : null,
+          h('div', { className: 'zw-grid2' },
+            h(Field, { label: '问题', wide: true }, h('input', { value: question, onChange: event => setQuestion(event.target.value) })),
+            h(Field, { label: '回答（可稍后）', wide: true }, h('input', { value: answer, onChange: event => setAnswer(event.target.value) })),
+          ),
+          h('div', { className: 'zw-action-row' },
+            h(Button, { tone: 'primary', onClick: clarify, disabled: busy || !question.trim() }, '保存澄清'),
+            h(Button, { onClick: () => setManualOpen(false) }, COPY.cancel),
+          ),
         ) : null,
-        h(Section, { title: '人工补充澄清' },
-          h(Field, { label: '问题', wide: true }, h('input', { value: question, onChange: event => setQuestion(event.target.value) })),
-          h(Field, { label: '回答（可稍后）', wide: true }, h('input', { value: answer, onChange: event => setAnswer(event.target.value) })),
-          h(Button, { onClick: clarify, disabled: busy || !question.trim() }, '保存澄清'),
-        ),
-        entry.converted_refs?.length ? h(Section, { title: '已转换到' },
-          entry.converted_refs.map(ref => h('div', { className: 'zw-list-row', key: ref.id }, h('span', null, `${ref.kind} · ${ref.id}`))),
+        showCompose ? h('div', { className: 'zw-clarify-compose', 'data-testid': 'clarify-compose' },
+          quickReplies.length ? h('div', { className: 'zw-clarify-chips', 'data-testid': 'clarify-quick-replies' },
+            quickReplies.map((chip, idx) => h('button', {
+              key: idx,
+              type: 'button',
+              className: 'zw-clarify-chip',
+              disabled: clarifying,
+              onClick: () => { setDraft(chip); inputRef.current?.focus() },
+              'data-testid': 'clarify-quick-reply-' + idx,
+            }, chip)),
+          ) : null,
+          h('div', { className: 'zw-clarify-input-row' },
+            h('textarea', {
+              ref: inputRef,
+              rows: 2,
+              value: draft,
+              disabled: clarifying || loadingHistory || Boolean(historyError) || Boolean(requestKey.current),
+              placeholder: '输入你的答复、补充版本或更正（快捷回复只填草稿，不会自动发送）…',
+              'aria-label': '澄清回复',
+              'data-testid': 'clarify-input',
+              onChange: event => setDraft(event.target.value),
+              onKeyDown: event => {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
+                  event.preventDefault()
+                  void sendReply()
+                }
+              },
+            }),
+            h(Button, {
+              tone: 'primary',
+              onClick: sendReply,
+              disabled: !canAct || !draft.trim(),
+              testid: 'inbox-clarify-send',
+            }, '发送'),
+          ),
         ) : null,
       )
     }
@@ -5787,7 +6132,51 @@ window.__ModuleLoader__.load({
       .zw-modal-head h2 { margin:0; font-size:18px; font-weight:650; }
       .zw-modal-head p { margin:4px 0 0; color:var(--zw-muted); font-size:12px; }
       .zw-modal-body { padding:8px 20px 18px; max-height:68vh; overflow:auto; }
-      .zw-modal-foot { display:flex; justify-content:flex-end; gap:8px; padding:12px 20px; border-top:1px solid var(--zw-divider); }
+      .zw-modal-foot { display:flex; justify-content:flex-end; gap:8px; padding:12px 20px; border-top:1px solid var(--zw-divider); flex-wrap:wrap; align-items:center; }
+      .zw-modal-clarify { display:flex; flex-direction:column; height:min(740px, 88vh); overflow:hidden; }
+      .zw-modal-clarify .zw-modal-head { flex:none; border-bottom:1px solid #EEF2F1; }
+      .zw-modal-clarify .zw-modal-body { flex:1; min-height:0; max-height:none; display:flex; flex-direction:column; overflow:hidden; padding:0; }
+      .zw-modal-clarify .zw-modal-foot { flex:none; justify-content:space-between; }
+      .zw-clarify-foot-left { display:flex; align-items:center; gap:8px; }
+      .zw-clarify-foot-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
+      .zw-clarify-top { flex:none; padding:12px 20px 0; border-bottom:1px solid var(--zw-divider); background:var(--zw-surface); }
+      .zw-clarify-original { margin-bottom:10px; }
+      .zw-clarify-original-head { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:4px; }
+      .zw-clarify-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0 10px; flex-wrap:wrap; }
+      .zw-clarify-bar-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+      .zw-btn-compact { min-height:30px; padding:0 10px; font-size:12px; }
+      .zw-clarify-summary { margin-bottom:10px; padding:10px 12px; border-radius:10px; border:1px solid var(--zw-divider); background:#F7FAF9; display:grid; gap:8px; max-height:190px; overflow:auto; }
+      .zw-clarify-summary-group { display:grid; gap:4px; }
+      .zw-clarify-summary-items { display:grid; gap:4px; }
+      .zw-clarify-summary-item { display:flex; align-items:baseline; justify-content:space-between; gap:10px; font-size:12.5px; }
+      .zw-clarify-scroll { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:14px 20px; display:flex; flex-direction:column; gap:10px; }
+      .zw-clarify-empty { margin:auto 0; padding:16px 8px; display:grid; gap:10px; justify-items:start; }
+      .zw-clarify-empty h3 { margin:0; font-size:16px; }
+      .zw-clarify-empty p { margin:0; max-width:36em; }
+      .zw-clarify-empty-icon { width:40px; height:40px; border-radius:10px; background:var(--zw-accent-soft); display:grid; place-items:center; font-size:18px; }
+      .zw-clarify-thread { display:flex; flex-direction:column; gap:10px; }
+      .zw-clarify-msg { max-width:86%; padding:10px 12px; border-radius:12px; border:1px solid var(--zw-divider); display:grid; gap:4px; overflow-wrap:anywhere; white-space:pre-wrap; transition:box-shadow .2s ease; }
+      .zw-clarify-msg-ai { align-self:flex-start; background:#F6F9F8; border-top-left-radius:4px; }
+      .zw-clarify-msg-user { align-self:flex-end; background:var(--zw-accent-soft); border-color:#B6D8D2; border-top-right-radius:4px; }
+      .zw-clarify-msg-highlight { outline:2px solid var(--zw-accent); box-shadow:0 0 0 4px rgba(21,126,120,.15); }
+      .zw-clarify-msg-role { font-size:11px; font-weight:600; color:var(--zw-muted); }
+      .zw-clarify-msg-body { font-size:13.5px; line-height:1.55; }
+      .zw-clarify-fail { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin:0; }
+      .zw-clarify-manual-list { margin-top:6px; padding-top:8px; border-top:1px dashed var(--zw-divider); }
+      .zw-clarify-manual-drawer { flex:none; padding:12px 20px; border-top:1px solid var(--zw-divider); background:#FAFBFB; }
+      .zw-clarify-compose { flex:none; padding:10px 20px 12px; border-top:1px solid var(--zw-divider); background:var(--zw-surface); display:grid; gap:8px; }
+      .zw-clarify-chips { display:flex; flex-wrap:wrap; gap:6px; }
+      .zw-clarify-chip { border:1px solid #B6D8D2; background:var(--zw-accent-soft); color:var(--zw-accent); border-radius:999px; padding:4px 10px; font:inherit; font-size:12px; cursor:pointer; }
+      .zw-clarify-chip:hover { background:#D4E9E4; }
+      .zw-clarify-chip:disabled { opacity:.5; cursor:not-allowed; }
+      .zw-clarify-input-row { display:flex; gap:8px; align-items:flex-end; }
+      .zw-clarify-input-row textarea { flex:1; min-width:0; border:1px solid var(--zw-divider); border-radius:9px; padding:8px 10px; font:inherit; font-size:13.5px; line-height:1.45; resize:vertical; background:var(--zw-surface); color:var(--zw-ink); }
+      .zw-clarify-input-row .zw-btn { min-height:40px; padding:0 16px; }
+      .zw-clarify-ref { padding:10px 12px; border-radius:10px; border:1px solid var(--zw-divider); background:#F7FAF9; margin-bottom:12px; display:grid; gap:6px; }
+      .zw-clarify-ref-head { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; }
+      .zw-clarify-ref-group { display:grid; gap:3px; }
+      .zw-clarify-ref-list { margin:0; padding-left:18px; font-size:12.5px; color:var(--zw-ink); }
+      .zw-btn:focus-visible, .zw-link:focus-visible, .zw-icon-btn:focus-visible, .zw-clarify-chip:focus-visible, .zw-clarify-input-row textarea:focus-visible, .zw-clarify-scroll:focus-visible { outline:2px solid var(--zw-accent); outline-offset:2px; }
       .zw-toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); z-index:90; background:#14202B; color:white; border-radius:9px; padding:8px 13px; font-size:12px; box-shadow:0 8px 24px rgba(20,32,43,.24); }
       .zw-loading { display:flex; align-items:center; justify-content:center; gap:10px; min-height:260px; color:var(--zw-muted); font-size:13px; }
       .zw-spinner { width:14px; height:14px; border:2px solid #DDE5E3; border-top-color:var(--zw-accent); border-radius:99px; animation:zw-spin .8s linear infinite; }
@@ -5884,6 +6273,8 @@ window.__ModuleLoader__.load({
         .zw-week { grid-template-columns:repeat(7,minmax(120px,1fr)); }
         .zw-plan-summary { grid-template-columns:1fr 1fr; }
         .zw-modal-body { max-height:72vh; }
+        .zw-modal-clarify { height:92vh; }
+        .zw-clarify-top, .zw-clarify-scroll, .zw-clarify-compose, .zw-clarify-manual-drawer { padding-inline:14px; }
       }
       @media (prefers-reduced-motion: reduce) {
         .zw-spinner { animation:none; }

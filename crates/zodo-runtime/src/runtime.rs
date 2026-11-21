@@ -785,6 +785,16 @@ struct NewRunRequest {
     idempotency_key: Option<String>,
 }
 
+fn project_run(run: &RunRecord, principal: &AuthPrincipal) -> Value {
+    let mut view = run.safe_view();
+    if principal.channel == "harness_ui" && require_capability(principal, "read_private").is_ok() {
+        if let Some(messages) = run.input.get("messages") {
+            view["input"]["messages"] = messages.clone();
+        }
+    }
+    view
+}
+
 async fn create_run(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -814,10 +824,65 @@ async fn create_run(
             );
         }
     };
-    let run = match inner
-        .store
-        .create_run(&principal.workspace_id, &request.intent, &request.input)
-    {
+    let created = if let Some(key) = request.idempotency_key.as_deref() {
+        if key.is_empty() || key.len() > 200 || key.chars().any(char::is_control) {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                &request_id,
+                &ZodoError::validation("invalid run idempotency key"),
+            );
+        }
+        let scope = json!([
+            principal.workspace_id,
+            principal.principal_id,
+            principal.channel,
+            key
+        ]);
+        let id = format!(
+            "run_{}",
+            hex::encode(Sha256::digest(scope.to_string().as_bytes()))
+        );
+        let now = Utc::now().to_rfc3339();
+        let inserted = inner.store.raw_connection().execute(
+            "INSERT INTO runs (id, workspace_id, state, intent, input_json, created_at, updated_at)
+             VALUES (?1, ?2, 'queued', ?3, ?4, ?5, ?5) ON CONFLICT(id) DO NOTHING",
+            rusqlite::params![
+                id,
+                principal.workspace_id,
+                request.intent,
+                request.input.to_string(),
+                now
+            ],
+        );
+        match inserted {
+            Ok(changed) => match inner.store.get_run(&id) {
+                Ok(Some(run)) if run.intent == request.intent && run.input == request.input => {
+                    if changed == 0 {
+                        return (StatusCode::ACCEPTED, Json(json!({"schema": "zodo.run/1", "run": project_run(&run, &principal)}))).into_response();
+                    }
+                    Ok(run)
+                }
+                Ok(Some(_)) => Err(ZodoError::new(
+                    ErrorCode::IdempotencyMismatch,
+                    "run key was used with a different input",
+                )),
+                Ok(None) => Err(ZodoError::new(
+                    ErrorCode::StorageFailure,
+                    "run lookup failed",
+                )),
+                Err(error) => Err(error),
+            },
+            Err(_) => Err(ZodoError::new(
+                ErrorCode::StorageFailure,
+                "run insert failed",
+            )),
+        }
+    } else {
+        inner
+            .store
+            .create_run(&principal.workspace_id, &request.intent, &request.input)
+    };
+    let run = match created {
         Ok(run) => run,
         Err(error) => return error_response(status_for(&error), &request_id, &error),
     };
@@ -828,7 +893,7 @@ async fn create_run(
     );
     (
         StatusCode::ACCEPTED,
-        Json(json!({"schema": "zodo.run/1", "run": run.safe_view()})),
+        Json(json!({"schema": "zodo.run/1", "run": project_run(&run, &principal)})),
     )
         .into_response()
 }
@@ -854,7 +919,7 @@ async fn list_runs(State(state): State<AppState>, headers: HeaderMap) -> Respons
     match inner.store.list_runs(&principal.workspace_id, 100) {
         Ok(runs) => Json(json!({
             "schema": "zodo.run-list/1",
-            "runs": runs.iter().map(RunRecord::safe_view).collect::<Vec<_>>(),
+            "runs": runs.iter().map(|run| project_run(run, &principal)).collect::<Vec<_>>(),
         }))
         .into_response(),
         Err(error) => error_response(status_for(&error), "", &error),
@@ -882,7 +947,8 @@ async fn get_run(
     };
     match inner.store.get_run(&id) {
         Ok(Some(run)) if run.workspace_id == principal.workspace_id => {
-            Json(json!({"schema": "zodo.run/1", "run": run.safe_view()})).into_response()
+            Json(json!({"schema": "zodo.run/1", "run": project_run(&run, &principal)}))
+                .into_response()
         }
         Ok(Some(_)) => error_response(StatusCode::NOT_FOUND, "", &ZodoError::not_found("run", &id)),
         Ok(None) => error_response(StatusCode::NOT_FOUND, "", &ZodoError::not_found("run", &id)),
