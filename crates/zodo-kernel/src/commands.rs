@@ -196,6 +196,8 @@ pub enum CommandPayload {
         tasks: Vec<TaskSpec>,
         goal: Option<crate::ops::GoalSpec>,
         project: Option<ProjectSpec>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<NoteSpec>,
     },
     #[serde(rename = "capture.dismiss")]
     CaptureDismiss { id: String, reason: Option<String> },
@@ -567,12 +569,15 @@ impl CommandPayload {
                 }
                 Ok(())
             }
-            Self::CaptureConvert { tasks, .. } => {
+            Self::CaptureConvert { tasks, note, .. } => {
                 if tasks.len() > MAX_BATCH {
                     return Err(ZodoError::validation("too many converted tasks"));
                 }
                 for task in tasks {
                     task.validate()?;
+                }
+                if let Some(note) = note {
+                    note.validate()?;
                 }
                 Ok(())
             }

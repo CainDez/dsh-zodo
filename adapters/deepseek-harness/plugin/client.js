@@ -1255,89 +1255,138 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function InboxConvert({ entry, clarifyContext, snapshot, onClose, send, busy, setModal }) {
-      const [title, setTitle] = useState(entry.text.slice(0, 80))
-      const [estimate, setEstimate] = useState(30)
-      const [makeGoal, setMakeGoal] = useState(false)
-      const [goalTitle, setGoalTitle] = useState('')
-      const [makeProject, setMakeProject] = useState(false)
-      const [projectTitle, setProjectTitle] = useState('')
+    const CONVERT_KINDS = { task: '任务', goal: '目标', project: '项目', note: '笔记', keep: '保持原样' }
+
+    function conversionInstant(date, time, zone, label) {
+      if (!agendaDate(date) || !isKnownTimezone(zone)) throw new Error(label + '：请检查日期与工作空间时区。')
+      const { instants } = resolveWallTime(date, time, zone)
+      if (instants.length !== 1) throw new Error(label + '：当地时刻不存在或重复，请改用明确的时刻。')
+      return instants[0]
+    }
+
+    function InboxConvert({ entry, clarifyContext, snapshot, onClose, send, busy, setModal, onSchedule }) {
+      const initialKind = Object.keys(CONVERT_KINDS).includes(clarifyContext?.suggestedKind) ? clarifyContext.suggestedKind : 'task'
+      const draft = clarifyContext?.conversionDraft ?? {}
+      const [kind, setKind] = useState(initialKind)
+      const [form, setForm] = useState(() => ({
+        title: draft.title ?? [...entry.text.trim()].slice(0, 80).join(''),
+        description: draft.description ?? '', estimate_minutes: draft.estimate_minutes ?? '', priority: draft.priority ?? '2',
+        target_due: draft.target_due ?? '', hard_deadline_date: draft.hard_deadline_date ?? '', hard_deadline_time: draft.hard_deadline_time ?? '',
+        not_before_date: draft.not_before_date ?? '', not_before_time: draft.not_before_time ?? '',
+        schedule_date: draft.schedule_date ?? '', schedule_start: draft.schedule_start ?? '', schedule_end: draft.schedule_end ?? '',
+        success_criteria: draft.success_criteria ?? '', scope: draft.scope ?? '', note_body: draft.note_body ?? entry.text,
+        makeGoal: false, goalTitle: '', makeProject: false, projectTitle: '',
+      }))
       const [error, setError] = useState('')
-      const summary = clarifyContext?.summary ?? null
+      const submitting = useRef(false)
+      const zone = workspaceTimezone(snapshot)
+      const [noteSupport, setNoteSupport] = useState(null)
+      useEffect(() => {
+        if (kind !== 'note' || noteSupport !== null) return
+        let active = true
+        void query('health.info').then(result => {
+          if (active) setNoteSupport(result.data?.features?.capture_convert_note === true)
+        }, () => { if (active) setNoteSupport(false) })
+        return () => { active = false }
+      }, [kind, noteSupport])
+      const summary = clarifyContext?.summary
       const confirmed = Array.isArray(summary?.confirmed) ? summary.confirmed : []
       const pending = Array.isArray(summary?.pending) ? summary.pending : []
       const undecided = Array.isArray(summary?.undecided) ? summary.undecided : []
-      const hasSummary = confirmed.length > 0 || pending.length > 0 || undecided.length > 0
-      const hasMissing = pending.length > 0 || undecided.length > 0
-      const kindLabel = ({ task: '任务', note: '笔记', goal: '目标', keep: '保持原样' })[clarifyContext?.suggestedKind] ?? null
+      const change = (key, value) => setForm(old => ({ ...old, [key]: value,
+        ...(!value && key === 'schedule_date' ? { schedule_start: '', schedule_end: '' } : {}),
+        ...(!value && key === 'hard_deadline_date' ? { hard_deadline_time: '' } : {}),
+        ...(!value && key === 'not_before_date' ? { not_before_time: '' } : {}),
+      }))
+      const field = (key, label, id = key, type = 'text', wide = false) => h(Field, { label, wide },
+        h(type === 'textarea' ? 'textarea' : 'input', {
+          ...(type === 'textarea' ? { rows: 3 } : { type }),
+          value: form[key], disabled: busy, 'data-testid': 'convert-' + id, onChange: event => change(key, event.target.value),
+        }))
       const submit = async () => {
+        if (busy || submitting.current || (kind === 'note' && noteSupport !== true)) return
+        if (kind === 'keep') { onClose(); return }
         setError('')
-        const tasks = title.trim() ? [{
-          title: title.trim(),
-          estimate_minutes: Number(estimate) > 0 ? Number(estimate) : null,
-          priority: 2,
-        }] : []
-        if (!tasks.length && !makeGoal && !makeProject) return setError('至少创建一个目标对象')
         try {
-          await send('capture.convert', {
-            id: entry.id,
-            tasks,
-            goal: makeGoal && goalTitle.trim() ? { title: goalTitle.trim() } : null,
-            project: makeProject && projectTitle.trim() ? { title: projectTitle.trim() } : null,
-          })
-          onClose()
-        } catch (failure) {
-          setError(failure.message)
-        }
+          const title = form.title.trim()
+          if (!title) throw new Error('请填写' + CONVERT_KINDS[kind] + '标题。')
+          if (kind === 'task' && ((form.makeGoal && !form.goalTitle.trim()) || (form.makeProject && !form.projectTitle.trim()))) throw new Error('请填写所勾选的目标或项目标题。')
+          const dates = () => ({ target_due: form.target_due || null,
+            hard_deadline: form.hard_deadline_date ? new Date(conversionInstant(form.hard_deadline_date,
+              form.hard_deadline_time || '23:59', zone, '硬截止') + (form.hard_deadline_time ? 0 : 59000)).toISOString() : null })
+          let task = null, goal = null, project = null, note = null
+          if (kind === 'task') {
+            const minutes = form.estimate_minutes === '' ? null : Number(form.estimate_minutes)
+            if (minutes != null && (!Number.isInteger(minutes) || minutes < 1 || minutes > 10080)) throw new Error('预计分钟须为 1–10080 的整数，或留空。')
+            let preferred_window = null
+            if (form.schedule_date) {
+              const day = form.schedule_date
+              const start = conversionInstant(day, form.schedule_start || '00:00', zone, '希望安排的开始')
+              const end = form.schedule_end ? conversionInstant(day, form.schedule_end, zone, '希望安排的结束')
+                : conversionInstant(agendaShift(day, 1, 1), '00:00', zone, '次日边界')
+              if (end <= start) throw new Error('希望安排的结束时间须晚于开始时间。')
+              preferred_window = { start: new Date(start).toISOString(), end: new Date(end).toISOString() }
+            }
+            task = { title, description: form.description.trim() || null, estimate_minutes: minutes, priority: Number(form.priority), ...dates(),
+              not_before: form.not_before_date ? new Date(conversionInstant(form.not_before_date, form.not_before_time || '00:00', zone, '最早开始')).toISOString() : null,
+              preferred_window }
+            if (form.makeGoal) goal = { title: form.goalTitle.trim() }
+            if (form.makeProject) project = { title: form.projectTitle.trim() }
+          }
+          if (kind === 'goal') goal = { title, description: form.description.trim() || null, success_criteria: form.success_criteria.trim() || null, ...dates() }
+          if (kind === 'project') project = { title, scope: form.scope.trim() || null }
+          if (kind === 'note') note = { title, body: form.note_body.trim() }
+          submitting.current = true
+          const result = await send('capture.convert', { id: entry.id, tasks: task ? [task] : [], goal, project, ...(note ? { note } : {}) })
+          const taskId = result.data?.task_ids?.[0]
+          if (task && form.schedule_date && taskId) onSchedule({ taskId, day: form.schedule_date, start: form.schedule_start, end: form.schedule_end })
+          else if (note && !result.data?.note_id) setError('Core 未回传笔记转换结果，请刷新核对。')
+          else onClose()
+        } catch (failure) { setError(failure.message) }
+        finally { submitting.current = false }
       }
-      return h(Modal, { title: '处理收集内容', subtitle: '原文保留，明确提交后才生成正式工作对象。', onClose, wide: true,
+      const dueControls = () => h(React.Fragment, null,
+        field('target_due', '期望完成日期（可选）', 'target-due', 'date'),
+        field('hard_deadline_date', '硬截止日期（可选）', 'hard-date', 'date'),
+        form.hard_deadline_date ? field('hard_deadline_time', '硬截止时间（留空为当天结束）', 'hard-time', 'time') : null)
+      const extra = (key, label, titleKey, titleLabel) => h(React.Fragment, null,
+        h('label', { className: 'zw-check-line' }, h('input', { type: 'checkbox', checked: form[key], disabled: busy,
+          onChange: event => change(key, event.target.checked) }), label), form[key] ? field(titleKey, titleLabel) : null)
+      return h(Modal, { title: '处理收集内容', subtitle: '核对要保存的字段；任务时段另行预览和确认。', onClose, wide: true,
         footer: h(React.Fragment, null,
-          setModal ? h(Button, { onClick: () => setModal({ type: 'inbox-detail', entry }), testid: 'convert-back-to-clarify' }, '返回继续澄清') : null,
-          h(Button, { onClick: onClose }, COPY.cancel),
-          h(Button, { tone: 'primary', onClick: submit, disabled: busy }, '提交转换')) },
-        error ? h('div', { className: 'zw-alert zw-alert-error' }, error) : null,
+          h(Button, { onClick: () => setModal({ type: 'inbox-detail', entry }), disabled: busy, testid: 'convert-back-to-clarify' }, '返回继续澄清'),
+          h(Button, { onClick: onClose, disabled: busy }, COPY.cancel),
+          h(Button, { tone: 'primary', onClick: submit, disabled: busy || (kind === 'note' && noteSupport !== true), testid: 'convert-submit' }, kind === 'keep' ? '保留原文并关闭' : '提交转换')) },
+        error ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert' }, error) : null,
         h('div', { className: 'zw-quote' }, entry.text),
-        hasSummary ? h('div', { className: 'zw-clarify-ref', 'data-testid': 'convert-clarify-summary' },
-          h('div', { className: 'zw-clarify-ref-head' },
-            h('strong', null, '澄清摘要（只供参考，不擅填未确认项）'),
-            kindLabel ? h(Badge, { tone: 'accent' }, '建议类型：' + kindLabel) : null,
-          ),
-          hasMissing ? h('p', { className: 'zw-fineprint' }, '当前仍有待补充或明确待定项；可带缺项直接转换，也可返回继续澄清。') : null,
-          confirmed.length ? h('div', { className: 'zw-clarify-ref-group' },
-            h('span', { className: 'zw-badge zw-badge-accent' }, '已明确 ' + confirmed.length),
-            h('ul', { className: 'zw-clarify-ref-list' },
-              confirmed.map((item, idx) => h('li', { key: idx }, item.topic + '：' + item.value)),
-            ),
-          ) : null,
-          pending.length ? h('div', { className: 'zw-clarify-ref-group' },
-            h('span', { className: 'zw-badge zw-badge-warn' }, '待补充 ' + pending.length),
-            h('ul', { className: 'zw-clarify-ref-list' },
-              pending.map((item, idx) => h('li', { key: idx }, item)),
-            ),
-          ) : null,
-          undecided.length ? h('div', { className: 'zw-clarify-ref-group' },
-            h('span', { className: 'zw-badge' }, '明确待定 ' + undecided.length),
-            h('ul', { className: 'zw-clarify-ref-list' },
-              undecided.map((item, idx) => h('li', { key: idx }, item)),
-            ),
-          ) : null,
-        ) : null,
-        h(Field, { label: '任务标题', wide: true }, h('input', { value: title, autoFocus: true,
-          onChange: event => setTitle(event.target.value) })),
-        h(Field, { label: '预计分钟' }, h('input', { type: 'number', min: 1, value: estimate,
-          onChange: event => setEstimate(event.target.value) })),
-        h('label', { className: 'zw-check-line' },
-          h('input', { type: 'checkbox', checked: makeGoal, onChange: event => setMakeGoal(event.target.checked) }),
-          '同时创建目标',
+        confirmed.length || pending.length || undecided.length ? h('details', { className: 'zw-clarify-ref', 'data-testid': 'convert-clarify-summary' },
+          h('summary', null, '澄清摘要 · ' + confirmed.length + ' 项已明确'),
+          ...[['已明确', confirmed.map(item => item.topic + '：' + item.value)], ['待补充', pending], ['明确待定', undecided]].map(([label, values]) => values.length ? h('div', { key: label, className: 'zw-clarify-ref-group' },
+            h('strong', null, label), h('ul', { className: 'zw-clarify-ref-list' }, values.map((value, idx) => h('li', { key: idx }, value)))) : null)) : null,
+        h(Field, { label: '要保存为' }, h('select', { value: kind, disabled: busy, 'data-testid': 'convert-kind', onChange: event => { setKind(event.target.value); setError('') } },
+          Object.entries(CONVERT_KINDS).map(([value, label]) => h('option', { key: value, value }, label)))),
+        kind === 'keep' ? h('p', { className: 'zw-fineprint' }, '原文留在收集箱当前分组，不归档，也不创建任何内容。') : h(React.Fragment, null,
+          h('p', { className: 'zw-fineprint' }, clarifyContext?.suggestedKind ? '下面是可修改的转换草稿。不确定的字段可以留空。' : '可选字段可以留空。'),
+          field('title', CONVERT_KINDS[kind] + '标题', 'title', 'text', true),
+          kind === 'task' || kind === 'goal' ? field('description', '说明（可选）', 'description', 'textarea', true) : null,
+          kind === 'goal' ? field('success_criteria', '成功标准（可选）', 'success', 'textarea', true) : null,
+          kind === 'project' ? field('scope', '项目范围（可选）', 'scope', 'textarea', true) : null,
+          kind === 'note' ? h(React.Fragment, null, field('note_body', '笔记正文（默认仅本设备）', 'note-body', 'textarea', true),
+            noteSupport !== true ? h('p', { role: 'status', className: 'zw-fineprint' }, noteSupport === null
+              ? '正在检查 Core 是否支持笔记转换。' : '当前 Core 未确认支持笔记转换，原文未改动。请检查连接或更新 Core 后重试。') : null) : null,
+          kind === 'task' || kind === 'goal' ? h(React.Fragment, null,
+            h('p', { className: 'zw-fineprint' }, '按工作空间时区 ' + zone + '。期望完成和硬截止都不会占用日程。'), dueControls()) : null,
+          kind === 'task' ? h(React.Fragment, null,
+            field('estimate_minutes', '预计分钟（可选）', 'estimate', 'number'),
+            h(Field, { label: '优先级（默认 P2）' }, h('select', { value: form.priority, disabled: busy, 'data-testid': 'convert-priority', onChange: event => change('priority', event.target.value) }, [0, 1, 2, 3, 4].map(p => h('option', { key: p, value: p }, 'P' + p)))),
+            field('not_before_date', '最早开始日期（可选）', 'not-before-date', 'date'),
+            form.not_before_date ? field('not_before_time', '最早开始时间（留空为当天开始）', 'not-before-time', 'time') : null,
+            field('schedule_date', '希望安排在哪天（可选）', 'schedule-date', 'date'),
+            form.schedule_date ? h(React.Fragment, null,
+              field('schedule_start', '希望开始时间（可选）', 'schedule-start', 'time'), field('schedule_end', '希望结束时间（可选）', 'schedule-end', 'time'),
+              h('p', { className: 'zw-fineprint' }, '先保存任务和时间偏好，再打开时段安排；关闭安排窗口不会占用日程。')) : h('p', { className: 'zw-fineprint' }, '本次只创建任务，不安排时段。'),
+            extra('makeGoal', '同时创建目标', 'goalTitle', '目标标题'), extra('makeProject', '同时创建项目', 'projectTitle', '项目标题')) : null,
         ),
-        makeGoal ? h(Field, { label: '目标标题' }, h('input', { value: goalTitle,
-          onChange: event => setGoalTitle(event.target.value) })) : null,
-        h('label', { className: 'zw-check-line' },
-          h('input', { type: 'checkbox', checked: makeProject, onChange: event => setMakeProject(event.target.checked) }),
-          '同时创建项目',
-        ),
-        makeProject ? h(Field, { label: '项目标题' }, h('input', { value: projectTitle,
-          onChange: event => setProjectTitle(event.target.value) })) : null,
       )
     }
 
@@ -1561,11 +1610,13 @@ window.__ModuleLoader__.load({
       return { tasks, capacities, dateKnown }
     }
 
-    function QuickSchedule({ day, guidedDraft, snapshot, send, busy, onClose, setModal }) {
+    function QuickSchedule({ day, guidedDraft, captureSchedule, snapshot, send, busy, onClose, setModal }) {
       const timeZone = workspaceTimezone(snapshot)
       const zoneValid = isKnownTimezone(timeZone)
       const pending = useRef(false)
-      const [form, setForm] = useState({ task: '', capacity: '', start: `${day}T09:00`, end: `${day}T10:00`, ...guidedDraft, startChoice: null, endChoice: null })
+      const [form, setForm] = useState(() => ({ task: '', capacity: '', start: day + 'T09:00', end: day + 'T10:00', ...guidedDraft,
+        ...(captureSchedule ? { task: captureSchedule.taskId, start: captureSchedule.start ? day + 'T' + captureSchedule.start : '',
+          end: captureSchedule.end ? day + 'T' + captureSchedule.end : '' } : {}), startChoice: null, endChoice: null }))
       const [error, setError] = useState('')
       const updateForm = next => {
         if (pending.current || busy) return
@@ -1575,14 +1626,44 @@ window.__ModuleLoader__.load({
           ? { ...next, capacity: '' } : next)
       }
       const { tasks, capacities, dateKnown } = schedulePickerOptions(snapshot, form, timeZone)
-      const selected = tasks.find(task => task.id === form.task)
+      const options = captureSchedule ? tasks.filter(task => task.id === captureSchedule.taskId) : tasks
+      const selected = options.find(task => task.id === form.task)
       const capacity = capacities.find(block => block.id === form.capacity)
       const resolved = Object.fromEntries(['start', 'end'].map(key => [key, zoneValid && form[key]
         ? resolveWallTime(form[key].slice(0, 10), form[key].slice(11, 16), timeZone) : { instants: [] }]))
       const instant = key => resolved[key].instants.length === 1 ? resolved[key].instants[0]
         : resolved[key].instants.includes(form[`${key}Choice`]) ? form[`${key}Choice`] : null
       const start = instant('start'), end = instant('end')
+      const [emptyDay, setEmptyDay] = useState(null)
       const close = () => { if (!pending.current && !busy) onClose() }
+      const findOnDay = async () => {
+        if (pending.current || busy) return
+        setError('')
+        setEmptyDay(null)
+        if (!selected || selected.id !== captureSchedule.taskId) return setError('任务已创建，但未读取到最新的可安排任务。请刷新工作台后继续，无需重新转换。')
+        if (!(selected.estimate_minutes > 0)) return setError('请先在任务详情补充预计分钟；系统不会替你猜测。')
+        try {
+          const dayStart = conversionInstant(day, captureSchedule.start || '00:00', timeZone, '开始边界')
+          const dayEnd = captureSchedule.end ? conversionInstant(day, captureSchedule.end, timeZone, '结束边界')
+            : conversionInstant(agendaShift(day, 1, 1), '00:00', timeZone, '次日边界')
+          const startAt = Math.max(dayStart, Math.ceil(Date.now() / 60000 + 5) * 60000)
+          if (startAt >= dayEnd) throw new Error('所选日期没有剩余可预览的时间；请手动选择其他时段。')
+          pending.current = true
+          const result = await send('plan.propose', { task_ids: [selected.id], horizon_start: new Date(startAt).toISOString(),
+            horizon_end: new Date(dayEnd).toISOString(), move_unlocked: false,
+            intent: '只预览「' + selected.title + '」在 ' + day + '（' + timeZone + '）的时段；不移动已有安排。' })
+          const { proposal, plan } = result.data ?? {}
+          if (!proposal || !plan) throw new Error('Core 未返回当天的预览；没有占用时段。')
+          if (!plan.assignments?.length) {
+            setEmptyDay((plan.diagnostics ?? []).some(row => row.code === 'NO_CAPACITY')
+              ? '没有可用容量。可在日程页补充可用时间后再试。' : '可检查任务的估时、时间限制或冲突，再选择另一个时段。')
+            return
+          }
+          if (proposal.status !== 'validated') throw new Error('当天的候选未通过 Core 校验；没有占用时段。')
+          setModal({ type: 'plan', proposal, plan, grant: null })
+        } catch (failure) { setError(failure.message) }
+        finally { pending.current = false }
+      }
       const propose = async () => {
         if (pending.current || busy) return
         setError('')
@@ -1613,7 +1694,11 @@ window.__ModuleLoader__.load({
       return h(Modal, { title: '安排任务时段', onClose: close, wide: true,
         footer: h(React.Fragment, null,
           h(Button, { onClick: close, disabled: busy }, COPY.cancel),
-          h(Button, { onClick: propose, disabled: busy, testid: 'schedule-slot-preview' }, '生成严格预览')) },
+          captureSchedule && !(captureSchedule.start && captureSchedule.end) ? h(Button, { onClick: findOnDay, disabled: busy, tone: 'primary', testid: 'schedule-day-preview' }, '查找当天时段') : null,
+          h(Button, { onClick: propose, disabled: busy, tone: captureSchedule?.start && captureSchedule?.end ? 'primary' : undefined, testid: 'schedule-slot-preview' }, '生成严格预览')) },
+        captureSchedule ? h('p', { className: 'zw-fineprint', 'data-testid': 'schedule-focus-date' }, '任务已创建，尚未安排时段 · ' + day + '（' + timeZone + '）。') : null,
+        emptyDay ? h('p', { role: 'status', className: 'zw-warn-text', 'data-testid': 'schedule-day-empty' }, '当天没有排入时段。' + emptyDay) : null,
+        captureSchedule && selected && !(selected.estimate_minutes > 0) ? h('p', { className: 'zw-warn-text' }, '还没有预计分钟。可补充后按日期查找，或手动填入起止时刻。') : null,
         error ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert' }, error) : null,
         busy ? h('p', { role: 'status' }, '正在生成预览，请等待后关闭。') : null,
         h('p', { className: 'zw-fineprint' }, guidedDraft ? (guidedDraft.start
@@ -1623,7 +1708,7 @@ window.__ModuleLoader__.load({
         h('fieldset', { disabled: busy, style: { border: 0, padding: 0, margin: 0, minWidth: 0 } },
         h('legend', { className: 'zw-fineprint' }, '修改输入后须重新生成预览；保存中输入受保护'),
         h(Field, { label: '任务' }, h('select', { value: form.task, onChange: event => updateForm({ ...form, task: event.target.value }), 'data-testid': 'schedule-slot-task' },
-          h('option', { value: '' }, '选择任务'), tasks.map(task => h('option', { key: task.id, value: task.id }, task.title)))),
+          h('option', { value: '' }, '选择任务'), options.map(task => h('option', { key: task.id, value: task.id }, task.title)))),
         h(Field, { label: '已有容量块' }, h('select', { value: form.capacity, onChange: event => updateForm({ ...form, capacity: event.target.value }), 'data-testid': 'schedule-slot-capacity' },
           h('option', { value: '' }, '选择容量块'), capacities.map(block => h('option', { key: block.id, value: block.id }, `${block.title} · ${zoneValid ? wallClockText(Date.parse(block.start), timeZone) : block.start} 至 ${zoneValid ? wallClockText(Date.parse(block.end), timeZone) : block.end}`)))),
         !tasks.length ? h('p', { role: 'status' }, '没有可选的开放叶任务；请先创建叶任务，或在任务详情检查归档、完成和手动阻塞状态。') : null,
@@ -1632,7 +1717,7 @@ window.__ModuleLoader__.load({
           ? `容量候选按输入的开始至结束日期（${timeZone}）筛选，跨午夜容量保留；日期变化后不相交的选择会清空。候选不代表预算、依赖或冲突检查已通过。`
           : '日期或时区尚未完整，暂不按日期缩小容量候选；请补齐后选择。'),
         ['start', 'end'].map(key => h(Field, { key, label: key === 'start' ? '开始（工作空间时区）' : '结束（工作空间时区）' },
-          h('input', { type: 'datetime-local', value: form[key], onChange: event => updateForm({ ...form, [key]: event.target.value, [`${key}Choice`]: null }) }),
+          h('input', { type: 'datetime-local', 'data-testid': 'schedule-slot-' + key, value: form[key], onChange: event => updateForm({ ...form, [key]: event.target.value, [`${key}Choice`]: null }) }),
           resolved[key].instants.length > 1 ? h('select', { value: form[`${key}Choice`] ?? '', onChange: event => updateForm({ ...form, [`${key}Choice`]: event.target.value === '' ? null : Number(event.target.value) }) },
             h('option', { value: '' }, '钟点重复，请选择 UTC 时刻'), resolved[key].instants.map(value => h('option', { key: value, value }, new Date(value).toISOString()))) : null,
         )),
@@ -5293,7 +5378,7 @@ window.__ModuleLoader__.load({
           case 'goal': return h(GoalEditor, { goal: modal.goal ?? null, onClose: closeModal, send, busy })
           case 'project': return h(ProjectEditor, { project: modal.project ?? null, goals: snapshot.goals, goalId: modal.goalId, onClose: closeModal, send, busy })
           case 'inbox-detail': return h(AiConversation, { key: 'inbox:' + modal.entry.id,
-            entry: snapshot.inbox.find(entry => entry.id === modal.entry.id) ?? modal.entry, onClose: closeModal, send, busy, setModal })
+            entry: snapshot.inbox.find(entry => entry.id === modal.entry.id) ?? modal.entry, notes: snapshot.notes, onClose: closeModal, send, busy, setModal })
           case 'goal-conversation': return h(AiConversation, { key: 'goal:' + modal.goal.id,
             goal: snapshot.goals.find(goal => goal.id === modal.goal.id) ?? modal.goal, onClose: closeModal, busy, setModal,
             proposals: snapshot.proposals ?? [],
@@ -5305,13 +5390,20 @@ window.__ModuleLoader__.load({
               setModal(current => current === modal ? { type: 'plan', proposal, plan: null, grant: null, resumeConversation: modal } : current)
             },
           })
-          case 'inbox-convert': return h(InboxConvert, { entry: modal.entry, clarifyContext: modal.clarifyContext ?? null, snapshot, onClose: closeModal, send, busy, setModal })
+          case 'inbox-convert': return h(InboxConvert, { entry: modal.entry, clarifyContext: modal.clarifyContext ?? null, snapshot, onClose: closeModal, send, busy, setModal,
+            onSchedule: schedule => {
+              setNotice('任务已创建 · 尚未安排时段')
+              setScheduleStart(agendaShift(schedule.day, 0, scheduleLength))
+              navigate('schedule')
+              setModal({ type: 'quick-schedule', day: schedule.day, captureSchedule: schedule })
+            },
+          })
           case 'progress': return h(ProgressEditor, { task: modal.task, onClose: closeModal, send, busy })
           case 'dependency': return h(DependencyEditor, { task: modal.task, snapshot, onClose: closeModal, send, busy })
           case 'reminder': return h(ReminderEditor, { task: modal.task, onClose: closeModal, send, busy })
           case 'blocked': return h(BlockedEditor, { task: modal.task, onClose: closeModal, send, busy })
           case 'commitment': return h(CommitmentEditor, { day: modal.day, snapshot, onClose: closeModal, send, busy })
-          case 'quick-schedule': return h(QuickSchedule, { day: modal.day, guidedDraft: modal.guidedDraft, snapshot, send, busy, onClose: closeModal, setModal })
+          case 'quick-schedule': return h(QuickSchedule, { day: modal.day, guidedDraft: modal.guidedDraft, captureSchedule: modal.captureSchedule, snapshot, send, busy, onClose: closeModal, setModal })
           case 'allocation-move': return h(MoveAllocation, { original: modal.original, savedForm: modal.savedForm, snapshot, send, busy, onClose: closeModal, setModal })
           case 'capacity': return h(CapacityEditor, { onClose: closeModal, send, busy })
           case 'capacity-candidates': return h(CapacitySuggestions, { onClose: closeModal, send, busy })
@@ -5405,7 +5497,7 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function AiConversation({ entry, goal, onClose, send, busy, setModal, proposals = [], onReview }) {
+    function AiConversation({ entry, goal, notes = [], onClose, send, busy, setModal, proposals = [], onReview }) {
       const goalMode = Boolean(goal)
       const subjectId = goal?.id ?? entry.id
       const readOnly = !goalMode && ['processed', 'dismissed'].includes(entry.status)
@@ -5430,6 +5522,7 @@ window.__ModuleLoader__.load({
       const [messages, setMessages] = useState([])
       const [summary, setSummary] = useState(null)
       const [suggestedKind, setSuggestedKind] = useState(null)
+      const [conversionDraft, setConversionDraft] = useState(null)
       const [quickReplies, setQuickReplies] = useState([])
       const [draft, setDraftState] = useState(() => readStored(draftKey))
       const [summaryOpen, setSummaryOpen] = useState(false)
@@ -5453,9 +5546,7 @@ window.__ModuleLoader__.load({
         setDraftState(value)
         writeStored(draftKey, value)
       }
-      const clarifyKindLabel = kind => ({
-        task: '任务', note: '笔记', goal: '目标', keep: '保持原样',
-      })[kind] ?? kind
+      const clarifyKindLabel = kind => CONVERT_KINDS[kind] ?? kind
       const scrollToBottom = () => {
         setTimeout(() => {
           if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
@@ -5474,6 +5565,7 @@ window.__ModuleLoader__.load({
           setMessages([...baseMessages, { role: 'assistant', content: reply, runId: run.id }])
           setSummary(out.summary ?? { pending: questions })
           setSuggestedKind(out.suggested_kind ?? null)
+          setConversionDraft(out.conversion_draft ?? null)
           setQuickReplies(Array.isArray(out.quick_replies) ? out.quick_replies : [])
         }
         setClarifyError('')
@@ -5527,8 +5619,10 @@ window.__ModuleLoader__.load({
               : run.input?.inbox_id === subjectId))
               .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
             const discussion = linked.find(run => run.state === 'succeeded' && run.input?.conversation_stage !== 'preview')
-            if (discussion?.output?.summary) setSummary(discussion.output.summary)
-            if (discussion?.output?.suggested_kind) setSuggestedKind(discussion.output.suggested_kind)
+            const discussionOutput = discussion?.output ?? discussion?.checkpoint
+            setSummary(discussionOutput?.summary ?? null)
+            setSuggestedKind(discussionOutput?.suggested_kind ?? null)
+            setConversionDraft(discussionOutput?.conversion_draft ?? null)
             const latest = linked[0]
             const pending = pendingRequest()
             if (latest) {
@@ -5677,8 +5771,8 @@ window.__ModuleLoader__.load({
               },
             }, canReview ? '审阅任务候选' : '生成任务预览') : !readOnly ? h(Button, {
               tone: 'primary',
-              onClick: () => setModal({ type: 'inbox-convert', entry, clarifyContext: { summary, suggestedKind } }),
-              disabled: busy || clarifying,
+              onClick: () => setModal({ type: 'inbox-convert', entry, clarifyContext: (historyError || clarifyError || draft.trim()) ? null : { summary, suggestedKind, conversionDraft } }),
+              disabled: busy || clarifying || loadingHistory,
               testid: 'inbox-convert-open',
             }, '转换…') : null,
           )) },
@@ -5780,7 +5874,11 @@ window.__ModuleLoader__.load({
           ) : null,
           entry?.converted_refs?.length ? h('div', { className: 'zw-clarify-manual-list' },
             h('p', { className: 'zw-fineprint', style: { marginBottom: '6px' } }, '已转换到'),
-            entry.converted_refs.map(ref => h('div', { className: 'zw-list-row', key: ref.id }, h('span', null, ref.kind + ' · ' + ref.id))),
+            entry.converted_refs.map(ref => {
+              const savedNote = ref.kind === 'note' ? notes.find(note => note.id === ref.id) : null
+              return savedNote ? h('details', { key: ref.id }, h('summary', null, '笔记 · ' + savedNote.title), h('div', { className: 'zw-quote' }, savedNote.body))
+                : h('div', { className: 'zw-list-row', key: ref.id }, h('span', null, (CONVERT_KINDS[ref.kind] ?? ref.kind) + ' · ' + ref.id))
+            }),
           ) : null,
         ),
         !readOnly && manualOpen ? h('div', { className: 'zw-clarify-manual-drawer', 'data-testid': 'inbox-manual-panel' },

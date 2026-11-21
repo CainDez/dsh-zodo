@@ -133,6 +133,57 @@ const openScheduleOptions = async () => {
   if (!(await trigger.evaluate(node => node.parentElement.open))) await trigger.click()
 }
 const screenshot = name => page.screenshot({ path: path.join(output, name + '.png'), fullPage: true })
+const captureClarifyReplies = new Map()
+const inboxDetail = () => page.getByRole('dialog', { name: '收集详情', exact: true })
+const convertDialog = () => page.getByRole('dialog', { name: '处理收集内容', exact: true })
+const collectForClarify = async (text, reply) => {
+  captureClarifyReplies.set(text, reply)
+  // Fixture seeding writes outside React. Wait for the matching UI revision before a user command.
+  const revision = (await snapshot()).workspace.revision
+  await topbar().getByRole('button', { name: '刷新', exact: true }).click()
+  await topbar().getByText('r' + revision, { exact: true }).waitFor()
+  await page.getByTestId('top-capture').click()
+  await page.getByTestId('capture-input').fill(text)
+  await page.getByTestId('capture-save').click()
+  await page.getByRole('dialog', { name: '快速收集' }).waitFor({ state: 'hidden' })
+  const entry = (await snapshot()).inbox.find(row => row.text === text)
+  assert.ok(entry, text)
+  await nav('inbox')
+  await page.getByTestId('inbox-pending').click()
+  return page.getByTestId('inbox-row-' + entry.id)
+}
+const clarifyDraft = (kind, draft, reply = 'Fixture clarified ' + kind) => ({
+  reply, questions: [], assumptions: [], suggested_kind: kind, conversion_draft: draft,
+})
+const startClarify = async () => {
+  await inboxDetail().getByTestId('inbox-ai-clarify').click()
+  await inboxDetail().getByTestId('clarify-msg-assistant-0').waitFor()
+}
+const openConvert = async () => {
+  await inboxDetail().getByTestId('inbox-convert-open').click()
+  await convertDialog().waitFor()
+}
+const convertField = id => convertDialog().getByTestId('convert-' + id)
+const assertConvertFields = async fields => {
+  for (const [id, value] of Object.entries(fields)) assert.equal(await convertField(id).inputValue(), String(value), id)
+}
+const conversionCollections = ['tasks', 'goals', 'projects', 'notes', 'allocations', 'capacity_blocks']
+const assertUnchanged = (before, after, keys) => {
+  for (const key of keys) assert.deepEqual(after[key], before[key], key)
+}
+const clickForCommand = async (button, operation) => {
+  const [response] = await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/rpc') && response.request().postDataJSON()?.envelope?.operation === operation),
+    button.click(),
+  ])
+  assert.equal(response.status(), 200, operation)
+  const body = await response.json()
+  assert.equal(body.ok, true, operation)
+  return { data: body.result.data, payload: response.request().postDataJSON().envelope.payload }
+}
+const fixtureDayBase = Date.now()
+const shanghaiDay = offset => new Date(fixtureDayBase + offset * 864e5).toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
+const shanghaiInstant = (date, time = '00:00') => new Date(date + 'T' + time + ':00+08:00').toISOString()
 
 try {
   const root = path.resolve(here, '../..')
@@ -143,7 +194,9 @@ try {
     clientSha256: await hash(path.join(root, 'adapters/deepseek-harness/plugin/client.js')),
   }
   stage = 'fixture-start'
-  fixture = await startFixture({ binary: process.env.ZODO_FIXTURE_CORE_BIN })
+  fixture = await startFixture({ binary: process.env.ZODO_FIXTURE_CORE_BIN,
+    captureClarifyReply: prompt => [...captureClarifyReplies].find(([text]) => prompt.includes(text))?.[1](prompt),
+  })
   stage = 'browser-launch'
   browser = await chromium.launch({
     executablePath: process.env.ZODO_CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -233,7 +286,6 @@ try {
       await verifyCurrentNavigation(id)
       report.navigation.push({ id, heading: await heading(id).innerText() })
     }
-    assert.deepEqual(report.pageErrors, [])
   })
 
   await check('Capture persists raw text through real bridge', async () => {
@@ -281,6 +333,7 @@ try {
     await row.click()
     await detail.getByRole('button', { name: '转换…', exact: true }).click()
     const convert = page.getByRole('dialog', { name: '处理收集内容' })
+    assert.equal(await convert.getByTestId('convert-kind').inputValue(), 'task', 'no model classification defaults to manual task')
     await convert.getByLabel('任务标题').fill('Fixture converted task')
     await convert.getByLabel('同时创建目标').check()
     await convert.getByLabel('目标标题').fill('Fixture converted goal')
@@ -1361,46 +1414,212 @@ try {
     assert.equal((await snapshot()).inbox.filter(row => row.text === text).length, 1)
   })
 
-  await check('No client JavaScript errors or external network', async () => {
-    assert.deepEqual(report.pageErrors, [])
-    assert.deepEqual(report.unexpectedNetwork, [])
+  await check('Settings and navigation never dispatch a model', async () => {
     assert.equal(fixture.llmCalls.streams.length, 0, 'settings/navigation never dispatch mock or paid model calls')
     assert.equal(fixture.llmCalls.defaultSelections, 0, 'the current chat selection is never read')
   })
-  await check('AI conversations resume and require explicit final confirmation', async () => {
+  await check('Enable only the fixture model for capture and goal conversations', async () => {
     await saveModelFromOutside(config => { config.source = { kind: 'dsh', provider: 'fixture-local', model: 'fixture-model' } })
     await nav('privacy')
     for (const k of ['goals', 'captures']) await page.getByTestId('privacy-' + k).check()
-    const saved = page.waitForResponse(r => r.url().endsWith('/rpc') && r.request().postData()?.includes('workspace.update'))
-    await page.getByTestId('privacy-save').click()
-    await saved
-    await page.getByTestId('top-capture').click()
-    await page.getByTestId('capture-input').fill('Fixture conversation capture')
-    await page.getByTestId('capture-save').click()
-    await page.getByRole('dialog').waitFor({state:'hidden'})
-    await nav('inbox')
-    await page.getByTestId('inbox-pending').click()
-    const openInbox = () => page.getByRole('button', {name:/Fixture conversation capture/}).click()
-    await openInbox()
-    const inbox = page.getByRole('dialog', {name:'收集详情'})
-    const beforeInbox = await snapshot()
-    await inbox.getByTestId('inbox-ai-clarify').click()
-    await inbox.getByTestId('clarify-msg-assistant-0').waitFor()
-    await inbox.getByTestId('clarify-input').fill('Fixture capture correction')
-    await inbox.getByTestId('inbox-clarify-send').click()
-    await inbox.getByTestId('clarify-msg-assistant-2').waitFor()
-    await inbox.getByRole('button', {name:'关闭', exact:true}).last().click()
-    await openInbox()
-    await inbox.getByTestId('clarify-msg-user-1').getByText('Fixture capture correction').waitFor()
-    assert.deepEqual((await snapshot()).tasks, beforeInbox.tasks)
-    await inbox.getByTestId('inbox-convert-open').click()
-    const convert = page.getByRole('dialog', {name:'处理收集内容'})
-    await convert.waitFor()
-    assert.deepEqual((await snapshot()).tasks, beforeInbox.tasks)
-    await convert.getByRole('button', {name:'提交转换', exact:true}).click()
-    await convert.waitFor({state:'hidden'})
-    assert.equal((await snapshot()).tasks.length, beforeInbox.tasks.length + 1)
+    await clickForCommand(page.getByTestId('privacy-save'), 'workspace.update')
+  })
 
+  await check('Corrected capture task draft survives reopening; date-only planning needs approval', async () => {
+    const day = shanghaiDay(14), nextDay = shanghaiDay(15), firstDay = shanghaiDay(13)
+    const capacityTitle = 'Fixture capture handoff capacity'
+    await command('capacity.create', { capacity: { title: capacityTitle,
+      start: shanghaiInstant(day, '10:00'), end: shanghaiInstant(day, '11:00'), capacity_minutes: 60, locked: false } })
+    const text = 'Fixture conversation capture: visit the print shop'
+    const correction = 'Fixture capture correction: use ' + day + ' without a fixed time'
+    const row = await collectForClarify(text, prompt => prompt.includes(correction)
+      ? clarifyDraft('task', {
+        title: 'Fixture late print shop visit', description: 'Bring the revised proof', estimate_minutes: 40, priority: 1,
+        target_due: nextDay, hard_deadline_date: nextDay, hard_deadline_time: '18:00',
+        not_before_date: day, not_before_time: '09:00', schedule_date: day,
+      }, 'Fixture updated date without clock times')
+      : clarifyDraft('task', { title: 'Fixture early print shop visit', estimate_minutes: 20,
+        schedule_date: firstDay, schedule_start: '10:00', schedule_end: '10:20' }))
+    const before = await snapshot()
+    await row.click()
+    const inbox = inboxDetail()
+    await startClarify()
+    await openConvert()
+    await assertConvertFields({ kind: 'task', title: 'Fixture early print shop visit', estimate: 20,
+      'schedule-date': firstDay, 'schedule-start': '10:00', 'schedule-end': '10:20' })
+    assertUnchanged(before, await snapshot(), [...conversionCollections, 'inbox', 'proposals'])
+    await convertDialog().getByTestId('convert-back-to-clarify').click()
+    await inbox.getByTestId('clarify-msg-assistant-0').waitFor()
+    await inbox.getByTestId('clarify-input').fill(correction)
+    await inbox.getByTestId('inbox-clarify-send').click()
+    await inbox.getByTestId('clarify-msg-assistant-2').getByText('Fixture updated date without clock times').waitFor()
+    await inbox.getByRole('button', { name: '关闭', exact: true }).last().click()
+    await inbox.waitFor({ state: 'hidden' })
+    const streamsBeforeReopen = fixture.llmCalls.streams.length
+    await row.click()
+    await inbox.getByTestId('clarify-msg-user-1').getByText(correction, { exact: true }).waitFor()
+    await openConvert()
+    await assertConvertFields({ kind: 'task', title: 'Fixture late print shop visit', description: 'Bring the revised proof',
+      estimate: 40, priority: 1, 'target-due': nextDay, 'hard-date': nextDay, 'hard-time': '18:00',
+      'not-before-date': day, 'not-before-time': '09:00', 'schedule-date': day, 'schedule-start': '', 'schedule-end': '' })
+    const title = 'Fixture human-edited print shop visit'
+    await convertField('title').fill(title)
+    await convertField('estimate').fill('25')
+    assert.equal(fixture.llmCalls.streams.length, streamsBeforeReopen, 'reopening uses saved conversation, not a new dispatch')
+    assertUnchanged(before, await snapshot(), [...conversionCollections, 'inbox', 'proposals'])
+    await convertField('submit').click()
+    const slot = page.getByRole('dialog', { name: '安排任务时段', exact: true })
+    await slot.waitFor()
+    const converted = await snapshot()
+    const task = converted.tasks.find(row => row.title === title)
+    assert.ok(task, 'human edits become the durable task')
+    assert.equal(converted.tasks.length, before.tasks.length + 1)
+    assert.equal(task.description, 'Bring the revised proof')
+    assert.equal(task.estimate_minutes, 25)
+    assert.equal(task.priority, 1)
+    assert.equal(task.target_due, nextDay)
+    assert.equal(Date.parse(task.hard_deadline), Date.parse(shanghaiInstant(nextDay, '18:00')))
+    assert.equal(Date.parse(task.not_before), Date.parse(shanghaiInstant(day, '09:00')))
+    assert.deepEqual([task.preferred_window.start, task.preferred_window.end].map(Date.parse),
+      [shanghaiInstant(day), shanghaiInstant(nextDay)].map(Date.parse), 'date is a preferred window, not an allocation')
+    const entry = converted.inbox.find(entry => entry.text === text)
+    assert.equal(entry.status, 'processed')
+    assert.deepEqual(entry.converted_refs, [{ kind: 'task', id: task.id }])
+    assertUnchanged(before, converted, ['goals', 'projects', 'notes', 'allocations', 'capacity_blocks', 'proposals'])
+    assert.equal(await slot.getByTestId('schedule-slot-task').inputValue(), task.id)
+    assert.ok((await slot.getByTestId('schedule-focus-date').innerText()).includes(day))
+    for (const clock of ['start', 'end']) assert.equal(await slot.getByTestId('schedule-slot-' + clock).inputValue(), '')
+
+    const { data: { plan, proposal }, payload } = await clickForCommand(slot.getByTestId('schedule-day-preview'), 'plan.propose')
+    const { task_ids, horizon_start, horizon_end, move_unlocked } = payload
+    assert.deepEqual(task_ids, [task.id])
+    assert.deepEqual([horizon_start, horizon_end].map(Date.parse), [shanghaiInstant(day), shanghaiInstant(nextDay)].map(Date.parse))
+    assert.notEqual(move_unlocked, true, 'date search does not replan other allocations')
+    const capacity = converted.capacity_blocks.find(row => row.title === capacityTitle)
+    assert.ok(capacity)
+    assert.equal(plan.assignments.length, 1)
+    assert.equal(plan.assignments[0].task_id, task.id)
+    assert.equal(plan.assignments[0].minutes, 25)
+    const review = page.getByRole('dialog', { name: '检查计划建议', exact: true })
+    await review.getByTestId('plan-apply').waitFor()
+    assertUnchanged(converted, await snapshot(), conversionCollections)
+    await clickForCommand(review.getByTestId('plan-apply'), 'changes.commit')
+    await review.waitFor({ state: 'hidden' })
+    const applied = await snapshot()
+    const added = applied.allocations.filter(item => !converted.allocations.some(old => old.id === item.id))
+    assert.equal(added.length, 1)
+    assert.deepEqual([added[0].task_id, added[0].capacity_block_id, added[0].minutes], [task.id, capacity.id, 25])
+    assert.equal(Date.parse(added[0].start), Date.parse(plan.assignments[0].start))
+    assert.equal(Date.parse(added[0].end), Date.parse(plan.assignments[0].end))
+    assert.deepEqual(applied.allocations.filter(item => item.id !== added[0].id), converted.allocations, 'other allocations are untouched')
+    assert.equal(applied.proposals.find(row => row.id === proposal.id).status, 'applied')
+  })
+
+  await check('Date-only capture with no capacity keeps the task without booking time', async () => {
+    const row = await collectForClarify('Fixture date-only raw without matching capacity', () => clarifyDraft('task', {
+      title: 'Fixture task without matching capacity', estimate_minutes: 25, schedule_date: shanghaiDay(17),
+    }))
+    await row.click()
+    await startClarify()
+    await openConvert()
+    await convertField('submit').click()
+    const slot = page.getByRole('dialog', { name: '安排任务时段', exact: true })
+    await slot.waitFor()
+    const converted = await snapshot()
+    const { data } = await clickForCommand(slot.getByTestId('schedule-day-preview'), 'plan.propose')
+    assert.deepEqual(data.plan.assignments, [])
+    await slot.getByTestId('schedule-day-empty').waitFor()
+    assert.match(await slot.getByTestId('schedule-day-empty').innerText(), /当天没有排入时段/)
+    assert.equal(await page.getByTestId('plan-apply').count(), 0, 'nothing can be approved when no time was found')
+    await slot.getByRole('button', { name: '取消', exact: true }).click()
+    await slot.waitFor({ state: 'hidden' })
+    assertUnchanged(converted, await snapshot(), conversionCollections)
+  })
+
+  await check('Capture draft with fixed clock times opens the strict scheduling preview', async () => {
+    const day = shanghaiDay(16)
+    const capacityTitle = 'Fixture fixed capture capacity'
+    await command('capacity.create', { capacity: { title: capacityTitle,
+      start: shanghaiInstant(day, '14:00'), end: shanghaiInstant(day, '15:00'), capacity_minutes: 60, locked: false } })
+    const title = 'Fixture fixed clock task'
+    const row = await collectForClarify('Fixture raw with explicit clock times', () => clarifyDraft('task', {
+      title, estimate_minutes: 30, schedule_date: day, schedule_start: '14:00', schedule_end: '14:30',
+    }))
+    await row.click()
+    await startClarify()
+    await openConvert()
+    await convertField('submit').click()
+    const slot = page.getByRole('dialog', { name: '安排任务时段', exact: true })
+    await slot.waitFor()
+    const before = await snapshot()
+    const task = before.tasks.find(item => item.title === title)
+    const capacity = before.capacity_blocks.find(item => item.title === capacityTitle)
+    assert.ok(task && capacity)
+    assert.equal(await slot.getByTestId('schedule-slot-task').inputValue(), task.id)
+    assert.equal(await slot.getByTestId('schedule-slot-start').inputValue(), day + 'T14:00')
+    assert.equal(await slot.getByTestId('schedule-slot-end').inputValue(), day + 'T14:30')
+    assert.equal(await slot.getByTestId('schedule-day-preview').count(), 0)
+    await slot.getByTestId('schedule-slot-capacity').selectOption(capacity.id)
+    const { data: { proposal } } = await clickForCommand(slot.getByTestId('schedule-slot-preview'), 'proposal.create')
+    assert.equal(proposal.status, 'validated')
+    const [operation] = proposal.operations
+    assert.equal(proposal.operations.length, 1)
+    assert.equal(operation.operation, 'allocation.schedule')
+    const allocation = operation.payload.allocation
+    assert.equal(allocation.task_id, task.id)
+    assert.deepEqual([allocation.start, allocation.end].map(Date.parse),
+      [shanghaiInstant(day, '14:00'), shanghaiInstant(day, '14:30')].map(Date.parse))
+    const review = page.getByRole('dialog', { name: '检查提案', exact: true })
+    await review.getByRole('button', { name: '放弃预览', exact: true }).click()
+    await review.waitFor({ state: 'hidden' })
+    assertUnchanged(before, await snapshot(), conversionCollections)
+  })
+
+  for (const [kind, collection, draft, form, stored] of [
+    ['goal', 'goals', { description: 'Improve the print workflow', success_criteria: 'Approve three proofs' },
+      { description: 'Improve the print workflow', success: 'Approve three proofs' },
+      { description: 'Improve the print workflow', success_criteria: 'Approve three proofs' }],
+    ['project', 'projects', { scope: 'Arrange proofs and delivery' }, { scope: 'Arrange proofs and delivery' },
+      { scope: 'Arrange proofs and delivery' }],
+    ['note', 'notes', { note_body: 'Use matte stock for the next proof.' }, { 'note-body': 'Use matte stock for the next proof.' },
+      { body: 'Use matte stock for the next proof.' }],
+    ['keep'],
+  ]) {
+    await check('Capture suggestion ' + kind + ' is preselected and needs explicit confirmation', async () => {
+      const text = 'Fixture classify raw ' + kind
+      const title = 'Fixture drafted ' + kind
+      const row = await collectForClarify(text, () => clarifyDraft(kind, collection ? { title, ...draft } : {}))
+      const before = await snapshot()
+      await row.click()
+      await startClarify()
+      await openConvert()
+      await assertConvertFields({ kind, ...(collection ? { title, ...form } : {}) })
+      assertUnchanged(before, await snapshot(), [...conversionCollections, 'inbox', 'proposals'])
+      if (kind === 'keep') {
+        await convertField('kind').selectOption('task')
+        await convertField('title').waitFor()
+        await convertField('kind').selectOption('keep')
+      }
+      await convertField('submit').click()
+      await convertDialog().waitFor({ state: 'hidden' })
+      const after = await snapshot()
+      assertUnchanged(before, after, conversionCollections.filter(key => key !== collection))
+      if (kind === 'keep') {
+        assertUnchanged(before, after, ['inbox', 'proposals'])
+        await row.waitFor()
+      } else {
+        assert.equal(after[collection].length, before[collection].length + 1)
+        const saved = after[collection].find(item => item.title === title)
+        assert.ok(saved, title)
+        for (const [key, value] of Object.entries(stored)) assert.equal(saved[key], value, key)
+        const entry = after.inbox.find(item => item.text === text)
+        assert.equal(entry.status, 'processed')
+        assert.deepEqual(entry.converted_refs, [{ kind, id: saved.id }])
+      }
+    })
+  }
+
+  await check('AI goal conversation resumes and requires explicit final confirmation', async () => {
     await nav('goals')
     const start = page.getByRole('article').filter({hasText:'Fixture converted goal'}).getByRole('button', {name:'AI 拆解', exact:true})
     const before = await snapshot()
@@ -1428,8 +1647,12 @@ try {
     await review.waitFor({state:'hidden'})
     assert.equal((await snapshot()).tasks.length, before.tasks.length + 1)
     const calls = JSON.stringify(fixture.llmCalls.streams)
-    assert.ok(calls.includes('Fixture capture correction'))
     assert.ok(calls.includes('Fixture goal correction'))
+  })
+  await check('No client JavaScript errors or external network', async () => {
+    assert.deepEqual(report.pageErrors, [])
+    assert.deepEqual(report.unexpectedNetwork, [])
+    assert.equal(fixture.llmCalls.defaultSelections, 0, 'the current chat selection is never read')
   })
 } catch (error) {
   report.fatal = fixtureFailure(stage, error)

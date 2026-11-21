@@ -740,7 +740,9 @@ fn run_query(state: &AppState, principal: &AuthPrincipal, envelope: QueryEnvelop
     };
     let data = if envelope.query == "runs.list" {
         match inner.store.list_runs(&envelope.workspace_id, 100) {
-            Ok(runs) => json!({"runs": runs.iter().map(RunRecord::safe_view).collect::<Vec<_>>()}),
+            Ok(runs) => {
+                json!({"runs": runs.iter().map(|run| project_run_for_read(run, principal)).collect::<Vec<_>>()})
+            }
             Err(error) => {
                 return error_response(status_for(&error), &envelope.request_id, &error);
             }
@@ -753,7 +755,7 @@ fn run_query(state: &AppState, principal: &AuthPrincipal, envelope: QueryEnvelop
             .unwrap_or_default();
         match inner.store.get_run(id) {
             Ok(Some(run)) if run.workspace_id == envelope.workspace_id => {
-                json!({"run": run.safe_view()})
+                json!({"run": project_run_for_read(&run, principal)})
             }
             Ok(Some(_)) | Ok(None) => {
                 return error_response(
@@ -785,8 +787,61 @@ struct NewRunRequest {
     idempotency_key: Option<String>,
 }
 
-fn project_run(run: &RunRecord, principal: &AuthPrincipal) -> Value {
+fn project_run_for_read(run: &RunRecord, principal: &AuthPrincipal) -> Value {
     let mut view = run.safe_view();
+    if run.intent == "capture.clarify" && require_capability(principal, "read_private").is_err() {
+        // The new draft can contain a full private note body; don't expose it to read-only agents.
+        for field in ["checkpoint", "output"] {
+            if let Some(object) = view[field].as_object_mut() {
+                object.remove("conversion_draft");
+            }
+        }
+    }
+    view
+}
+
+#[cfg(test)]
+#[test]
+fn capture_clarify_draft_requires_private_read() {
+    let payload = json!({"reply":"legacy reply","conversion_draft":{"note_body":"private note"}});
+    let run = RunRecord {
+        id: "run_test".into(),
+        workspace_id: "ws_test".into(),
+        state: "succeeded".into(),
+        intent: "capture.clarify".into(),
+        input: json!({"text":"original"}),
+        checkpoint: Some(payload.clone()),
+        output: Some(payload.clone()),
+        error: None,
+        created_at: String::new(),
+        updated_at: String::new(),
+        started_at: None,
+        ended_at: None,
+        cancel_requested: false,
+        lease_owner: None,
+        heartbeat_at: None,
+    };
+    let mut principal = AuthPrincipal {
+        token: String::new(),
+        principal_id: "test-agent".into(),
+        kind: PrincipalKind::DelegatedAgent,
+        channel: "harness_agent".into(),
+        capabilities: vec!["read".into()],
+        workspace_id: "ws_test".into(),
+    };
+    let limited = project_run_for_read(&run, &principal);
+    for field in ["output", "checkpoint"] {
+        assert_eq!(limited[field], json!({"reply":"legacy reply"}));
+    }
+    principal.capabilities.push("read_private".into());
+    let private = project_run_for_read(&run, &principal);
+    for field in ["output", "checkpoint"] {
+        assert_eq!(private[field], payload);
+    }
+}
+
+fn project_run(run: &RunRecord, principal: &AuthPrincipal) -> Value {
+    let mut view = project_run_for_read(run, principal);
     if principal.channel == "harness_ui" && require_capability(principal, "read_private").is_ok() {
         if let Some(messages) = run.input.get("messages") {
             view["input"]["messages"] = messages.clone();

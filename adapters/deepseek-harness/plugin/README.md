@@ -5,7 +5,7 @@ The maintained Zodo UI is a native DSH left-menu entry and main workbench. Core 
 ## Workbench navigation
 
 - **今天** is the daily execution view: next task or current focus, today's timeline, and deadlines without a scheduled slot. Open a task without leaving this view. For weekly planning or changes to available time, use **日程**.
-- **收集箱** separates **待处理**, **待澄清**, and **处理记录**. **＋ 收集** in the top bar preserves the original text; it does not create a task.
+- **收集箱** separates **待处理**, **待澄清**, and **处理记录**. **＋ 收集** preserves the original text. AI clarification suggests an editable conversion draft for a task, goal, project or note; **保持原样** leaves the original entry untouched. A task’s preferred date or window is saved separately from any calendar allocation: continue to **安排任务时段**, then review and apply a candidate. A due date alone never occupies the calendar.
 - **工作** groups **任务**, **项目**, and **目标**. Reusable filters live in the task list. Projects can be independent or linked to a goal; open a project for its complete task list, milestones, and dependencies.
 - **日程** keeps the single-day and seven-day views. **生成计划** adds new placements without moving existing ones; **重新规划** can move eligible future placements. Both require preview and approval before updating the calendar. Appointment, capacity and calendar import tools are under **日程操作**.
 - **回顾** groups execution summaries and habits. Search, proposals and AI runs, and focus stay in the top bar. Workspace and administrative controls are grouped under **设置**.

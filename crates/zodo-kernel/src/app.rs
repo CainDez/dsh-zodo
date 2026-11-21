@@ -179,6 +179,7 @@ impl<'a> Application<'a> {
                 tasks,
                 goal,
                 project,
+                note,
             } => {
                 let entry = world
                     .inbox_entry(&id)
@@ -192,7 +193,7 @@ impl<'a> Application<'a> {
                         "this inbox entry was already processed",
                     ));
                 }
-                if tasks.is_empty() && goal.is_none() && project.is_none() {
+                if tasks.is_empty() && goal.is_none() && project.is_none() && note.is_none() {
                     return Err(ZodoError::validation(
                         "conversion needs at least one target",
                     ));
@@ -263,6 +264,20 @@ impl<'a> Application<'a> {
                         created.push(change.id.clone());
                     }
                 }
+                let note_id = if let Some(note) = note {
+                    apply_change(
+                        &mut world,
+                        &ChangeOp::NoteCreate { note },
+                        &ctx.principal_id,
+                        &ctx.channel,
+                        now,
+                        self.ids,
+                        &mut outcome,
+                    )?;
+                    outcome.changes.last().map(|change| change.id.clone())
+                } else {
+                    None
+                };
                 let entry = world
                     .inbox
                     .iter_mut()
@@ -290,18 +305,23 @@ impl<'a> Application<'a> {
                         id: project_id.clone(),
                     });
                 }
-                let value = entry.clone();
+                if let Some(note_id) = &note_id {
+                    entry.converted_refs.push(crate::model::EntityRef {
+                        kind: "note".to_string(),
+                        id: note_id.clone(),
+                    });
+                }
+                let mut data = json!({
+                    "inbox_entry": entry,
+                    "task_ids": created,
+                    "goal_id": goal_id,
+                    "project_id": project_id,
+                });
+                if let Some(note_id) = note_id {
+                    data["note_id"] = json!(note_id);
+                }
                 outcome.record("inbox", &id, "processed");
-                (
-                    ResultStatus::Committed,
-                    json!({
-                        "inbox_entry": value,
-                        "task_ids": created,
-                        "goal_id": goal_id,
-                        "project_id": project_id,
-                    }),
-                    "inbox.changed",
-                )
+                (ResultStatus::Committed, data, "inbox.changed")
             }
             CommandPayload::CaptureDismiss { id, reason } => {
                 let entry = world
@@ -2173,6 +2193,7 @@ impl<'a> Application<'a> {
             QueryPayload::RunGet { id } => Err(ZodoError::not_found("run", id)),
             QueryPayload::HealthInfo {} => Ok(json!({
                 "protocol": "zodo/1",
+                "features": {"capture_convert_note": true},
                 "runtime_version": env!("CARGO_PKG_VERSION"),
                 "instance_id": self.instance_id,
                 "workspace_id": world.workspace.id,
@@ -2846,6 +2867,8 @@ fn authorize(ctx: &crate::model::CommandContext, command: &CommandPayload) -> Re
             ctx.require("propose")
         }
         CommandPayload::ProposalValidate { .. } => ctx.require("read"),
+        // Converting with a note must not bypass the write requirement of note.create.
+        CommandPayload::CaptureConvert { note: Some(_), .. } => ctx.require("write"),
         CommandPayload::CaptureCollect { .. }
         | CommandPayload::CaptureClarify { .. }
         | CommandPayload::CaptureConvert { .. }

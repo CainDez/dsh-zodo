@@ -10,6 +10,7 @@ use crate::model::{
 
 pub const MAX_TITLE_CHARS: usize = 500;
 pub const MAX_TEXT_CHARS: usize = 40_000;
+pub const MAX_NOTE_BODY_CHARS: usize = 200_000;
 pub const MAX_BATCH: usize = 200;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -556,7 +557,7 @@ fn default_data_class() -> DataClass {
 impl NoteSpec {
     pub fn validate(&self) -> Result<()> {
         validate_title(&self.title)?;
-        if self.body.chars().count() > 200_000 {
+        if self.body.chars().count() > MAX_NOTE_BODY_CHARS {
             return Err(ZodoError::validation("note body is too long"));
         }
         Ok(())

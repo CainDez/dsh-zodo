@@ -35,7 +35,7 @@ if (fixtureView && /^[a-z-]+$/.test(fixtureView)) {
   observer.observe(document.body, { childList: true, subtree: true });
 }</script></html>`
 
-export async function startFixture({ binary = path.join(root, 'target/release/zodo.exe') } = {}) {
+export async function startFixture({ binary = path.join(root, 'target/release/zodo.exe'), captureClarifyReply } = {}) {
   binary = path.resolve(binary)
   // Start our own child first: the real bridge only discovers this brand-new runtime.
   const dir = await mkdtemp(path.join(tmpdir(), 'zodo-harness-fixture-'))
@@ -153,9 +153,10 @@ export async function startFixture({ binary = path.join(root, 'target/release/zo
           // Host callback transport remains production code; only the LLM service is mocked.
           llmCalls.streams.push(options)
           if (options.signal?.aborted) throw new Error('Fixture model stream aborted')
-          const result = String(options.system).includes('clarify')
+          const captureReply = captureClarifyReply?.(options.messages[0].content[0].text)
+          const result = captureReply ?? (String(options.system).includes('clarify')
             ? { questions: ['Fixture clarification question'], suggested_kind: 'task', assumptions: [] }
-            : { tasks: [{ title: 'Fixture Host mock task', estimate_minutes: 30 }], assumptions: [], questions: [] }
+            : { tasks: [{ title: 'Fixture Host mock task', estimate_minutes: 30 }], assumptions: [], questions: [] })
           yield { type: 'text-delta', index: 0, text: JSON.stringify(result) }
           yield { type: 'finish', reason: { kind: 'stop' } }
         },

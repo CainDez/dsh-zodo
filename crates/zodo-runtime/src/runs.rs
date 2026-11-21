@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
-use chrono::Utc;
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
+use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use tracing::{info, warn};
 use zodo_kernel::app::Application;
 use zodo_kernel::commands::CommandEnvelope;
@@ -10,7 +11,7 @@ use zodo_kernel::error::{ErrorCode, Result, ZodoError};
 use zodo_kernel::model::{
     CommandContext, DataClass, Goal, PrincipalKind, PrivacyPolicy, Project, World,
 };
-use zodo_kernel::ops::{ChangeOp, TaskSpec};
+use zodo_kernel::ops::{ChangeOp, MAX_NOTE_BODY_CHARS, MAX_TEXT_CHARS, MAX_TITLE_CHARS, TaskSpec};
 use zodo_kernel::ports::{Store, SystemClock, UuidIds};
 
 use crate::ai::{ChatMessage, ModelCompletion, authorize_scope, parse_json_object};
@@ -559,7 +560,7 @@ fn normalize_clarify_payload(parsed: &Value) -> Value {
     let assumptions = string_list(parsed.get("assumptions"), 8);
     let quick_replies = string_list(parsed.get("quick_replies"), 4);
     let suggested_kind = match parsed.get("suggested_kind").and_then(Value::as_str) {
-        Some(kind @ ("task" | "note" | "goal" | "keep")) => kind,
+        Some(kind @ ("task" | "note" | "goal" | "project" | "keep")) => kind,
         _ => "keep",
     };
     let summary_obj = parsed.get("summary").and_then(Value::as_object);
@@ -632,8 +633,142 @@ fn normalize_clarify_payload(parsed: &Value) -> Value {
     })
 }
 
-fn process_clarify(state: &AppState, _data_dir: &std::path::Path, run: &RunRecord) -> Result<()> {
-    let (policy, policy_revision, text, inbox_id, messages) = {
+const CAPTURE_CLARIFY_SYSTEM: &str = r#"You clarify a raw personal capture for Zodo through multi-turn conversation. Return ONLY one JSON object:
+{"reply":string,"questions":[string],"quick_replies":[string],"summary":{"confirmed":[{"topic":string,"value":string,"source_quote":string}],"pending":[string],"undecided":[string]},"suggested_kind":"task"|"note"|"goal"|"project"|"keep","assumptions":[string],"conversion_draft":{...}}
+Ask at most 4 concise questions about unresolved items only; never re-ask answered or explicitly deferred items. Respect the latest user correction, keep the history, and move deferred items to summary.undecided. Quote the user's exact words in source_quote. Provide 0 to 4 concise quick_replies.
+conversion_draft is optional and flat. Its only allowed keys are title, description, estimate_minutes, priority, target_due, hard_deadline_date, hard_deadline_time, not_before_date, not_before_time, schedule_date, schedule_start, schedule_end, success_criteria, scope, note_body. Text fields are strings, estimate_minutes is an integer 1..10080, priority is an integer 0..4. Only include fields supported by the raw capture or explicitly confirmed by the user. Do not copy unconfirmed assistant suggestions, assumptions, pending or undecided items into the draft. Omit unknown fields rather than filling defaults. Use keep when there is no clear conversion kind; omit the draft for keep or if nothing is draftable.
+Dates must be ISO YYYY-MM-DD. Clock times must be local HH:MM in the workspace time zone and require a matching date. target_due is a soft target; hard_deadline_date is a firm deadline, and hard_deadline_time can be omitted only for a genuinely date-only deadline (end of that local day). not_before fields are release constraints. schedule_date and optional schedule_start/schedule_end describe when the user explicitly intends to do the work; they are not deadlines and never authorization to write the schedule. Never infer an end time or a start time. If a local time is ambiguous or nonexistent in the workspace time zone, omit the ambiguous date/time constraint.
+Resolve relative dates only when both the calendar anchor and the meaning are unambiguous: use capture_local_date for the original captured wording and run_local_date for a relative phrase clearly newly authored in the latest user turn of this request. For an uncaptured raw input, use run_local_date only if the wording is clearly relative to this request. Never reinterpret past or undated conversation relative to this run, use a stale assistant suggestion, or substitute the run date for an unknown collection date. A week/month, vague time of day, or ambiguous date is not a specific date/time: omit uncertain fields, do not guess. This is a draft only: do not execute, create facts, or write to the schedule."#;
+
+fn draft_date(value: &Value) -> Option<NaiveDate> {
+    let text = value.as_str()?.trim();
+    let date = NaiveDate::parse_from_str(text, "%Y-%m-%d").ok()?;
+    (text.len() == 10 && !text.starts_with("0000-") && date.to_string() == text).then_some(date)
+}
+
+fn draft_time(value: &Value) -> Option<NaiveTime> {
+    let text = value.as_str()?.trim();
+    let time = NaiveTime::parse_from_str(text, "%H:%M").ok()?;
+    (time.format("%H:%M").to_string() == text).then_some(time)
+}
+
+fn normalize_conversion_draft(value: &Value, timezone: Option<Tz>) -> Option<Value> {
+    let input = value.as_object()?;
+    let mut draft = Map::new();
+    for (key, max) in [
+        ("title", MAX_TITLE_CHARS),
+        ("description", MAX_TEXT_CHARS),
+        ("success_criteria", MAX_TEXT_CHARS),
+        ("scope", MAX_TEXT_CHARS),
+        ("note_body", MAX_NOTE_BODY_CHARS),
+    ] {
+        if let Some(text) = input
+            .get(key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty() && text.chars().count() <= max)
+        {
+            draft.insert(key.into(), json!(text));
+        }
+    }
+    for (key, range) in [("estimate_minutes", 1..=10080), ("priority", 0..=4)] {
+        if let Some(number) = input
+            .get(key)
+            .and_then(Value::as_u64)
+            .filter(|number| range.contains(number))
+        {
+            draft.insert(key.into(), json!(number));
+        }
+    }
+    if let Some(date) = input.get("target_due").and_then(draft_date) {
+        draft.insert("target_due".into(), json!(date));
+    }
+    let local_time = |date: NaiveDate, time: NaiveTime| {
+        timezone.is_some_and(|zone| {
+            zone.from_local_datetime(&date.and_time(time))
+                .single()
+                .is_some()
+        })
+    };
+    for (date_key, time_key, date_only_time) in [
+        (
+            "hard_deadline_date",
+            "hard_deadline_time",
+            NaiveTime::from_hms_opt(23, 59, 59).unwrap(),
+        ),
+        ("not_before_date", "not_before_time", NaiveTime::MIN),
+    ] {
+        if let Some(date) = input.get(date_key).and_then(draft_date) {
+            match input.get(time_key).filter(|value| !value.is_null()) {
+                Some(raw_time) => {
+                    // Dropping a malformed explicit time alone would invent a date-only deadline/release.
+                    if let Some(time) = draft_time(raw_time).filter(|time| local_time(date, *time))
+                    {
+                        draft.insert(date_key.into(), json!(date));
+                        draft.insert(time_key.into(), json!(time.format("%H:%M").to_string()));
+                    }
+                }
+                None if local_time(date, date_only_time) => {
+                    draft.insert(date_key.into(), json!(date));
+                }
+                None => {}
+            }
+        }
+    }
+    if let Some(date) = input.get("schedule_date").and_then(draft_date) {
+        draft.insert("schedule_date".into(), json!(date));
+        let start = input
+            .get("schedule_start")
+            .and_then(draft_time)
+            .filter(|time| local_time(date, *time));
+        let end = input
+            .get("schedule_end")
+            .and_then(draft_time)
+            .filter(|time| local_time(date, *time));
+        if !matches!((start, end), (Some(start), Some(end)) if end <= start) {
+            for (key, time) in [("schedule_start", start), ("schedule_end", end)] {
+                if let Some(time) = time {
+                    draft.insert(key.into(), json!(time.format("%H:%M").to_string()));
+                }
+            }
+        }
+    }
+    (!draft.is_empty()).then_some(Value::Object(draft))
+}
+
+#[derive(Serialize, Deserialize)]
+struct CaptureDateContext {
+    workspace_timezone: Option<Tz>,
+    run_local_date: Option<NaiveDate>,
+    capture_local_date: Option<NaiveDate>,
+}
+
+impl CaptureDateContext {
+    fn new(world: &World, run: &RunRecord, inbox_id: Option<&str>, text: &str) -> Self {
+        let workspace_timezone = world.workspace.settings.timezone.parse::<Tz>().ok();
+        let run_local_date = DateTime::parse_from_rfc3339(&run.created_at)
+            .ok()
+            .zip(workspace_timezone)
+            .map(|(created_at, zone)| created_at.with_timezone(&zone).date_naive());
+        let capture_local_date = inbox_id
+            .and_then(|id| world.inbox_entry(id))
+            .filter(|entry| entry.text.trim() == text)
+            .zip(workspace_timezone)
+            .map(|(entry, zone)| entry.created_at.with_timezone(&zone).date_naive());
+        Self {
+            workspace_timezone,
+            run_local_date,
+            capture_local_date,
+        }
+    }
+}
+
+fn process_clarify(
+    state: &AppState,
+    run: &RunRecord,
+    mut complete: impl FnMut(&PrivacyPolicy, u64, &DataClass, &[ChatMessage]) -> Result<ModelCompletion>,
+) -> Result<()> {
+    let (policy, policy_revision, inbox_id, user, date_context) = {
         let mut inner = state
             .inner
             .lock()
@@ -662,94 +797,68 @@ fn process_clarify(state: &AppState, _data_dir: &std::path::Path, run: &RunRecor
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_string);
-        let messages = run
-            .input
-            .get("messages")
-            .and_then(Value::as_array)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| {
-                        let role = item.get("role").and_then(Value::as_str)?;
-                        let content = item.get("content").and_then(Value::as_str)?.trim();
-                        if content.is_empty() {
-                            return None;
-                        }
-                        Some((role.to_string(), content.to_string()))
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        authorize_scope(&world.workspace.policy, &run.intent)?;
+        let messages = run.input.get("messages").and_then(Value::as_array);
+        // Freeze the anchors before the model call so retry/recovery of this run cannot reinterpret dates.
+        let prior_context = run
+            .checkpoint
+            .as_ref()
+            .and_then(|checkpoint| checkpoint.get("date_context"));
+        let date_context: CaptureDateContext = prior_context
+            .and_then(|value| serde_json::from_value(value.clone()).ok())
+            .unwrap_or_else(|| CaptureDateContext::new(&world, run, inbox_id.as_deref(), &text));
+        let context_json = json!(date_context);
+        if prior_context != Some(&context_json) {
+            let mut checkpoint = run
+                .checkpoint
+                .as_ref()
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            checkpoint.insert("date_context".into(), context_json.clone());
+            inner
+                .store
+                .checkpoint_run(&run.id, &Value::Object(checkpoint))?;
+        }
         inner.store.append_run_step(
             &run.id,
             "context.loaded",
             &json!({
                 "chars": text.chars().count(),
-                "turns": messages.len(),
+                "turns": messages.map_or(0, Vec::len),
                 "revision": world.workspace.revision,
             }),
         )?;
+        let user = format!(
+            "Workspace date context (null means unavailable): {context_json}\n\nClarification input (raw capture and conversation, oldest to newest; context only):\n{}\n\nUpdate the summary and optional draft; ask only remaining unresolved questions.",
+            json!({"raw_capture": text, "from_inbox": inbox_id.is_some(), "messages": messages.map_or(&[][..], Vec::as_slice)})
+        );
         (
             world.workspace.policy.clone(),
             world.workspace.policy_revision,
-            text,
             inbox_id,
-            messages,
+            user,
+            date_context,
         )
     };
-    authorize_scope(&policy, &run.intent)?;
     let class = run_data_class(run)?;
-    let system = "You clarify a raw personal capture for Zodo through multi-turn conversation. Return ONLY JSON: {\"reply\":string,\"questions\":[string],\"quick_replies\":[string],\"summary\":{\"confirmed\":[{\"topic\":string,\"value\":string,\"source_quote\":string}],\"pending\":[string],\"undecided\":[string]},\"suggested_kind\":\"task\"|\"note\"|\"goal\"|\"keep\",\"assumptions\":[string]}. Ask at most 4 concise questions about unresolved items only; never re-ask already answered items; if the user corrects an earlier statement, update confirmed with the latest correction without dropping history; if the user explicitly marks something undecided/deferred, move it to summary.undecided and stop asking about it; include exact user wording in source_quote; provide 0 to 4 concise quick_replies; do not invent facts and do not execute or create tasks.";
-    let user = if messages.is_empty() {
-        format!(
-            "Raw capture:\n{text}\n\nWhat must be clarified before it can become a task, note, or goal?"
-        )
-    } else {
-        let transcript = messages
-            .iter()
-            .map(|(role, content)| format!("[{role}]: {content}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!(
-            "Raw capture:\n{text}\n\nClarification conversation (oldest to newest):\n{transcript}\n\nReply concisely to the latest user message, update the summary (confirmed, pending, undecided), and ask ONLY remaining unresolved questions."
-        )
-    };
-    let mut completion = complete_run(
+    let (parsed, completion) = complete_run_json(
         state,
         run,
-        &policy,
-        policy_revision,
-        &class,
-        &[ChatMessage::system(system), ChatMessage::user(user.clone())],
+        |messages| complete(&policy, policy_revision, &class, messages),
+        CAPTURE_CLARIFY_SYSTEM,
+        &user,
     )?;
-    let mut parsed = parse_json_object(&completion.content);
-    if parsed.is_err() {
-        {
-            let inner = state.inner.lock().map_err(|_| {
-                ZodoError::new(ErrorCode::StorageFailure, "runtime state unavailable")
-            })?;
-            inner.store.append_run_step(
-                &run.id,
-                "model.invalid_json",
-                &json!({"reason": "invalid_model_json", "content_withheld": true}),
-            )?;
-        }
-        let retry = complete_run(
-            state,
-            run,
-            &policy,
-            policy_revision,
-            &class,
-            &[
-                ChatMessage::system("Return ONLY one valid compact JSON object."),
-                ChatMessage::user(user),
-            ],
-        )?;
-        completion = retry;
-        parsed = parse_json_object(&completion.content);
-    }
-    let normalized = normalize_clarify_payload(&parsed?);
-    let checkpoint = json!({
+    let normalized = normalize_clarify_payload(&parsed);
+    let draft = if normalized["suggested_kind"] != "keep" {
+        parsed
+            .get("conversion_draft")
+            .and_then(|value| normalize_conversion_draft(value, date_context.workspace_timezone))
+    } else {
+        None
+    };
+    let mut checkpoint = json!({
+        "date_context": date_context,
         "model": completion.model,
         "provider": completion.provider_id,
         "source": completion.source,
@@ -761,12 +870,19 @@ fn process_clarify(state: &AppState, _data_dir: &std::path::Path, run: &RunRecor
         "assumptions": normalized["assumptions"],
         "suggested_kind": normalized["suggested_kind"],
     });
+    if let Some(draft) = &draft {
+        checkpoint["conversion_draft"] = draft.clone();
+    }
     {
         let inner = state
             .inner
             .lock()
             .map_err(|_| ZodoError::new(ErrorCode::StorageFailure, "runtime state unavailable"))?;
         inner.store.checkpoint_run(&run.id, &checkpoint)?;
+        checkpoint
+            .as_object_mut()
+            .unwrap()
+            .remove("conversion_draft");
         inner
             .store
             .append_run_step(&run.id, "model.completed", &checkpoint)?;
@@ -780,7 +896,7 @@ fn process_clarify(state: &AppState, _data_dir: &std::path::Path, run: &RunRecor
             .inner
             .lock()
             .map_err(|_| ZodoError::new(ErrorCode::StorageFailure, "runtime state unavailable"))?;
-        let output = json!({
+        let mut output = json!({
             "status": "clarification_ready",
             "inbox_id": checkpoint.get("inbox_id").cloned().unwrap_or(Value::Null),
             "reply": checkpoint["reply"],
@@ -794,9 +910,13 @@ fn process_clarify(state: &AppState, _data_dir: &std::path::Path, run: &RunRecor
             "source": checkpoint.get("source"),
             "facts_written": false,
         });
+        if let Some(draft) = draft {
+            output["conversion_draft"] = draft;
+        }
         inner
             .store
             .update_run_state(&run.id, "succeeded", Some(&output), None)?;
+        output.as_object_mut().unwrap().remove("conversion_draft");
         inner
             .store
             .append_run_step(&run.id, "clarification.ready", &output)?;
@@ -854,7 +974,7 @@ fn require_current_goal_context(world: &World, run: &RunRecord, stamp: &Value) -
     Ok(())
 }
 
-fn complete_goal_json(
+fn complete_run_json(
     state: &AppState,
     run: &RunRecord,
     mut complete: impl FnMut(&[ChatMessage]) -> Result<ModelCompletion>,
@@ -888,10 +1008,12 @@ fn complete_goal_json(
     Ok((parsed, retry))
 }
 
-fn process_run(state: &AppState, data_dir: &std::path::Path, run: &RunRecord) -> Result<()> {
+fn process_run(state: &AppState, _data_dir: &std::path::Path, run: &RunRecord) -> Result<()> {
     validate_run_intent(&run.intent, &run.input)?;
     if run.intent == "capture.clarify" {
-        return process_clarify(state, data_dir, run);
+        return process_clarify(state, run, |policy, revision, class, messages| {
+            complete_run(state, run, policy, revision, class, messages)
+        });
     }
     process_goal_run(state, run, |policy, revision, class, messages| {
         complete_run(state, run, policy, revision, class, messages)
@@ -977,7 +1099,7 @@ fn process_goal_run(
     if discuss {
         // Deliberately ignore any planning checkpoint: discussion never reaches proposal creation.
         let (parsed, model) =
-            complete_goal_json(state, run, &mut complete, GOAL_DISCUSS_SYSTEM, &user)?;
+            complete_run_json(state, run, &mut complete, GOAL_DISCUSS_SYSTEM, &user)?;
         let mut output = normalize_clarify_payload(&parsed);
         if parsed
             .get("reply")
@@ -1035,7 +1157,7 @@ Do not invent facts about the user. Put uncertainty into questions.";
         } else {
             plan_system.to_string()
         };
-        let (parsed, completion) = complete_goal_json(state, run, &mut complete, &system, &user)?;
+        let (parsed, completion) = complete_run_json(state, run, &mut complete, &system, &user)?;
         let tasks = parsed
             .get("tasks")
             .and_then(Value::as_array)
@@ -1293,6 +1415,25 @@ mod tests {
         checkpoint: Option<Value>,
         allow_goals: bool,
     ) -> (tempfile::TempDir, AppState, RunRecord) {
+        run_fixture("goal.decompose", input, checkpoint, |world| {
+            world.workspace.policy.model_access.goals = allow_goals;
+            world.goals.push(
+                serde_json::from_value(json!({
+                    "id": "goal_test", "workspace_id": "ws_test", "title": "Test goal",
+                    "status": "active", "created_at": world.workspace.created_at,
+                    "updated_at": world.workspace.created_at, "version": 1
+                }))
+                .unwrap(),
+            );
+        })
+    }
+
+    fn run_fixture(
+        intent: &str,
+        input: Value,
+        checkpoint: Option<Value>,
+        configure: impl FnOnce(&mut World),
+    ) -> (tempfile::TempDir, AppState, RunRecord) {
         let dir = tempfile::tempdir().unwrap();
         let mut store = SqliteStore::open(dir.path().join("run-test.sqlite3")).unwrap();
         let now = Utc::now();
@@ -1301,18 +1442,9 @@ mod tests {
             "Test".to_string(),
             now,
         ));
-        world.workspace.policy.model_access.goals = allow_goals;
-        world.goals.push(
-            serde_json::from_value(json!({
-                "id": "goal_test", "workspace_id": "ws_test", "title": "Test goal",
-                "status": "active", "created_at": now, "updated_at": now, "version": 1
-            }))
-            .unwrap(),
-        );
+        configure(&mut world);
         store.create_workspace(&world).unwrap();
-        let run = store
-            .create_run("ws_test", "goal.decompose", &input)
-            .unwrap();
+        let run = store.create_run("ws_test", intent, &input).unwrap();
         if let Some(checkpoint) = checkpoint {
             store.checkpoint_run(&run.id, &checkpoint).unwrap();
         }
@@ -1677,6 +1809,283 @@ mod tests {
             proposal.intent.contains("为 2 个任务"),
             "{}",
             proposal.intent
+        );
+    }
+
+    fn capture_command(operation: &str, request_id: &str, payload: Value) -> CommandEnvelope {
+        CommandEnvelope {
+            schema: zodo_kernel::model::SCHEMA_COMMAND.to_string(),
+            request_id: request_id.to_string(),
+            idempotency_key: request_id.to_string(),
+            workspace_id: "ws_test".into(),
+            operation: operation.into(),
+            operation_version: zodo_kernel::model::OPERATION_VERSION,
+            base_revision: None,
+            policy_revision: None,
+            payload,
+        }
+    }
+
+    #[test]
+    fn capture_convert_note_keeps_legacy_idempotency_hash() {
+        let parse = |payload| {
+            capture_command("capture.convert", "test", payload)
+                .parse()
+                .unwrap()
+                .canonical_hash
+        };
+        for payload in [
+            json!({"id":"inb_legacy","tasks":[]}),
+            json!({"id":"inb_legacy","tasks":[],"note":null}),
+        ] {
+            // Canonical v1 envelope from before NoteSpec was added.
+            assert_eq!(
+                parse(payload),
+                "b150144978ac45c1e228e6d3fd070da119e63808ca062bd223827bc6471e538a"
+            );
+        }
+        assert_ne!(
+            parse(json!({"id":"inb_legacy","tasks":[],"note":{"title":"Note","body":"Private"}})),
+            parse(json!({"id":"inb_legacy","tasks":[]}))
+        );
+    }
+
+    #[test]
+    fn capture_convert_note_is_atomic_private_and_idempotent() {
+        let (_dir, state, _) =
+            run_fixture("capture.clarify", json!({"text":"scratch"}), None, |_| {});
+        let mut inner = state.inner.lock().unwrap();
+        let mut app = Application {
+            store: &mut inner.store,
+            clock: &SystemClock,
+            ids: &UuidIds::default(),
+            instance_id: "rt_test".into(),
+        };
+        let mut ctx = CommandContext {
+            principal_id: "test-user".into(),
+            principal_kind: PrincipalKind::InteractiveUi,
+            channel: "harness_ui".into(),
+            capabilities: vec!["capture".into()],
+            workspace_id: "ws_test".into(),
+            request_id: "test".into(),
+            received_at: Utc::now(),
+            runtime_instance: "rt_test".into(),
+        };
+        let captured = app
+            .execute(
+                &ctx,
+                capture_command("capture.collect", "collect", json!({"text":"original"})),
+            )
+            .unwrap();
+        let id = captured.data["inbox_entry"]["id"].as_str().unwrap();
+        let before = app.store.load_world("ws_test").unwrap().unwrap();
+        let note_only = capture_command(
+            "capture.convert",
+            "convert",
+            json!({
+                "id":id, "tasks":[], "note":{"title":"Note", "body":"Private body"}
+            }),
+        );
+        assert_eq!(
+            app.execute(&ctx, note_only.clone()).unwrap_err().code,
+            ErrorCode::PermissionDenied
+        );
+        ctx.capabilities.push("write".into());
+        let invalid = capture_command(
+            "capture.convert",
+            "invalid",
+            json!({
+                "id":id, "tasks":[{"title":"Should not be saved"}],
+                "note":{"title":"Invalid link", "body":"Private body", "linked_tasks":["missing"]}
+            }),
+        );
+        assert_eq!(
+            app.execute(&ctx, invalid).unwrap_err().code,
+            ErrorCode::NotFound
+        );
+        assert_eq!(
+            json!(app.store.load_world("ws_test").unwrap().unwrap()),
+            json!(before)
+        );
+        let converted = app.execute(&ctx, note_only.clone()).unwrap();
+        assert!(!converted.replayed);
+        let note_id = converted.data["note_id"].as_str().unwrap();
+        assert_eq!(converted.data["inbox_entry"]["status"], "processed");
+        assert_eq!(
+            converted.data["inbox_entry"]["converted_refs"],
+            json!([{"kind":"note","id":note_id}])
+        );
+        assert!(!converted.data.to_string().contains("Private body"));
+        let replayed = app.execute(&ctx, note_only).unwrap();
+        assert!(replayed.replayed);
+        assert_eq!(replayed.data, converted.data);
+        let after = app.store.load_world("ws_test").unwrap().unwrap();
+        assert_eq!(after.workspace.revision, before.workspace.revision + 1);
+        assert_eq!(after.inbox[0].id, id);
+        assert_eq!(after.notes.len(), 1);
+        assert_eq!(after.notes[0].id, note_id);
+        assert_eq!(after.notes[0].body, "Private body");
+        assert_eq!(after.notes[0].data_class, DataClass::DeviceOnly);
+    }
+
+    #[test]
+    fn capture_clarify_draft_preserves_only_usable_flat_fields() {
+        let zone = Some(chrono_tz::Asia::Shanghai);
+        let valid = json!({
+            "title": "整理文档", "description": "梳理打印流程", "estimate_minutes": 10080,
+            "priority": 0, "target_due": "2028-02-29", "hard_deadline_date": "2028-03-01",
+            "not_before_date": "2028-02-28", "not_before_time": "00:00",
+            "schedule_date": "2028-02-28", "schedule_start": "09:15", "schedule_end": "10:00",
+            "success_criteria": "完成回顾", "scope": "打印流程", "note_body": "第一行\n第二行"
+        });
+        assert_eq!(normalize_conversion_draft(&valid, zone), Some(valid));
+        assert_eq!(
+            normalize_conversion_draft(
+                &json!({
+                    "title": "  检查  ", "description": 42, "estimate_minutes": 10081,
+                    "priority": "4", "target_due": "2027-02-29", "hard_deadline_date": "2028-03-01",
+                    "hard_deadline_time": "24:00", "not_before_date": "2028-2-29", "not_before_time": "09:00",
+                    "schedule_date": "2028-02-29", "schedule_start": "9:00", "schedule_end": "10:00",
+                    "success_criteria": ["完成"], "scope": " 下游 ", "note_body": " ",
+                    "extra": {"title": "不接受内嵌"}, "allocation": {"start":"09:00"}
+                }),
+                zone
+            ),
+            Some(json!({
+                "title": "检查", "schedule_date": "2028-02-29", "schedule_end": "10:00", "scope": "下游"
+            }))
+        );
+        for invalid in [
+            json!(null),
+            json!([]),
+            json!({}),
+            json!({
+                "title": "字".repeat(MAX_TITLE_CHARS + 1),
+                "description": "字".repeat(MAX_TEXT_CHARS + 1),
+                "note_body": "字".repeat(MAX_NOTE_BODY_CHARS + 1),
+                "estimate_minutes": 0, "priority": 5, "hard_deadline_time": "09:00", "schedule_start": "09:00"
+            }),
+            json!({"estimate_minutes": 1.5, "priority": -1}),
+        ] {
+            assert_eq!(normalize_conversion_draft(&invalid, zone), None);
+        }
+    }
+
+    #[test]
+    fn capture_clarify_draft_does_not_guess_local_times() {
+        let zone = Some(chrono_tz::America::New_York);
+        assert_eq!(
+            normalize_conversion_draft(
+                &json!({
+                    "hard_deadline_date":"2026-11-01", "hard_deadline_time":"01:30",
+                    "not_before_date":"2026-03-08", "not_before_time":"02:30",
+                    "schedule_date":"2026-11-01", "schedule_start":"12:00", "schedule_end":"11:30"
+                }),
+                zone
+            ),
+            Some(json!({"schedule_date":"2026-11-01"}))
+        );
+        let date_only = json!({"hard_deadline_date":"2026-11-01", "not_before_date":"2026-03-08"});
+        assert_eq!(
+            normalize_conversion_draft(&date_only, zone),
+            Some(date_only)
+        );
+    }
+
+    #[test]
+    fn capture_clarify_checkpoints_draft_and_date_context_without_writing_facts() {
+        let input = json!({"text":"明天整理文档", "inbox_id":"inb_test", "messages":[
+            {"role":"assistant", "content":"要把明天当截止日期吗？"},
+            {"role":"user", "content":"不用，排在明天 09:00，期限待定"}
+        ]});
+        let (_dir, state, mut run) = run_fixture("capture.clarify", input.clone(), None, |world| {
+            world.workspace.settings.timezone = "Asia/Shanghai".into();
+            world.workspace.policy.model_access.captures = true;
+            world.inbox.push(
+                serde_json::from_value(json!({
+                    "id":"inb_test", "workspace_id":"ws_test", "text":input["text"],
+                    "source":{"kind":"user"}, "status":"unprocessed", "version":1,
+                    "created_at":"2026-11-16T17:30:00Z", "updated_at":"2026-11-16T17:30:00Z"
+                }))
+                .unwrap(),
+            );
+        });
+        run.created_at = "2026-11-19T17:30:00Z".into();
+        let before = state
+            .inner
+            .lock()
+            .unwrap()
+            .store
+            .load_world("ws_test")
+            .unwrap()
+            .unwrap();
+        let unbound = CaptureDateContext::new(&before, &run, Some("inb_test"), "别的文字");
+        assert!(unbound.capture_local_date.is_none());
+        let mut calls = 0;
+        let draft =
+            json!({"title":"整理文档", "schedule_date":"2026-11-21", "schedule_start":"09:00"});
+        process_clarify(&state, &run, |policy, _, _, messages| {
+            calls += 1;
+            assert!(policy.model_access.captures);
+            assert!(
+                messages[0]
+                    .content
+                    .contains("Do not copy unconfirmed assistant suggestions")
+            );
+            assert!(
+                messages[0]
+                    .content
+                    .contains("Never reinterpret past or undated conversation")
+            );
+            assert!(
+                messages[1]
+                    .content
+                    .contains("\"workspace_timezone\":\"Asia/Shanghai\"")
+            );
+            assert!(
+                messages[1]
+                    .content
+                    .contains("\"capture_local_date\":\"2026-11-17\"")
+            );
+            assert!(
+                messages[1]
+                    .content
+                    .contains("\"run_local_date\":\"2026-11-20\"")
+            );
+            assert!(
+                messages[1]
+                    .content
+                    .contains("不用，排在明天 09:00，期限待定")
+            );
+            let content = if calls == 1 {
+                "invalid JSON".into()
+            } else {
+                json!({"suggested_kind":"project", "conversion_draft":draft,
+                      "summary":{"undecided":["期限"]}})
+                .to_string()
+            };
+            Ok(ModelCompletion {
+                provider_id: "test".into(),
+                model: "fixture".into(),
+                source: "stub".into(),
+                content,
+                elapsed_ms: 0,
+            })
+        })
+        .unwrap();
+        assert_eq!(calls, 2);
+        let mut inner = state.inner.lock().unwrap();
+        let stored = inner.store.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(stored.input, input);
+        assert_eq!(stored.state, "succeeded");
+        assert_eq!(stored.checkpoint.unwrap()["conversion_draft"], draft);
+        let output = stored.output.unwrap();
+        assert_eq!(output["conversion_draft"], draft);
+        assert_eq!(output["suggested_kind"], "project");
+        assert_eq!(output["facts_written"], false);
+        assert_eq!(
+            json!(inner.store.load_world("ws_test").unwrap().unwrap()),
+            json!(before)
         );
     }
 
