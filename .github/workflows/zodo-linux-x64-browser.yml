@@ -2,14 +2,18 @@
 name: Zodo Linux x64 browser fixture
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches:
       - xiaoz/zodo-scheduler
+      - main
     paths:
       - .github/workflows/zodo-linux-x64-browser.yml
       - adapters/deepseek-harness/plugin/**
       - tests/adapter/**
       - tests/browser/**
+      - tests/packaging/**
       - scripts/build-linux-plugin.py
       - scripts/verify-plugin-package.py
       - Cargo.toml
@@ -19,15 +23,15 @@ on:
 permissions: {}
 
 concurrency:
-  group: zodo-linux-x64-browser
+  group: zodo-linux-x64-browser-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   rendered-fixture:
-    if: github.repository == 'CainDez/dsh-zodo' && github.ref == 'refs/heads/xiaoz/zodo-scheduler' && github.event_name == 'push' && github.event.deleted == false
+    if: github.repository == 'CainDez/dsh-zodo' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.event.deleted == false))
     permissions: {}
     runs-on: ubuntu-22.04
-    timeout-minutes: 50
+    timeout-minutes: 65
     defaults:
       run:
         shell: bash
@@ -55,11 +59,22 @@ jobs:
           [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
           git init --quiet
           git remote add origin https://github.com/CainDez/dsh-zodo.git
+          # Test GitHub's tentative merge on PRs, not only the PR head.
           # Public fetch only; no checkout action, token or credential fallback.
-          git -c credential.helper= -c http.extraHeader= fetch --no-tags --depth=128 origin refs/heads/xiaoz/zodo-scheduler >"$RUNNER_TEMP/zodo-git.log" 2>&1 ||
-            { echo 'Public branch fetch failed'; exit 1; }
-          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD ||
-            { echo 'Trigger SHA is not in the bounded branch history'; exit 1; }
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) [[ "$GITHUB_REF" =~ ^refs/pull/[0-9]+/merge$ ]] ;;
+            push) [[ "$GITHUB_REF" == refs/heads/main || "$GITHUB_REF" == refs/heads/xiaoz/zodo-scheduler ]] ;;
+            *) exit 1 ;;
+          esac
+          git -c credential.helper= -c http.extraHeader= fetch --no-tags --depth=128 origin "$GITHUB_REF" >"$RUNNER_TEMP/zodo-git.log" 2>&1 ||
+            { echo 'Public ref fetch failed'; exit 1; }
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA" ||
+              { echo 'PR merge ref changed since this event; use the newest run'; exit 1; }
+          else
+            git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD ||
+              { echo 'Trigger SHA is not in the bounded branch history'; exit 1; }
+          fi
           git checkout --quiet --detach "$GITHUB_SHA"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --porcelain --untracked-files=normal)"
@@ -86,6 +101,18 @@ jobs:
               raise SystemExit("Build identity mismatch")
           print("verified-linux-zip-sha256", info["plugin_zip_sha256"])
           PY
+      - name: Run Core, adapter and packaging regressions
+        timeout-minutes: 15
+        run: |
+          cd "$RUNNER_TEMP/zodo-reviewed-source"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          export CARGO_TARGET_DIR="$RUNNER_TEMP/zodo-cargo-tests"
+          cargo test --workspace --locked
+          ZODO_CORE_TEST_BIN="$RUNNER_TEMP/zodo-linux-assembly/zodo" node --test \
+            tests/adapter/*.test.mjs tests/browser/*.test.mjs \
+            adapters/deepseek-harness/plugin/host-gateway.test.js
+          python3 -B -m unittest discover -s tests/packaging -p 'test_*.py'
+          python3 -B -m unittest discover -s tests/browser/ci-deps -p 'test_*.py'
       - name: Verify and install only existing locked fixture dependencies
         id: fixture-deps
         timeout-minutes: 5
