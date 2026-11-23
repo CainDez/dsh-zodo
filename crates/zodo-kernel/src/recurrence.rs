@@ -8,7 +8,7 @@ use crate::apply::{ApplyOutcome, apply_change};
 use crate::error::{Result, ZodoError};
 use crate::model::{
     Dependency, Occurrence, OccurrenceStatus, RecurrenceFrequency, RecurrenceRule, SourceRef,
-    TaskStatus, World,
+    TaskStatus, TaskTree, World,
 };
 use crate::ops::{ChangeOp, TaskSpec, validate_title};
 use crate::ports::IdSource;
@@ -205,6 +205,7 @@ pub fn apply_exception(
     }
     match action {
         OccurrenceAction::Skip => {
+            TaskTree::new(world).require_finished_descendants(&task_id)?;
             let task = world.task_mut(&task_id).expect("task exists");
             task.status = TaskStatus::Cancelled;
             task.updated_at = now;

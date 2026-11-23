@@ -11,11 +11,15 @@ function mount({form={},send,guidedDraft,zone='Asia/Shanghai',capacityStart='202
   const Component=vm.runInNewContext(`${zones}\n${dateCode}\n${code}\nQuickSchedule`,{
     Modal:'Modal',Button:'Button',Field:'Field',React:{Fragment:'Fragment'},COPY:{cancel:'取消'},
     h:(tag,props,...children)=>({tag,props,children}),useRef:value=>({current:value}),
-    useState:initial=>[typeof initial==='object'?{...initial,task:'t',capacity:'c',...form}:initial,value=>errors.push(value)],
+    useState:initial=>{
+      const value=typeof initial==='function'?initial():initial
+      return [value && typeof value==='object'?{...value,task:'t',capacity:'c',...form}:value, next=>errors.push(next)]
+    },
   })
   const tree=Component({day:'2026-11-24',guidedDraft,snapshot:{workspace:{timezone:zone},tasks:[{id:'t',version:3,title:'Task'}],capacity_blocks:[{id:'c',title:'Capacity',start:capacityStart,end:capacityEnd}]},busy:false,
     send:async(...args)=>{writes.push(args);return send?send(...args):{data:{proposal:{id:'p',status:'validated',intent:'Core candidate'}}}},onClose:()=>closed.push(true),setModal:value=>modals.push(value)})
-  return {tree,writes,errors,closed,modals,save:tree.props.footer.children[1].props.onClick}
+  const preview=tree.props.footer.children.find(button=>button?.props.testid==='schedule-slot-preview')
+  return {tree,writes,errors,closed,modals,save:preview.props.onClick}
 }
 test('open/cancel read-only; preview sends only strict proposal and returns to normal approval',async()=>{
   const f=mount()

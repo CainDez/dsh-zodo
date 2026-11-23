@@ -639,3 +639,249 @@ fn strict_move_preserves_successor_boundary_and_requires_full_predecessor_work()
         }
     }
 }
+
+fn tree_query(f: &mut Fixture, query: &str, payload: Value) -> Value {
+    use zodo_kernel::commands::QueryEnvelope;
+    use zodo_kernel::model::SCHEMA_QUERY;
+    let mut app = Application {
+        store: &mut f.store,
+        clock: &f.clock,
+        ids: &f.ids,
+        instance_id: "rt_test".into(),
+    };
+    app.query(
+        &f.context,
+        QueryEnvelope {
+            schema: SCHEMA_QUERY.into(),
+            request_id: "query_tree".into(),
+            workspace_id: "ws_test".into(),
+            query: query.into(),
+            payload,
+        },
+    )
+    .unwrap()
+    .data
+}
+
+#[test]
+fn tree_first_child_requires_no_active_focus_or_unsettled_allocation_and_move_preserves_work() {
+    let mut f = Fixture::new();
+    let root = f.task(json!({}));
+    let other = f.task(json!({}));
+    let child_input = json!({"task":{"title":"Child", "parent_id":root}});
+    f.execute("focus.start", json!({"task_id":root})).unwrap();
+    f.execute("focus.pause", json!({})).unwrap();
+    let before = f.world();
+    let err = f.execute("task.create", child_input.clone()).unwrap_err();
+    assert!(err.message.contains("active focus"));
+    assert_eq!(f.world().tasks, before.tasks);
+    assert_eq!(f.world().focus_sessions, before.focus_sessions);
+    f.execute("focus.cancel", json!({})).unwrap();
+    let historical = seed_allocation(&mut f, &root, None, "01:00", "01:15", 15, true);
+    let reserved = seed_allocation(&mut f, &root, None, "02:00", "02:15", 15, false);
+    f.clock
+        .set(Utc.with_ymd_and_hms(2026, 10, 25, 1, 20, 0).unwrap());
+    let before = f.world();
+    let err = f.execute("task.create", child_input).unwrap_err();
+    assert!(err.message.contains("outstanding allocations"));
+    assert_eq!(f.world().allocations, before.allocations);
+    let mut move_other = json!({"id":other, "expected_version":1, "task":{"title":"Moved", "estimate_minutes":60,"parent_id":root}});
+    assert!(
+        f.execute("task.update", move_other.clone())
+            .unwrap_err()
+            .message
+            .contains("outstanding allocations")
+    );
+    f.execute("allocation.remove", json!({"id":reserved}))
+        .unwrap();
+    f.execute(
+        "progress.record",
+        json!({"task_id":other,"minutes":10,"remaining_minutes":30}),
+    )
+    .unwrap();
+    seed_allocation(&mut f, &other, None, "03:00", "03:15", 15, false);
+    let before = f.world();
+    assert!(before.allocations.iter().any(|row| row.id == historical));
+    let err = f.execute("task.update", move_other.clone()).unwrap_err();
+    assert_eq!(err.code, zodo_kernel::error::ErrorCode::RevisionConflict);
+    assert_eq!(f.world().workspace.revision, before.workspace.revision);
+    move_other["expected_version"] = json!(before.task(&other).unwrap().version);
+    let moved = f.execute("task.update", move_other).unwrap();
+    assert_eq!(moved.data["warnings"], json!([]));
+    let after = f.world();
+    assert_eq!(after.allocations, before.allocations);
+    assert_eq!(after.focus_sessions, before.focus_sessions);
+    assert_eq!(after.task(&root), before.task(&root));
+    let moved = after.task(&other).unwrap();
+    assert_eq!(moved.parent_id.as_deref(), Some(root.as_str()));
+    assert_eq!(
+        (
+            moved.estimate_minutes,
+            moved.remaining_minutes,
+            moved.actual_minutes
+        ),
+        (Some(60), Some(30), 10)
+    );
+}
+
+#[test]
+fn tree_status_guards_do_not_cascade_and_archived_child_does_not_make_parent_leaf() {
+    let mut f = Fixture::new();
+    let root = f.task(json!({"target_due":"2026-10-25"}));
+    let middle = f.task(json!({"parent_id":root}));
+    let leaf = f.task(json!({"parent_id":middle}));
+    f.execute("task.archive", json!({"id":leaf,"archived":true}))
+        .unwrap();
+    let before = f.world();
+    for op in ["task.complete", "task.cancel", "task.archive"] {
+        let input = if op == "task.archive" {
+            json!({"id":middle, "archived":true})
+        } else {
+            json!({"id":middle})
+        };
+        assert!(
+            f.execute(op, input)
+                .unwrap_err()
+                .message
+                .contains("unfinished descendants")
+        );
+    }
+    assert_eq!(f.world().workspace.revision, before.workspace.revision);
+    assert_eq!(f.world().tasks, before.tasks);
+    assert_eq!(
+        tree_query(&mut f, "tasks.list", json!({"filter":{"only_leaf":true}}))["tasks"],
+        json!([])
+    );
+    let leaves = tree_query(
+        &mut f,
+        "tasks.list",
+        json!({"filter":{"only_leaf":true,"include_archived":true}}),
+    );
+    assert_eq!(leaves["tasks"].as_array().unwrap().len(), 1);
+    assert_eq!(leaves["tasks"][0]["task"]["id"], leaf);
+    f.execute("task.complete", json!({"id":leaf})).unwrap();
+    f.execute("task.cancel", json!({"id":middle})).unwrap();
+    f.execute("task.complete", json!({"id":root})).unwrap();
+    assert_eq!(
+        f.world().task(&leaf).unwrap().status,
+        zodo_kernel::model::TaskStatus::Done
+    );
+    let before = f.world();
+    for (op, input) in [
+        ("task.reopen", json!({"id":middle})),
+        ("task.archive", json!({"id":leaf,"archived":false})),
+        (
+            "task.create",
+            json!({"task":{"title":"Too late","parent_id":root}}),
+        ),
+    ] {
+        assert!(
+            f.execute(op, input)
+                .unwrap_err()
+                .message
+                .contains("closed or archived ancestor")
+        );
+    }
+    assert_eq!(f.world().tasks, before.tasks);
+    f.execute("task.reopen", json!({"id":root})).unwrap();
+    f.execute("task.reopen", json!({"id":middle})).unwrap();
+    f.execute("task.archive", json!({"id":leaf,"archived":false}))
+        .unwrap();
+    f.execute("task.reopen", json!({"id":leaf})).unwrap();
+    assert!(!f.world().is_leaf(&middle));
+}
+
+#[test]
+fn tree_preview_and_approval_are_leaf_only_and_keep_parent_schedule_history_queryable() {
+    let mut f = Fixture::new();
+    let rollup = f.task(json!({"estimate_minutes":30, "target_due":"2026-10-25"}));
+    let candidate = f.task(json!({"estimate_minutes":30}));
+    let block = f.capacity(180);
+    let start = "2026-10-25T01:30:00Z";
+    let end = "2026-10-25T04:00:00Z";
+    let historical = seed_allocation(&mut f, &rollup, None, "01:00", "01:15", 15, false);
+    f.clock
+        .set(Utc.with_ymd_and_hms(2026, 10, 25, 1, 20, 0).unwrap());
+    let strict_slot = f.slot(&rollup, &block);
+    let strict = f.propose(strict_slot).unwrap();
+    let strict_grant = f.approve(&strict);
+    let plan = f
+        .execute(
+            "plan.propose",
+            json!({"task_ids":[rollup],"horizon_start":start,"horizon_end":end,"move_unlocked":false}),
+        )
+        .unwrap();
+    let plan_grant = f.approve(&plan);
+    assert_eq!(f.world().allocations.len(), 1);
+    let child = f.task(json!({"parent_id":rollup}));
+    f.execute("task.cancel", json!({"id":child})).unwrap();
+    f.execute("task.archive", json!({"id":child,"archived":true}))
+        .unwrap();
+    let before = f.world();
+    let grants = before.approval_grants.clone();
+    assert!(f.commit(&strict_grant).is_err());
+    assert!(f.commit(&plan_grant).is_err());
+    assert_eq!(f.world().approval_grants, grants);
+    assert_eq!(f.world().allocations, before.allocations);
+    let query = tree_query(
+        &mut f,
+        "schedule.get",
+        json!({"start":"2026-10-25T00:00:00Z","end":end}),
+    );
+    assert_eq!(query["allocations"][0]["id"], historical);
+    assert!(
+        query["unplaced"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["task_id"] != rollup)
+    );
+    let today = tree_query(&mut f, "today.get", json!({"date":"2026-10-25"}));
+    assert_eq!(today["allocations"][0]["id"], historical);
+    assert!(
+        today["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["id"] != rollup)
+    );
+    let slot = f.slot(&rollup, &block);
+    f.reject(slot);
+    let err = f
+        .execute(
+            "plan.propose",
+            json!({"task_ids":[rollup],"horizon_start":start,"horizon_end":end,"move_unlocked":false}),
+        )
+        .unwrap_err();
+    assert!(err.message.contains("rollup parent"));
+    assert!(f.execute("allocation.create",json!({"allocation":{"task_id":rollup,"start":"2026-10-25T02:00:00Z","end":"2026-10-25T02:15:00Z","minutes":15}})).unwrap_err().message.contains("rollup parent"));
+    let proposal = f
+        .execute(
+            "plan.propose",
+            json!({"task_ids":[],"horizon_start":start,"horizon_end":end,"move_unlocked":true}),
+        )
+        .unwrap();
+    assert_eq!(
+        proposal.data["plan"]["replace_task_ids"],
+        json!([candidate])
+    );
+    assert_eq!(
+        proposal.data["plan"]["fixed_allocations"],
+        json!([historical])
+    );
+    assert_eq!(
+        proposal.data["plan"]["assignments"][0]["task_id"],
+        candidate
+    );
+    assert_eq!(f.world().allocations, before.allocations);
+    let ids = f.approve(&proposal);
+    assert_eq!(f.world().allocations, before.allocations);
+    f.commit(&ids).unwrap();
+    let after = f.world();
+    assert_eq!(after.allocations.len(), 2);
+    assert_eq!(
+        after.allocations.iter().find(|row| row.id == historical),
+        before.allocations.first()
+    );
+    assert!(after.allocations.iter().any(|row| row.task_id == candidate));
+}

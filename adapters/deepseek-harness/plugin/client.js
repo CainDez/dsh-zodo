@@ -577,7 +577,6 @@ window.__ModuleLoader__.load({
       const rows = []
       let hasUnknown = false
       const validMinutes = value => Number.isSafeInteger(value) && value >= 0
-      const parents = new Set(tasks.filter(task => !task.archived).map(task => task.parent_id))
       const reservations = new Map()
       let malformedAllocation = false
       for (const allocation of snapshot.allocations) {
@@ -594,8 +593,7 @@ window.__ModuleLoader__.load({
         }
         reservations.set(allocation.task_id, reserved)
       }
-      for (const task of tasks) {
-        if (task.archived || task.status === 'done' || task.status === 'cancelled' || parents.has(task.id)) continue
+      for (const task of manualScheduleTasks(snapshot)) {
         const remaining = task.remaining_minutes ?? task.estimate_minutes
         if (!validMinutes(remaining)) { hasUnknown = true; continue }
         const reserved = reservations.get(task.id) ?? { minutes: 0, invalid: false }
@@ -605,6 +603,51 @@ window.__ModuleLoader__.load({
       }
       const minutes = rows.reduce((sum, row) => sum + row.minutes, 0)
       return Number.isSafeInteger(minutes) ? { rows, minutes, unknown: hasUnknown } : unknown
+    }
+    function scheduleRecovery(failure = {}) {
+      const code = String(failure.code ?? '').toUpperCase()
+      const message = String(failure.message ?? '').toLowerCase()
+      if (code === 'UNSUPPORTED_OPERATION' || /unknown (operation|variant)|unsupported/.test(message)) return 'Core 不支持严格安排，请升级后重新生成预览；不会使用宽松接口。'
+      if (['REVISION_CONFLICT', 'POLICY_CHANGED', 'APPROVAL_EXPIRED'].includes(code) || /task changed/.test(message)) return '数据、策略或批准依据已变化；刷新数据并核对保留的输入，再重新生成预览，不能重用旧批准。'
+      if (code === 'PERMISSION_DENIED') return '当前权限不足；检查授权后再生成预览，不会绕过权限。'
+      if (code === 'NOT_FOUND') return '所选任务或容量已不存在；刷新后重新选择，再生成预览。'
+      if (/start in the future/.test(message)) return '开始时间已到或已过；选择未来时段，再生成预览。'
+      if (/predecessor|dependency/.test(message)) return '前置工作未满足；先核实依赖完成情况或安排前置工作，再重新生成预览。'
+      if (/unblocked leaf|closed or archived/.test(message)) return '请选择未关闭、未归档且未手动阻塞的叶任务；不会替你解除阻塞。'
+      if (/task time constraints/.test(message)) return '所选时间违反最早开始或硬截止；调整时段，不会自动放宽任务限制。'
+      if (/workspace availability|timezone/.test(message)) return '检查工作空间时区、硬工作窗口与周末规则，选择允许的时段后重新预览。'
+      if (/overlap|external busy/.test(message)) return '所选时段与已有安排或忙碌区间冲突；改选时段，不会移动已有安排。'
+      if (/capacity/.test(message)) return '检查所选容量块的时间范围和剩余预算；换一个已有容量块或缩短时段。'
+      if (/remaining|estimate_minutes/.test(message)) return '检查任务剩余分钟及已有分配；补齐估时或缩短安排后重新预览。'
+      return '未得到有效严格预览。输入已保留；请核实 Core 状态与提案记录，再手动重新生成预览。不会自动重试或提交。'
+    }
+
+    function taskEnded(task) {
+      return task.status === 'done' || task.status === 'cancelled'
+    }
+
+    function taskTreeIndex(tasks) {
+      const byId = new Map(tasks.map(task => [task.id, task]))
+      const children = new Map(), roots = []
+      for (const task of tasks) {
+        if (task.parent_id == null) roots.push(task)
+        else {
+          if (!children.has(task.parent_id)) children.set(task.parent_id, [])
+          children.get(task.parent_id).push(task)
+        }
+      }
+      const active = new Set()
+      while (roots.length) {
+        const task = roots.pop()
+        if (task.archived || taskEnded(task) || active.has(task.id)) continue
+        active.add(task.id)
+        for (const child of children.get(task.id) ?? []) roots.push(child)
+      }
+      return { tasks, byId, children, active }
+    }
+
+    function manualScheduleTasks(snapshot, index = taskTreeIndex(snapshot?.tasks ?? [])) {
+      return index.tasks.filter(task => index.active.has(task.id) && !task.blocked_manual && !index.children.has(task.id))
     }
     // END PURE AGENDA PROJECTION
 
@@ -624,6 +667,111 @@ window.__ModuleLoader__.load({
       return snapshot?.projects?.find(project => project.id === id)?.title ?? ''
     }
 
+    function taskPath(index, task) {
+      const path = []
+      const seen = new Set()
+      for (let item = task; item && !seen.has(item.id); item = index.byId.get(item.parent_id)) {
+        seen.add(item.id)
+        path.push(item)
+      }
+      return path.reverse()
+    }
+
+    function taskDescendants(index, task) {
+      const result = []
+      const seen = new Set([task.id])
+      const stack = [...(index.children.get(task.id) ?? [])]
+      while (stack.length) {
+        const child = stack.pop()
+        if (seen.has(child.id)) continue
+        seen.add(child.id)
+        result.push(child)
+        for (const next of index.children.get(child.id) ?? []) stack.push(next)
+      }
+      return result
+    }
+
+    function taskBranchReason(index, task, includeSelf = true) {
+      const path = taskPath(index, task)
+      if (path[0]?.parent_id) return '任务所在分支不完整，暂不能进行此操作。'
+      if (!includeSelf) path.pop()
+      const closed = path.find(item => item.archived || taskEnded(item))
+      if (!closed) return ''
+      return closed.id === task.id
+        ? (closed.archived ? '请先恢复此任务。' : '请先重新打开此任务。')
+        : `请先${closed.archived ? '恢复' : '重新打开'}上级任务「${closed.title}」。`
+    }
+
+    function taskSplitReason(snapshot, index, task, now) {
+      if (index.children.has(task.id)) return ''
+      if ((snapshot.focus_sessions ?? []).some(session => session.task_id === task.id && ['running', 'paused'].includes(session.state))) {
+        return '请先结束或取消此任务正在进行的专注，再添加第一个子任务。'
+      }
+      if ((snapshot.allocations ?? []).some(row => row.task_id === task.id &&
+        (row.state === 'started' || (row.state === 'planned' && Date.parse(row.end) > now)))) {
+        return '请先处理此任务尚未结算的时间分配，再添加第一个子任务。'
+      }
+      return ''
+    }
+
+    function taskParentChoices(index, snapshot, task, now) {
+      const excluded = new Set(task ? [task.id, ...taskDescendants(index, task).map(child => child.id)] : [])
+      return index.tasks.filter(candidate => index.active.has(candidate.id) && !excluded.has(candidate.id) &&
+        (candidate.id === task?.parent_id || !taskSplitReason(snapshot, index, candidate, now)))
+    }
+
+    // Use a flat pre-order projection rather than recursive DOM nesting. Matching a
+    // descendant includes its ancestors once, without admitting unrelated siblings.
+    function taskTreeRows(index, matches, collapsed, compare) {
+      const matched = new Set(matches.map(task => task.id))
+      const included = new Set()
+      for (const task of matches) {
+        for (let item = task; item && !included.has(item.id); item = index.byId.get(item.parent_id)) included.add(item.id)
+      }
+      const roots = [], children = new Map()
+      for (const id of included) {
+        const task = index.byId.get(id)
+        if (included.has(task.parent_id)) {
+          if (!children.has(task.parent_id)) children.set(task.parent_id, [])
+          children.get(task.parent_id).push(task)
+        } else roots.push(task)
+      }
+      if (compare) {
+        roots.sort(compare)
+        for (const siblings of children.values()) siblings.sort(compare)
+      }
+      const visited = new Set(), rows = []
+      const visit = root => {
+        const stack = [{ task: root, depth: 0 }]
+        while (stack.length) {
+          const { task, depth } = stack.pop()
+          if (visited.has(task.id)) continue
+          visited.add(task.id)
+          const descendants = children.get(task.id) ?? []
+          const expanded = descendants.length > 0 && !collapsed.has(task.id)
+          rows.push({ task, depth, context: !matched.has(task.id), expandable: descendants.length > 0, expanded })
+          for (let i = descendants.length - 1; i >= 0; --i) {
+            if (expanded) stack.push({ task: descendants[i], depth: depth + 1 })
+            else {
+              // Mark the whole hidden branch so broken legacy components cannot
+              // reintroduce it as an apparent top-level row.
+              const hidden = [descendants[i]]
+              while (hidden.length) {
+                const child = hidden.pop()
+                if (visited.has(child.id)) continue
+                visited.add(child.id)
+                for (const next of children.get(child.id) ?? []) hidden.push(next)
+              }
+            }
+          }
+        }
+      }
+      for (const root of roots) visit(root)
+      // A legacy cycle has no natural root. Still show each row at most once.
+      for (const id of included) if (!visited.has(id)) visit(index.byId.get(id))
+      return rows
+    }
+
     function taskSpec(task) {
       return {
         title: task.title,
@@ -640,7 +788,7 @@ window.__ModuleLoader__.load({
       }
     }
 
-    function Button({ children, onClick, tone = 'secondary', disabled, type = 'button', testid, title, style }) {
+    function Button({ children, onClick, tone = 'secondary', disabled, type = 'button', testid, title, style, describedBy }) {
       return h('button', {
         type,
         onClick,
@@ -652,6 +800,7 @@ window.__ModuleLoader__.load({
         disabled: Boolean(disabled),
         title,
         'data-testid': testid,
+        'aria-describedby': describedBy,
         className: `zw-btn zw-btn-${tone}`,
         style,
       }, children)
@@ -761,39 +910,66 @@ window.__ModuleLoader__.load({
       }, children)
     }
 
-    function TaskRow({ snapshot, task, onSelect, compact = false, selectable = false, selected = false, onToggleSelection }) {
+    function TaskRow({ snapshot, task, onSelect, compact = false, summary = false, testid = `task-row-${task.id}` }) {
       const project = projectName(snapshot, task.project_id)
       const overdue = task.target_due && task.target_due < todayIso() && task.status !== 'done'
       return h('button', {
         type: 'button',
         className: `zw-task-row ${compact ? 'zw-task-row-compact' : ''} ${task.status === 'done' ? 'zw-task-done' : ''}`,
         onClick: () => onSelect(task.id),
-        'data-testid': `task-row-${task.id}`,
+        'data-testid': testid,
+        title: task.title,
       },
-      selectable ? h('input', {
-        type: 'checkbox',
-        className: 'zw-select',
-        checked: selected,
-        onClick: event => {
-          event.stopPropagation()
-          onToggleSelection(task.id)
-        },
-        onChange: () => {},
-        'aria-label': `选择 ${task.title}`,
-      }) : null,
       h('span', { className: `zw-check ${task.status === 'in_progress' ? 'zw-check-active' : ''}` },
         task.status === 'done' ? '✓' : task.status === 'in_progress' ? '•' : ''),
       h('span', { className: 'zw-task-main' },
         h('span', { className: 'zw-task-title' }, task.title),
         h('span', { className: 'zw-task-meta' },
-          task.estimate_minutes ? `${task.estimate_minutes} 分钟` : '未估时',
+          summary ? '汇总任务' : task.estimate_minutes ? `${task.estimate_minutes} 分钟` : '未估时',
           project ? ` · ${project}` : '',
           task.target_due ? ` · 期望 ${dateForLocal(`${task.target_due}T12:00:00`)}` : '',
           task.hard_deadline ? ` · 必须 ${dateForLocal(task.hard_deadline)}` : '',
         ),
       ),
-      overdue ? h(Badge, { tone: 'warn' }, '逾期') : null,
-      h(Badge, { tone: task.status === 'in_progress' ? 'accent' : 'neutral' }, statusLabel(task.status)),
+      overdue && !task.archived ? h(Badge, { tone: 'warn' }, '逾期') : null,
+      h(Badge, { tone: task.archived ? 'warn' : task.status === 'in_progress' ? 'accent' : 'neutral' }, task.archived ? '已归档' : statusLabel(task.status)),
+      )
+    }
+
+    function TaskTree({ index, matches, snapshot, onSelect, compare, selectedIds, onToggleSelection, empty, filterKey = '' }) {
+      const [collapsed, setCollapsed] = useState(() => new Set())
+      const [filteredCollapse, setFilteredCollapse] = useState(null)
+      const filterCollapsed = filteredCollapse?.key === filterKey ? filteredCollapse.ids : new Set()
+      const rows = taskTreeRows(index, matches, filterKey ? filterCollapsed : collapsed, compare)
+      const selected = new Set(selectedIds)
+      const toggle = id => {
+        const flip = current => {
+          const next = new Set(current)
+          if (next.has(id)) next.delete(id)
+          else next.add(id)
+          return next
+        }
+        if (filterKey) setFilteredCollapse({ key: filterKey, ids: flip(filterCollapsed) })
+        else setCollapsed(flip)
+      }
+      if (!rows.length) return h('div', { className: 'zw-task-list' }, h(Empty, null, empty))
+      return h('ul', { className: 'zw-task-list zw-task-tree', 'aria-label': '任务树' }, rows.map(({ task, depth, context, expandable, expanded }) =>
+        h('li', { className: 'zw-task-tree-row', key: task.id, 'data-testid': `task-tree-row-${task.id}`,
+          'data-depth': depth, style: { '--zw-tree-depth': Math.min(depth, 5) } },
+        expandable ? h('button', { type: 'button', className: 'zw-tree-toggle',
+          'data-testid': `task-tree-toggle-${task.id}`, 'aria-expanded': expanded,
+          'aria-label': `${expanded ? '折叠' : '展开'}「${task.title}」的子任务`,
+          onClick: () => toggle(task.id) },
+        h('svg', { viewBox: '0 0 16 16', width: 16, height: 16, 'aria-hidden': true },
+          h('path', { d: expanded ? 'M4 6l4 4 4-4' : 'M6 4l4 4-4 4', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' })))
+          : h('span', { className: 'zw-tree-toggle-spacer', 'aria-hidden': true }),
+        onToggleSelection && !context ? h('label', { className: 'zw-tree-select' }, h('input', {
+          type: 'checkbox', className: 'zw-select', checked: selected.has(task.id),
+          onChange: () => onToggleSelection(task.id), 'aria-label': `选择 ${task.title}`,
+        })) : null,
+        h(TaskRow, { snapshot, task, onSelect, summary: index.children.has(task.id) }),
+        context ? h('span', { className: 'zw-tree-context' }, '上级') : null,
+        ))
       )
     }
 
@@ -811,13 +987,14 @@ window.__ModuleLoader__.load({
       return width
     }
 
-    function TaskEditor({ task, snapshot, projectId, onClose, send, busy, restoreFocus }) {
+    function TaskEditor({ task, snapshot, index = taskTreeIndex(snapshot?.tasks ?? []), projectId, parentTask, onClose, send, busy, restoreFocus }) {
+      const parentChoices = !task && !parentTask ? taskParentChoices(index, snapshot, null, Date.now()) : []
       const [form, setForm] = useState({
         title: task?.title ?? '',
-        estimate: task?.estimate_minutes ?? 30,
+        estimate: task?.estimate_minutes ?? (task || parentTask ? '' : 30),
         priority: task?.priority ?? 2,
-        project: task?.project_id ?? projectId ?? '',
-        parent: task?.parent_id ?? '',
+        project: task?.project_id ?? parentTask?.project_id ?? projectId ?? '',
+        parent: task?.parent_id ?? parentTask?.id ?? '',
         targetDue: task?.target_due ?? '',
         hardDeadline: task?.hard_deadline ? localDateTimeInput(task.hard_deadline) : '',
         tags: (task?.tags ?? []).join(', '),
@@ -852,7 +1029,7 @@ window.__ModuleLoader__.load({
         }
       }
       return h(Modal, {
-        title: task ? '编辑任务' : '新建任务',
+        title: task ? '编辑任务' : parentTask ? '新建子任务' : '新建任务',
         subtitle: '保存后由 Core 校验关系与版本。',
         onClose,
         restoreFocus,
@@ -880,11 +1057,12 @@ window.__ModuleLoader__.load({
           onChange: event => setForm({ ...form, project: event.target.value }),
         }, h('option', { value: '' }, '无'), (snapshot?.projects ?? []).map(project =>
           h('option', { key: project.id, value: project.id }, project.title)))),
-        h(Field, { label: '父任务' }, h('select', {
-          value: form.parent,
-          onChange: event => setForm({ ...form, parent: event.target.value }),
-        }, h('option', { value: '' }, '无'), (snapshot?.tasks ?? []).filter(candidate => !task || candidate.id !== task.id).map(candidate =>
-          h('option', { key: candidate.id, value: candidate.id }, candidate.title)))),
+        h(Field, { label: '父任务' }, task || parentTask
+          ? h('select', { value: form.parent, disabled: true },
+            h('option', { value: form.parent }, form.parent ? taskTitle(snapshot, form.parent) : '顶层（无父任务）'))
+          : h('select', { value: form.parent, onChange: event => setForm({ ...form, parent: event.target.value }) },
+            h('option', { value: '' }, '顶层（无父任务）'), parentChoices.map(candidate =>
+              h('option', { key: candidate.id, value: candidate.id }, candidate.title)))),
         h(Field, { label: '期望完成' }, h('input', {
           type: 'date', value: form.targetDue,
           onChange: event => setForm({ ...form, targetDue: event.target.value }),
@@ -901,6 +1079,41 @@ window.__ModuleLoader__.load({
           rows: 3, value: form.description,
           onChange: event => setForm({ ...form, description: event.target.value }),
         })),
+      ))
+    }
+
+    function TaskMove({ task, snapshot, index, onClose, send, busy, restoreFocus }) {
+      const [parent, setParent] = useState(task.parent_id ?? '')
+      const [error, setError] = useState('')
+      const candidates = taskParentChoices(index, snapshot, task, Date.now())
+      const allowed = parent === '' || candidates.some(candidate => candidate.id === parent)
+      const changed = parent !== (task.parent_id ?? '')
+      const reason = taskBranchReason(index, index.byId.get(task.id) ?? task)
+      const submit = async event => {
+        event.preventDefault()
+        if (busy || !allowed || !changed || reason) return
+        setError('')
+        try {
+          await send('task.update', { id: task.id, task: { ...taskSpec(task), parent_id: parent || null }, expected_version: task.version })
+          onClose()
+        } catch (failure) {
+          setError(failure.code === 'REVISION_CONFLICT' ? '任务已变化，请关闭后重新打开移动窗口。' : failure.message)
+        }
+      }
+      return h(Modal, { title: '移动任务', subtitle: `选择「${task.title}」的新位置。项目归属和排程不变。`,
+        onClose, restoreFocus,
+      }, h('form', { onSubmit: submit, className: 'zw-task-move-form' },
+        error || reason ? h('div', { className: 'zw-alert zw-alert-error', role: 'alert' }, error || reason) : null,
+        h(Field, { label: '移到父任务' }, h('select', { value: parent, 'data-testid': 'task-move-parent',
+          onChange: event => setParent(event.target.value) },
+        h('option', { value: '' }, '顶层（无父任务）'),
+        candidates.map(candidate => h('option', { key: candidate.id, value: candidate.id },
+          taskPath(index, candidate).map(item => item.title).join(' / '))),
+        parent && !allowed ? h('option', { value: parent, disabled: true }, '该父任务已不可用') : null)),
+        h('div', { className: 'zw-action-row' },
+          h(Button, { onClick: onClose }, COPY.cancel),
+          h(Button, { type: 'submit', tone: 'primary', disabled: busy || !changed || !allowed || Boolean(reason), testid: 'task-move-submit' }, '确认移动'),
+        ),
       ))
     }
 
@@ -1502,31 +1715,7 @@ window.__ModuleLoader__.load({
     // Strict quick scheduling creates a candidate only; normal approval owns commit.
     // Hints are presentation only. Core diagnostics remain authoritative; never
     // reflect arbitrary diagnostic values (which may contain private titles).
-    function scheduleRecovery(failure = {}) {
-      const code = String(failure.code ?? '').toUpperCase()
-      const message = String(failure.message ?? '').toLowerCase()
-      if (code === 'UNSUPPORTED_OPERATION' || /unknown (operation|variant)|unsupported/.test(message)) return 'Core 不支持严格安排，请升级后重新生成预览；不会使用宽松接口。'
-      if (['REVISION_CONFLICT', 'POLICY_CHANGED', 'APPROVAL_EXPIRED'].includes(code) || /task changed/.test(message)) return '数据、策略或批准依据已变化；刷新数据并核对保留的输入，再重新生成预览，不能重用旧批准。'
-      if (code === 'PERMISSION_DENIED') return '当前权限不足；检查授权后再生成预览，不会绕过权限。'
-      if (code === 'NOT_FOUND') return '所选任务或容量已不存在；刷新后重新选择，再生成预览。'
-      if (/start in the future/.test(message)) return '开始时间已到或已过；选择未来时段，再生成预览。'
-      if (/predecessor|dependency/.test(message)) return '前置工作未满足；先核实依赖完成情况或安排前置工作，再重新生成预览。'
-      if (/unblocked leaf|closed or archived/.test(message)) return '请选择未关闭、未归档且未手动阻塞的叶任务；不会替你解除阻塞。'
-      if (/task time constraints/.test(message)) return '所选时间违反最早开始或硬截止；调整时段，不会自动放宽任务限制。'
-      if (/workspace availability|timezone/.test(message)) return '检查工作空间时区、硬工作窗口与周末规则，选择允许的时段后重新预览。'
-      if (/overlap|external busy/.test(message)) return '所选时段与已有安排或忙碌区间冲突；改选时段，不会移动已有安排。'
-      if (/capacity/.test(message)) return '检查所选容量块的时间范围和剩余预算；换一个已有容量块或缩短时段。'
-      if (/remaining|estimate_minutes/.test(message)) return '检查任务剩余分钟及已有分配；补齐估时或缩短安排后重新预览。'
-      return '未得到有效严格预览。输入已保留；请核实 Core 状态与提案记录，再手动重新生成预览。不会自动重试或提交。'
-    }
-
     // BEGIN PURE FIRST-SCHEDULE GUIDANCE
-    function manualScheduleTasks(snapshot) {
-      const allTasks = snapshot.tasks ?? []
-      const parents = new Set(allTasks.filter(task => !task.archived).map(task => task.parent_id))
-      return allTasks.filter(task => !task.archived && !task.blocked_manual &&
-        !['done', 'cancelled'].includes(task.status) && !parents.has(task.id))
-    }
     function firstScheduleStep(snapshot, now, timeZone) {
       if (!Array.isArray(snapshot?.allocations) || snapshot.allocations.length ||
           !Array.isArray(snapshot.tasks) || !Array.isArray(snapshot.capacity_blocks) ||
@@ -2840,7 +3029,22 @@ window.__ModuleLoader__.load({
     // so a proposal row can resolve task titles without passing the whole world through every layer.
     const stateSnapshotRef = { current: null }
 
-    function TaskDetail({ task, snapshot, onClose, send, onEdit, onTime, onProgress, onDependency, onReminder, onBlocked, onFocus, busy, setModal }) {
+    function TaskDetail({ task, snapshot, index, onClose, send, onEdit, onTime, onProgress, onDependency, onReminder, onBlocked, onFocus, onSelect, busy, setModal }) {
+      const children = index.children.get(task.id) ?? []
+      const descendants = taskDescendants(index, task)
+      const leaves = descendants.filter(child => !index.children.has(child.id))
+      const doneCount = leaves.filter(child => child.status === 'done').length
+      const cancelledCount = leaves.filter(child => child.status === 'cancelled').length
+      const unfinished = descendants.some(child => !taskEnded(child)) ? '请先完成或取消所有尚未结束的后代任务。' : ''
+      const ancestorReason = taskBranchReason(index, task, false)
+      const branchReason = taskBranchReason(index, task)
+      const addReason = branchReason || taskSplitReason(snapshot, index, task, Date.now())
+      const completeReason = ancestorReason || (task.archived ? '请先恢复此任务。' : taskEnded(task) ? '' : unfinished)
+      const archiveReason = ancestorReason || (task.archived ? '' : unfinished)
+      const cancelReason = branchReason || unfinished
+      const focusReason = branchReason || (children.length ? '请在末级子任务上开始专注。' : '')
+      const actionHints = [...new Set([ancestorReason || branchReason, unfinished, addReason !== branchReason && addReason, focusReason !== branchReason && focusReason].filter(Boolean))]
+      const path = taskPath(index, task)
       const dependencies = snapshot.dependencies.filter(dep => dep.successor_id === task.id)
       const dependents = snapshot.dependencies.filter(dep => dep.predecessor_id === task.id)
       const allocations = snapshot.allocations.filter(row => row.task_id === task.id)
@@ -2849,14 +3053,14 @@ window.__ModuleLoader__.load({
       const reminders = snapshot.reminders.filter(row => row.task_id === task.id)
       const occurrence = snapshot.occurrences?.find(row => row.task_id === task.id)
       const complete = async () => {
-        await send(task.status === 'done' ? 'task.reopen' : 'task.complete', { id: task.id })
+        try { await send(taskEnded(task) ? 'task.reopen' : 'task.complete', { id: task.id }) } catch { /* workbench surfaces the error */ }
       }
       const archive = async () => {
-        await send('task.archive', { id: task.id, archived: !task.archived })
+        try { await send('task.archive', { id: task.id, archived: !task.archived }) } catch { /* workbench surfaces the error */ }
       }
       const cancelTask = async () => {
         if (!window.confirm('取消该任务？取消是可恢复的状态变更，不会删除历史事实；可稍后重新打开。')) return
-        await send('task.cancel', { id: task.id })
+        try { await send('task.cancel', { id: task.id }) } catch { /* workbench surfaces the error */ }
       }
       const skipOccurrence = async () => {
         if (!occurrence) return
@@ -2878,7 +3082,15 @@ window.__ModuleLoader__.load({
           ),
           h('button', { className: 'zw-icon-btn', onClick: onClose, 'aria-label': COPY.close }, '×'),
         ),
+        path.length > 1 ? h('nav', { className: 'zw-task-path', 'aria-label': '任务路径' },
+          h('ol', null, path.map((item, i) => h('li', { key: item.id },
+            i ? h('span', { 'aria-hidden': true }, '›') : null,
+            item.id === task.id ? h('span', { 'aria-current': 'page' }, item.title)
+              : h('button', { type: 'button', className: 'zw-link', onClick: () => onSelect(item.id), 'data-testid': `task-path-${item.id}` }, item.title),
+          ))),
+        ) : null,
         task.archived ? h(Badge, { tone: 'warn' }, '已归档') : null,
+        children.length ? h(Badge, null, '汇总任务 · 仅排程末级') : null,
         h('p', { className: 'zw-detail-meta' },
           task.target_due ? `期望完成 ${task.target_due}` : '无期望完成',
           task.hard_deadline ? ` · 必须 ${dateTimeFor(task.hard_deadline)}` : '',
@@ -2890,14 +3102,29 @@ window.__ModuleLoader__.load({
           h('div', null, h('span', null, '优先级'), h('strong', null, task.priority)),
         ),
         h('div', { className: 'zw-action-row' },
-          h(Button, { tone: 'primary', onClick: complete, disabled: busy }, task.status === 'done' ? '重新打开' : '标记完成'),
-          h(Button, { onClick: onProgress, disabled: busy || task.status === 'done' }, '记录进度'),
-          h(Button, { onClick: onFocus, disabled: busy || task.status === 'done' }, '开始专注'),
+          h(Button, { tone: 'primary', onClick: complete, disabled: busy || completeReason, title: completeReason, describedBy: completeReason ? 'zw-task-action-hints' : undefined }, taskEnded(task) ? '重新打开' : '标记完成'),
+          h(Button, { onClick: onProgress, disabled: busy || branchReason }, '记录进度'),
+          h(Button, { onClick: onFocus, disabled: busy || focusReason, title: focusReason, describedBy: focusReason ? 'zw-task-action-hints' : undefined }, '开始专注'),
           h(Button, { onClick: onEdit, disabled: busy }, '编辑'),
           h(Button, { onClick: onTime, disabled: busy, testid: 'task-time' }, '时间'),
-          h(Button, { onClick: archive, disabled: busy }, task.archived ? '恢复' : '归档'),
-          h(Button, { onClick: cancelTask, disabled: busy || task.status === 'cancelled' }, '取消任务'),
+          h(Button, { onClick: archive, disabled: busy || archiveReason, title: archiveReason, describedBy: archiveReason ? 'zw-task-action-hints' : undefined }, task.archived ? '恢复' : '归档'),
+          h(Button, { onClick: cancelTask, disabled: busy || cancelReason, title: cancelReason, describedBy: cancelReason ? 'zw-task-action-hints' : undefined }, '取消任务'),
+          h(Button, { onClick: event => setModal({ type: 'task-move', task, restoreFocus: event.currentTarget }), disabled: busy || branchReason,
+            title: branchReason, describedBy: branchReason ? 'zw-task-action-hints' : undefined, testid: 'task-move' }, '移动到…'),
         ),
+        actionHints.length ? h('div', { id: 'zw-task-action-hints', className: 'zw-fineprint' }, actionHints.map(hint => h('div', { key: hint }, hint))) : null,
+        h(Section, { title: '子任务', testid: 'task-children', className: 'zw-task-children', action:
+          h(Button, { onClick: event => setModal({ type: 'task', parentTask: task, restoreFocus: event.currentTarget }),
+            disabled: busy || addReason, title: addReason, describedBy: addReason ? 'zw-task-action-hints' : undefined, testid: 'task-add-child' }, '＋ 添加子任务'),
+        }, children.length ? h(React.Fragment, null,
+          h('div', { className: 'zw-child-progress', 'data-testid': 'task-child-progress' },
+            h('span', null, `末级子任务：已完成 ${doneCount} / ${leaves.length}${cancelledCount ? ` · 已取消 ${cancelledCount}` : ''}`),
+            leaves.length ? h('progress', { value: doneCount, max: leaves.length, 'aria-label': '末级子任务完成进度' }) : null,
+          ),
+          h('div', { className: 'zw-task-list' }, children.map(child => h(TaskRow, { key: child.id, task: child, snapshot, onSelect,
+            summary: index.children.has(child.id), testid: `task-child-row-${child.id}` }))),
+        ) : h(Empty, null, '还没有子任务。')),
+
         h(Button, { onClick: onDependency, disabled: busy }, '添加依赖'),
         h(Button, { onClick: onReminder, disabled: busy }, '设置提醒'),
         h(Button, { onClick: onBlocked, disabled: busy }, task.blocked_manual ? '解除阻塞' : '标记阻塞'),
@@ -4436,7 +4663,10 @@ window.__ModuleLoader__.load({
       }
 
       useEffect(() => {
-        if (selectedTaskId) taskDetailRef.current?.focus()
+        if (selectedTaskId) {
+          taskDetailRef.current?.scrollTo(0, 0)
+          taskDetailRef.current?.focus()
+        }
       }, [selectedTaskId])
       const [modal, setModal] = useState(null)
       const [busy, setBusy] = useState(false)
@@ -4579,7 +4809,9 @@ window.__ModuleLoader__.load({
       const reader = useMemo(() => ({ query }), [])
 
       const today = todayIso()
-      const activeTasks = (snapshot?.tasks ?? []).filter(task => !task.archived && task.status !== 'done' && task.status !== 'cancelled')
+      const taskIndex = useMemo(() => taskTreeIndex(snapshot?.tasks ?? []), [snapshot?.tasks])
+      const openTasks = taskIndex.tasks.filter(task => !task.archived && !taskEnded(task))
+      const activeTasks = manualScheduleTasks(snapshot, taskIndex)
       const nextTask = activeTasks.slice().sort((a, b) => {
         const hardA = a.hard_deadline ?? '9999'
         const hardB = b.hard_deadline ?? '9999'
@@ -4589,10 +4821,10 @@ window.__ModuleLoader__.load({
         if (dueA !== dueB) return dueA.localeCompare(dueB)
         return b.priority - a.priority
       })[0]
-      const selectedTask = findTask(snapshot, selectedTaskId)
+      const selectedTask = taskIndex.byId.get(selectedTaskId)
       const todayEntries = agendaEntries(snapshot ?? {}, today)
       const todayCheckedAt = Date.now()
-      const todayAction = todayNextAction(todayEntries, activeTasks, nextTask, todayCheckedAt)
+      const todayAction = todayNextAction(todayEntries, openTasks, nextTask, todayCheckedAt)
       const todayAllocations = todayEntries.filter(entry => entry.kind === 'allocation').map(entry => entry.row)
       const outstanding = outstandingWork(snapshot, todayCheckedAt)
       const unplacedMinutes = outstanding.minutes
@@ -4601,12 +4833,13 @@ window.__ModuleLoader__.load({
       const pendingProposals = (snapshot?.proposals ?? []).filter(proposal => proposal.status === 'validated').length
       const pendingInbox = (snapshot?.inbox ?? []).filter(entry => entry.status === 'unprocessed' || entry.status === 'needs_clarification').length
       const openTask = id => {
-        taskTrigger.current = document.activeElement
+        if (!taskDetailRef.current?.contains(document.activeElement)) taskTrigger.current = document.activeElement
         setSelectedTaskId(id)
       }
       const closeTask = () => {
         setSelectedTaskId(null)
-        taskTrigger.current?.focus?.()
+        const trigger = taskTrigger.current
+        if (trigger?.isConnected) trigger.focus()
       }
       const openProject = (id, origin = 'projects') => {
         navigate('projects')
@@ -4799,6 +5032,8 @@ window.__ModuleLoader__.load({
       }, h(TaskDetail, {
         task: selectedTask,
         snapshot,
+        index: taskIndex,
+        onSelect: openTask,
         onClose: closeTask,
         send,
         busy,
@@ -4864,7 +5099,7 @@ window.__ModuleLoader__.load({
             nextTask?.target_due && nextTask.target_due < today ? h('p', { className: 'zw-warn-text' }, '有逾期任务需要处理。') : null,
           ),
           h(Section, { title: '到期但今天未安排', className: 'zw-span2', action: h(Button, { onClick: () => navigate('tasks') }, '全部任务') },
-            renderTaskList(activeTasks.filter(task => (task.target_due === today || (task.hard_deadline && localDateInput(task.hard_deadline) === today))
+            renderTaskList(openTasks.filter(task => (task.target_due === today || (task.hard_deadline && localDateInput(task.hard_deadline) === today))
               && task.id !== todayAction?.task.id && !todayAllocations.some(row => row.task_id === task.id)), '没有到期且未安排的其他任务。'),
           ),
         ),
@@ -4952,7 +5187,7 @@ window.__ModuleLoader__.load({
               ),
             ),
             selected.scope ? h('p', null, selected.scope) : null,
-            h(Section, { title: '任务' }, renderTaskList(tasks)),
+            h(Section, { title: '任务' }, h(TaskTree, { key: selected.id, index: taskIndex, matches: tasks, snapshot, onSelect: openTask, empty: '这里还没有任务。' })),
             h(Section, { title: '里程碑', action: h(Button, { onClick: () => setModal({ type: 'milestone', project: selected }), disabled: busy }, '添加里程碑') },
               (selected.milestones ?? []).length ? selected.milestones.map(milestone => h('button', {
                 type: 'button', key: milestone.id, className: `zw-milestone ${milestone.done ? 'zw-milestone-done' : ''}`,
@@ -4986,20 +5221,20 @@ window.__ModuleLoader__.load({
           ...(snapshot.tasks ?? []).flatMap(task => task.tags ?? []),
         ])].filter(Boolean).sort()
         const filtered = snapshot.tasks.filter(task => {
-          if (task.archived) return false
+          if (Boolean(task.archived) !== (taskFilter.status === 'archived')) return false
           if (taskFilter.text && !`${task.title} ${task.description ?? ''}`.toLowerCase().includes(taskFilter.text.toLowerCase())) return false
-          if (taskFilter.status && task.status !== taskFilter.status) return false
+          if (taskFilter.status && taskFilter.status !== 'archived' && task.status !== taskFilter.status) return false
           if (taskFilter.tag && !(task.tags ?? []).includes(taskFilter.tag)) return false
           if (taskFilter.overdue) {
             const overdue = (task.target_due && task.target_due < today) || (task.hard_deadline && task.hard_deadline < new Date().toISOString())
             if (!overdue) return false
           }
           return true
-        }).slice().sort((a, b) => {
-          if (a.status === 'done' && b.status !== 'done') return 1
-          if (a.status !== 'done' && b.status === 'done') return -1
-          return (a.target_due ?? '9999').localeCompare(b.target_due ?? '9999')
         })
+        const compare = (a, b) => Number(a.status === 'done') - Number(b.status === 'done') ||
+          (a.target_due ?? '9999').localeCompare(b.target_due ?? '9999')
+        const selectedSet = new Set(selectedTaskIds)
+        const allMatchedSelected = filtered.length > 0 && filtered.every(task => selectedSet.has(task.id))
         return h('div', { className: 'zw-page' },
           h('header', { className: 'zw-page-head' },
             h('div', null, h('div', { className: 'zw-kicker' }, '全部工作'), h('h1', null, '任务')),
@@ -5013,7 +5248,8 @@ window.__ModuleLoader__.load({
               onChange: event => setTaskFilter({ ...taskFilter, text: event.target.value }) }),
             h('select', { value: taskFilter.status,
               onChange: event => setTaskFilter({ ...taskFilter, status: event.target.value }) },
-              h('option', { value: '' }, '任意状态'), h('option', { value: 'open' }, '待处理'), h('option', { value: 'in_progress' }, '进行中'), h('option', { value: 'done' }, '已完成')),
+              h('option', { value: '' }, '任意状态'), h('option', { value: 'open' }, '待处理'), h('option', { value: 'in_progress' }, '进行中'),
+              h('option', { value: 'done' }, '已完成'), h('option', { value: 'cancelled' }, '已取消'), h('option', { value: 'archived' }, '已归档')),
             h('select', { value: taskFilter.tag,
               onChange: event => setTaskFilter({ ...taskFilter, tag: event.target.value }) },
               h('option', { value: '' }, '任意标签'), tags.map(tag => h('option', { key: tag, value: tag }, tag))),
@@ -5027,30 +5263,21 @@ window.__ModuleLoader__.load({
             h('span', { className: 'zw-muted' }, `筛选 ${filtered.length} / ${snapshot.tasks.length} 项；已选 ${selectedTaskIds.length} 项。`),
             h('div', { className: 'zw-action-row' },
               h(Button, {
-                onClick: () => setSelectedTaskIds(selectedTaskIds.length === filtered.length ? [] : filtered.map(task => task.id)),
+                onClick: () => setSelectedTaskIds(allMatchedSelected ? [] : filtered.map(task => task.id)),
                 disabled: busy || !filtered.length,
-              }, selectedTaskIds.length === filtered.length && filtered.length ? '取消全选' : '全选当前'),
+              }, allMatchedSelected ? '取消全选' : '全选当前'),
               h(Button, { onClick: () => setModal({ type: 'duplicate-suggestions' }), disabled: busy, testid: 'duplicate-suggest' }, '重复项'),
               h(Button, { onClick: () => bulkUpdate({ status: 'done' }), disabled: busy || !selectedTaskIds.length }, '批量完成'),
               h(Button, { onClick: () => bulkUpdate({ archived: true }), disabled: busy || !selectedTaskIds.length }, '批量归档'),
               h(Button, { onClick: () => { setTaskFilter({ text: '', status: '', tag: '', overdue: false }); setSelectedTaskIds([]) } }, '清除过滤'),
             ),
           ),
-          h('div', { className: 'zw-task-layout' },
-            h('div', { className: 'zw-task-list' },
-              filtered.map(task => h(TaskRow, {
-                key: task.id,
-                snapshot,
-                task,
-                onSelect: openTask,
-                selectable: true,
-                selected: selectedTaskIds.includes(task.id),
-                onToggleSelection: toggleTaskSelection,
-              })),
-              !filtered.length ? h(Empty, null, snapshot.tasks.length ? '没有符合当前过滤条件的任务。' : '还没有任务。创建一个，或者先收集一句原文。') : null,
-            ),
-
-          ),
+          h('div', { className: 'zw-task-layout' }, h(TaskTree, {
+            filterKey: Object.values(taskFilter).some(Boolean) ? JSON.stringify(taskFilter) : '',
+            index: taskIndex, matches: filtered, compare, snapshot, onSelect: openTask,
+            selectedIds: selectedTaskIds, onToggleSelection: toggleTaskSelection,
+            empty: snapshot.tasks.length ? '没有符合当前过滤条件的任务。' : '还没有任务。创建一个，或者先收集一句原文。',
+          })),
         )
       }
 
@@ -5286,7 +5513,7 @@ window.__ModuleLoader__.load({
             h('p', null, '从任务详情开始，或者选择一个任务。'),
             h(Field, { label: '任务' }, h('select', { value: '', onChange: event => {
               if (event.target.value) focusStart(findTask(snapshot, event.target.value))
-            } }, h('option', { value: '' }, '选择任务…'), activeTasks.map(candidate =>
+            } }, h('option', { value: '' }, '选择任务…'), openTasks.map(candidate =>
               h('option', { key: candidate.id, value: candidate.id }, candidate.title)))),
             h(Button, { onClick: () => focusStart(null), disabled: busy }, '不关联任务开始'),
           ),
@@ -5373,7 +5600,10 @@ window.__ModuleLoader__.load({
         switch (modal.type) {
           case 'command': return h(CommandPalette, { onClose: closeModal, actions: commandActions })
           case 'capture': return h(CaptureEditor, { onClose: closeModal, send, busy })
-          case 'task': return h(TaskEditor, { task: modal.task ?? null, projectId: modal.projectId, restoreFocus: modal.restoreFocus, snapshot: { ...snapshot, projects: snapshot.projects, tasks: snapshot.tasks }, onClose: closeModal, send, busy })
+          case 'task': return h(TaskEditor, { task: modal.task ?? null, projectId: modal.projectId, parentTask: modal.parentTask,
+            restoreFocus: modal.restoreFocus, snapshot, index: taskIndex, onClose: closeModal, send, busy })
+          case 'task-move': return h(TaskMove, { task: modal.task, snapshot, index: taskIndex,
+            restoreFocus: modal.restoreFocus, onClose: closeModal, send, busy })
           case 'time': return h(TimeEditor, { day: modal.day, task: modal.task ?? null, tasks: modal.tasks ?? snapshot.tasks, snapshot, onClose: closeModal, send, busy })
           case 'goal': return h(GoalEditor, { goal: modal.goal ?? null, onClose: closeModal, send, busy })
           case 'project': return h(ProjectEditor, { project: modal.project ?? null, goals: snapshot.goals, goalId: modal.goalId, onClose: closeModal, send, busy })
@@ -6106,7 +6336,26 @@ window.__ModuleLoader__.load({
       .zw-proposal-banner { display:grid; gap:3px; margin-top:10px; padding:10px 11px; border-radius:9px; background:var(--zw-accent-soft); cursor:pointer; }
       .zw-proposal-banner span { color:var(--zw-muted); font-size:11.5px; }
       .zw-proposal-list { display:grid; gap:12px; margin-bottom:16px; }
-      .zw-task-list { display:grid; gap:2px; }
+      .zw-task-list { display:grid; gap:2px; min-width:0; }
+      .zw-task-tree { list-style:none; margin:0; padding:0; }
+      .zw-task-tree-row { display:flex; align-items:center; min-width:0; padding-inline-start:calc(var(--zw-tree-depth) * var(--zw-tree-step, 12px)); }
+      .zw-task-tree-row > .zw-task-row { flex:1; min-width:0; }
+      .zw-tree-toggle, .zw-tree-toggle-spacer { flex:0 0 var(--zw-tree-control, 44px); min-height:44px; }
+      .zw-tree-toggle { display:grid; place-items:center; padding:0; border:0; border-radius:8px; background:transparent; color:var(--zw-accent); cursor:pointer; }
+      .zw-tree-toggle:hover { background:var(--zw-accent-soft); }
+      .zw-tree-select { display:grid; place-items:center; flex:0 0 24px; min-height:44px; cursor:pointer; }
+      .zw-tree-context { flex:none; padding:0 4px; font-size:11px; color:var(--zw-muted); }
+      .zw-task-path { margin:0 0 8px; line-height:1.4; }
+      .zw-task-path ol { display:flex; flex-wrap:wrap; gap:0 4px; list-style:none; padding:0; margin:0; }
+      .zw-task-path li { display:flex; align-items:center; gap:4px; min-width:0; max-width:100%; overflow-wrap:anywhere; }
+      .zw-task-path .zw-link { text-align:left; min-height:44px; }
+      .zw-task-path [aria-current] { color:var(--zw-muted); font-size:11.5px; }
+      .zw-task-children .zw-section-head { flex-wrap:wrap; }
+      .zw-child-progress { display:grid; gap:4px; padding:0 0 8px; color:var(--zw-muted); font-size:12px; }
+      .zw-child-progress progress { width:100%; height:8px; accent-color:var(--zw-accent); }
+      .zw-task-move-form, .zw-task-move-form select { min-width:0; max-width:100%; }
+      .zw-detail-head > div { min-width:0; overflow-wrap:anywhere; }
+      .zw-tree-toggle:focus-visible, .zw-task-path .zw-link:focus-visible { outline:2px solid var(--zw-accent); outline-offset:-2px; }
       .zw-task-row { display:flex; align-items:center; gap:9px; width:100%; min-height:46px; padding:7px 8px; border:0; border-bottom:1px solid #EEF2F1; background:transparent; color:var(--zw-ink); font:inherit; text-align:left; cursor:pointer; border-radius:7px; }
       .zw-task-row:hover { background:#F6F9F8; }
       .zw-task-row-compact { border:0; }
@@ -6391,6 +6640,9 @@ window.__ModuleLoader__.load({
         .zw-head-actions { justify-content:flex-start; }
         .zw-today-grid, .zw-review-grid, .zw-schedule-foot, .zw-inbox-layout, .zw-grid2 { grid-template-columns:1fr; }
         .zw-task-layout { flex-direction:column; }
+        .zw-task-layout > .zw-task-list { width:100%; }
+        .zw-task-tree { --zw-tree-step:8px; --zw-tree-control:36px; }
+        .zw-task-tree-row .zw-task-title, .zw-task-children .zw-task-title { white-space:normal; overflow-wrap:anywhere; }
         .zw-detail { width:100%; position:static; max-height:none; }
         .zw-plan-summary { grid-template-columns:1fr 1fr; }
         .zw-week { grid-template-columns:repeat(7,minmax(140px,1fr)); }

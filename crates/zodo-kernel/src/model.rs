@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -378,6 +378,12 @@ pub enum TaskStatus {
     InProgress,
     Done,
     Cancelled,
+}
+
+impl TaskStatus {
+    pub(crate) fn is_terminal(&self) -> bool {
+        matches!(self, Self::Done | Self::Cancelled)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -972,6 +978,132 @@ pub struct World {
     pub automation_rules: Vec<AutomationRule>,
 }
 
+/// Ephemeral index over the current working snapshot. Archived children remain structural edges.
+pub(crate) struct TaskTree<'a> {
+    workspace_id: &'a str,
+    by_id: HashMap<&'a str, &'a Task>,
+    children: HashMap<&'a str, Vec<&'a Task>>,
+}
+
+impl<'a> TaskTree<'a> {
+    pub(crate) fn new(world: &'a World) -> Self {
+        let mut by_id = HashMap::with_capacity(world.tasks.len());
+        let mut children: HashMap<&str, Vec<&Task>> = HashMap::new();
+        for task in &world.tasks {
+            by_id.entry(task.id.as_str()).or_insert(task);
+            if let Some(parent) = task.parent_id.as_deref() {
+                children.entry(parent).or_default().push(task);
+            }
+        }
+        Self {
+            workspace_id: &world.workspace.id,
+            by_id,
+            children,
+        }
+    }
+
+    pub(crate) fn task(&self, id: &str) -> Option<&'a Task> {
+        self.by_id.get(id).copied()
+    }
+
+    fn children_of(&self, id: &str) -> &[&'a Task] {
+        self.children.get(id).map_or(&[], Vec::as_slice)
+    }
+
+    pub(crate) fn is_leaf(&self, id: &str) -> bool {
+        self.children_of(id).is_empty()
+    }
+
+    /// A dangling/cross-workspace ancestor or a legacy cycle is not a usable destination.
+    pub(crate) fn require_active_ancestors<'b>(
+        &'b self,
+        mut parent: Option<&'b str>,
+        task_id: Option<&str>,
+    ) -> Result<()> {
+        let mut seen = HashSet::new();
+        while let Some(id) = parent {
+            if Some(id) == task_id || !seen.insert(id) {
+                return Err(ZodoError::validation(
+                    "parent relationship would create or join a cycle",
+                ));
+            }
+            let task = self
+                .task(id)
+                .filter(|task| task.workspace_id == self.workspace_id)
+                .ok_or_else(|| ZodoError::not_found("task", id))?;
+            if task.archived || task.status.is_terminal() {
+                return Err(ZodoError::validation(
+                    "cannot add or reactivate a task under a closed or archived ancestor",
+                ));
+            }
+            parent = task.parent_id.as_deref();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn require_finished_descendants(&self, task_id: &str) -> Result<()> {
+        let mut stack = self.children_of(task_id).to_vec();
+        let mut seen = HashSet::from([task_id]);
+        while let Some(task) = stack.pop() {
+            if !seen.insert(task.id.as_str()) {
+                return Err(ZodoError::validation("task descendants contain a cycle"));
+            }
+            // Archival is a visibility flag, not a substitute for finishing the work.
+            if task.workspace_id != self.workspace_id || !task.status.is_terminal() {
+                return Err(ZodoError::validation(
+                    "a parent with unfinished descendants cannot be completed, cancelled, or archived; complete or cancel its descendants first",
+                ));
+            }
+            stack.extend(self.children_of(&task.id));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn require_schedulable(&self, task: &Task) -> Result<()> {
+        if task.workspace_id != self.workspace_id || task.archived || task.status.is_terminal() {
+            return Err(ZodoError::validation(
+                "cannot schedule a closed or archived task",
+            ));
+        }
+        if !self.is_leaf(&task.id) {
+            return Err(ZodoError::validation(
+                "task is a rollup parent; schedule its leaf children instead",
+            ));
+        }
+        self.require_active_ancestors(task.parent_id.as_deref(), Some(&task.id))
+    }
+
+    /// One root-to-leaf pass for bulk scheduling/queries. Unreachable or closed branches
+    /// in legacy data grant no eligibility, but are neither modified nor removed.
+    pub(crate) fn open_leaf_tasks(&self, tasks: &'a [Task]) -> Vec<&'a Task> {
+        let mut stack: Vec<_> = tasks
+            .iter()
+            .filter(|task| task.parent_id.is_none())
+            .collect();
+        let mut leaves = HashSet::new();
+        let mut seen = HashSet::new();
+        while let Some(task) = stack.pop() {
+            if task.workspace_id != self.workspace_id
+                || task.archived
+                || task.status.is_terminal()
+                || !seen.insert(task.id.as_str())
+            {
+                continue;
+            }
+            let children = self.children_of(&task.id);
+            if children.is_empty() {
+                leaves.insert(task.id.as_str());
+            } else {
+                stack.extend(children);
+            }
+        }
+        tasks
+            .iter()
+            .filter(|task| leaves.contains(task.id.as_str()))
+            .collect()
+    }
+}
+
 impl World {
     pub fn new(workspace: Workspace) -> Self {
         Self {
@@ -1034,7 +1166,7 @@ impl World {
         !self
             .tasks
             .iter()
-            .any(|task| task.parent_id.as_deref() == Some(task_id) && !task.archived)
+            .any(|task| task.parent_id.as_deref() == Some(task_id))
     }
 
     pub fn dependencies_of(&self, task_id: &str) -> Vec<&Dependency> {
@@ -1082,28 +1214,24 @@ impl World {
     }
 
     pub fn ancestor_chain(&self, task_id: &str) -> Vec<String> {
+        let tree = TaskTree::new(self);
         let mut chain = Vec::new();
-        let mut seen = BTreeSet::new();
-        let mut current = self.task(task_id).and_then(|task| task.parent_id.clone());
+        let mut seen = HashSet::from([task_id]);
+        let mut current = tree
+            .task(task_id)
+            .and_then(|task| task.parent_id.as_deref());
         while let Some(id) = current {
-            if !seen.insert(id.clone()) {
+            if !seen.insert(id) {
                 break;
             }
-            chain.push(id.clone());
-            current = self.task(&id).and_then(|task| task.parent_id.clone());
+            chain.push(id.to_string());
+            current = tree.task(id).and_then(|task| task.parent_id.as_deref());
         }
         chain
     }
 
     pub fn open_leaf_tasks(&self) -> Vec<&Task> {
-        self.tasks
-            .iter()
-            .filter(|task| {
-                !task.archived
-                    && !matches!(task.status, TaskStatus::Done | TaskStatus::Cancelled)
-                    && self.is_leaf(&task.id)
-            })
-            .collect()
+        TaskTree::new(self).open_leaf_tasks(&self.tasks)
     }
 
     pub fn active_focus(&self) -> Option<&FocusSession> {
