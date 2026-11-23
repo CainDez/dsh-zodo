@@ -1575,49 +1575,52 @@ try {
     assertUnchanged(before, await snapshot(), conversionCollections)
   })
 
-  for (const [kind, collection, draft, form, stored] of [
-    ['goal', 'goals', { description: 'Improve the print workflow', success_criteria: 'Approve three proofs' },
-      { description: 'Improve the print workflow', success: 'Approve three proofs' },
-      { description: 'Improve the print workflow', success_criteria: 'Approve three proofs' }],
-    ['project', 'projects', { scope: 'Arrange proofs and delivery' }, { scope: 'Arrange proofs and delivery' },
-      { scope: 'Arrange proofs and delivery' }],
-    ['note', 'notes', { note_body: 'Use matte stock for the next proof.' }, { 'note-body': 'Use matte stock for the next proof.' },
-      { body: 'Use matte stock for the next proof.' }],
-    ['keep'],
-  ]) {
-    await check('Capture suggestion ' + kind + ' is preselected and needs explicit confirmation', async () => {
-      const text = 'Fixture classify raw ' + kind
-      const title = 'Fixture drafted ' + kind
-      const row = await collectForClarify(text, () => clarifyDraft(kind, collection ? { title, ...draft } : {}))
-      const before = await snapshot()
-      await row.click()
-      await startClarify()
-      await openConvert()
-      await assertConvertFields({ kind, ...(collection ? { title, ...form } : {}) })
-      assertUnchanged(before, await snapshot(), [...conversionCollections, 'inbox', 'proposals'])
-      if (kind === 'keep') {
-        await convertField('kind').selectOption('task')
-        await convertField('title').waitFor()
-        await convertField('kind').selectOption('keep')
-      }
-      await convertField('submit').click()
-      await convertDialog().waitFor({ state: 'hidden' })
-      const after = await snapshot()
-      assertUnchanged(before, after, conversionCollections.filter(key => key !== collection))
-      if (kind === 'keep') {
-        assertUnchanged(before, after, ['inbox', 'proposals'])
-        await row.waitFor()
-      } else {
-        assert.equal(after[collection].length, before[collection].length + 1)
-        const saved = after[collection].find(item => item.title === title)
-        assert.ok(saved, title)
-        for (const [key, value] of Object.entries(stored)) assert.equal(saved[key], value, key)
-        const entry = after.inbox.find(item => item.text === text)
-        assert.equal(entry.status, 'processed')
-        assert.deepEqual(entry.converted_refs, [{ kind, id: saved.id }])
-      }
-    })
+  const verifyCaptureSuggestion = async (kind, collection, draft, form, stored) => {
+    const text = 'Fixture classify raw ' + kind
+    const title = 'Fixture drafted ' + kind
+    const row = await collectForClarify(text, () => clarifyDraft(kind, collection ? { title, ...draft } : {}))
+    const before = await snapshot()
+    await row.click()
+    await startClarify()
+    await openConvert()
+    await assertConvertFields({ kind, ...(collection ? { title, ...form } : {}) })
+    assertUnchanged(before, await snapshot(), [...conversionCollections, 'inbox', 'proposals'])
+    if (kind === 'keep') {
+      await convertField('kind').selectOption('task')
+      await convertField('title').waitFor()
+      await convertField('kind').selectOption('keep')
+    }
+    await convertField('submit').click()
+    await convertDialog().waitFor({ state: 'hidden' })
+    const after = await snapshot()
+    assertUnchanged(before, after, conversionCollections.filter(key => key !== collection))
+    if (kind === 'keep') {
+      assertUnchanged(before, after, ['inbox', 'proposals'])
+      await row.waitFor()
+    } else {
+      assert.equal(after[collection].length, before[collection].length + 1)
+      const saved = after[collection].find(item => item.title === title)
+      assert.ok(saved, title)
+      for (const [key, value] of Object.entries(stored)) assert.equal(saved[key], value, key)
+      const entry = after.inbox.find(item => item.text === text)
+      assert.equal(entry.status, 'processed')
+      assert.deepEqual(entry.converted_refs, [{ kind, id: saved.id }])
+    }
   }
+  await check('Capture suggestion goal is preselected and needs explicit confirmation', () => verifyCaptureSuggestion(
+    'goal', 'goals', { description: 'Improve the print workflow', success_criteria: 'Approve three proofs' },
+    { description: 'Improve the print workflow', success: 'Approve three proofs' },
+    { description: 'Improve the print workflow', success_criteria: 'Approve three proofs' },
+  ))
+  await check('Capture suggestion project is preselected and needs explicit confirmation', () => verifyCaptureSuggestion(
+    'project', 'projects', { scope: 'Arrange proofs and delivery' }, { scope: 'Arrange proofs and delivery' },
+    { scope: 'Arrange proofs and delivery' },
+  ))
+  await check('Capture suggestion note is preselected and needs explicit confirmation', () => verifyCaptureSuggestion(
+    'note', 'notes', { note_body: 'Use matte stock for the next proof.' }, { 'note-body': 'Use matte stock for the next proof.' },
+    { body: 'Use matte stock for the next proof.' },
+  ))
+  await check('Capture suggestion keep is preselected and needs explicit confirmation', () => verifyCaptureSuggestion('keep'))
 
   await check('AI goal conversation resumes and requires explicit final confirmation', async () => {
     await nav('goals')
