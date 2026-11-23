@@ -1,6 +1,6 @@
 {
   "name": "@zodo/harness-plugin",
-  "version": "0.3.0-dev.1",
+  "version": "0.3.0-dev.2",
   "private": true,
   "description": "Zodo task workbench for DeepSeek Harness with DSH or custom model selection and independent data permissions.",
   "type": "module",

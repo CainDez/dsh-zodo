@@ -12,7 +12,7 @@ use crate::model::{
     ActivityKind, ActivityRecord, AllocationState, ApprovalGrant, CalendarEvent, CalendarSource,
     FocusSegment, FocusSession, FocusState, GoalStatus, Habit, InboxEntry, InboxStatus, Milestone,
     OccurrenceStatus, Proposal, ProposalStatus, Review, ReviewFacts, SavedQuery, SourceRef, Tag,
-    Task, TaskStatus, World,
+    Task, TaskStatus, TaskTree, World,
 };
 use crate::ops::{ChangeOp, ProjectSpec};
 use crate::planner::{PlanInput, PlanOutput, plan};
@@ -856,6 +856,10 @@ impl<'a> Application<'a> {
                         "cannot merge a task with allocations; preserve or move history explicitly first",
                     ));
                 }
+                let tree = TaskTree::new(&world);
+                for id in &duplicate_set {
+                    tree.require_finished_descendants(id)?;
+                }
                 let mut merged_tags = Vec::new();
                 for id in &duplicate_set {
                     if let Some(task) = world.task(id) {
@@ -1412,9 +1416,7 @@ impl<'a> Application<'a> {
                     let task = world
                         .task(task_id)
                         .ok_or_else(|| ZodoError::not_found("task", task_id))?;
-                    if matches!(task.status, TaskStatus::Done | TaskStatus::Cancelled) {
-                        return Err(ZodoError::validation("cannot focus on a closed task"));
-                    }
+                    TaskTree::new(&world).require_schedulable(task)?;
                 }
                 let id = self.ids.next("foc");
                 let session = FocusSession {
@@ -2664,11 +2666,10 @@ impl<'a> Application<'a> {
                     let applied = minutes.min(remaining);
                     task.actual_minutes = task.actual_minutes.saturating_add(applied);
                     task.remaining_minutes = Some(remaining.saturating_sub(applied));
-                    task.status = if task.remaining_minutes == Some(0) {
-                        TaskStatus::InProgress
-                    } else {
-                        TaskStatus::InProgress
-                    };
+                    // Settling a legacy session must not reopen a closed task.
+                    if !task.status.is_terminal() {
+                        task.status = TaskStatus::InProgress;
+                    }
                     task.updated_at = now;
                     task.version += 1;
                 }
@@ -3210,6 +3211,7 @@ fn capacity_candidates(
 }
 
 fn filter_tasks(world: &World, filter: &TaskFilter, tz: &Tz, now: DateTime<Utc>) -> Vec<Value> {
+    let tree = filter.only_leaf.then(|| TaskTree::new(world));
     let mut tasks: Vec<_> = world
         .tasks
         .iter()
@@ -3242,7 +3244,7 @@ fn filter_tasks(world: &World, filter: &TaskFilter, tz: &Tz, now: DateTime<Utc>)
                         .is_some_and(|value| value.to_lowercase().contains(&text))
             })
         })
-        .filter(|task| !filter.only_leaf || world.is_leaf(&task.id))
+        .filter(|task| tree.as_ref().is_none_or(|tree| tree.is_leaf(&task.id)))
         .filter(|task| {
             !filter.overdue
                 || task.status == TaskStatus::Open

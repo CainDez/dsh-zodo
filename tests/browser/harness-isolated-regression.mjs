@@ -1575,49 +1575,52 @@ try {
     assertUnchanged(before, await snapshot(), conversionCollections)
   })
 
-  for (const [kind, collection, draft, form, stored] of [
-    ['goal', 'goals', { description: 'Improve the print workflow', success_criteria: 'Approve three proofs' },
-      { description: 'Improve the print workflow', success: 'Approve three proofs' },
-      { description: 'Improve the print workflow', success_criteria: 'Approve three proofs' }],
-    ['project', 'projects', { scope: 'Arrange proofs and delivery' }, { scope: 'Arrange proofs and delivery' },
-      { scope: 'Arrange proofs and delivery' }],
-    ['note', 'notes', { note_body: 'Use matte stock for the next proof.' }, { 'note-body': 'Use matte stock for the next proof.' },
-      { body: 'Use matte stock for the next proof.' }],
-    ['keep'],
-  ]) {
-    await check('Capture suggestion ' + kind + ' is preselected and needs explicit confirmation', async () => {
-      const text = 'Fixture classify raw ' + kind
-      const title = 'Fixture drafted ' + kind
-      const row = await collectForClarify(text, () => clarifyDraft(kind, collection ? { title, ...draft } : {}))
-      const before = await snapshot()
-      await row.click()
-      await startClarify()
-      await openConvert()
-      await assertConvertFields({ kind, ...(collection ? { title, ...form } : {}) })
-      assertUnchanged(before, await snapshot(), [...conversionCollections, 'inbox', 'proposals'])
-      if (kind === 'keep') {
-        await convertField('kind').selectOption('task')
-        await convertField('title').waitFor()
-        await convertField('kind').selectOption('keep')
-      }
-      await convertField('submit').click()
-      await convertDialog().waitFor({ state: 'hidden' })
-      const after = await snapshot()
-      assertUnchanged(before, after, conversionCollections.filter(key => key !== collection))
-      if (kind === 'keep') {
-        assertUnchanged(before, after, ['inbox', 'proposals'])
-        await row.waitFor()
-      } else {
-        assert.equal(after[collection].length, before[collection].length + 1)
-        const saved = after[collection].find(item => item.title === title)
-        assert.ok(saved, title)
-        for (const [key, value] of Object.entries(stored)) assert.equal(saved[key], value, key)
-        const entry = after.inbox.find(item => item.text === text)
-        assert.equal(entry.status, 'processed')
-        assert.deepEqual(entry.converted_refs, [{ kind, id: saved.id }])
-      }
-    })
+  const verifyCaptureSuggestion = async (kind, collection, draft, form, stored) => {
+    const text = 'Fixture classify raw ' + kind
+    const title = 'Fixture drafted ' + kind
+    const row = await collectForClarify(text, () => clarifyDraft(kind, collection ? { title, ...draft } : {}))
+    const before = await snapshot()
+    await row.click()
+    await startClarify()
+    await openConvert()
+    await assertConvertFields({ kind, ...(collection ? { title, ...form } : {}) })
+    assertUnchanged(before, await snapshot(), [...conversionCollections, 'inbox', 'proposals'])
+    if (kind === 'keep') {
+      await convertField('kind').selectOption('task')
+      await convertField('title').waitFor()
+      await convertField('kind').selectOption('keep')
+    }
+    await convertField('submit').click()
+    await convertDialog().waitFor({ state: 'hidden' })
+    const after = await snapshot()
+    assertUnchanged(before, after, conversionCollections.filter(key => key !== collection))
+    if (kind === 'keep') {
+      assertUnchanged(before, after, ['inbox', 'proposals'])
+      await row.waitFor()
+    } else {
+      assert.equal(after[collection].length, before[collection].length + 1)
+      const saved = after[collection].find(item => item.title === title)
+      assert.ok(saved, title)
+      for (const [key, value] of Object.entries(stored)) assert.equal(saved[key], value, key)
+      const entry = after.inbox.find(item => item.text === text)
+      assert.equal(entry.status, 'processed')
+      assert.deepEqual(entry.converted_refs, [{ kind, id: saved.id }])
+    }
   }
+  await check('Capture suggestion goal is preselected and needs explicit confirmation', () => verifyCaptureSuggestion(
+    'goal', 'goals', { description: 'Improve the print workflow', success_criteria: 'Approve three proofs' },
+    { description: 'Improve the print workflow', success: 'Approve three proofs' },
+    { description: 'Improve the print workflow', success_criteria: 'Approve three proofs' },
+  ))
+  await check('Capture suggestion project is preselected and needs explicit confirmation', () => verifyCaptureSuggestion(
+    'project', 'projects', { scope: 'Arrange proofs and delivery' }, { scope: 'Arrange proofs and delivery' },
+    { scope: 'Arrange proofs and delivery' },
+  ))
+  await check('Capture suggestion note is preselected and needs explicit confirmation', () => verifyCaptureSuggestion(
+    'note', 'notes', { note_body: 'Use matte stock for the next proof.' }, { 'note-body': 'Use matte stock for the next proof.' },
+    { body: 'Use matte stock for the next proof.' },
+  ))
+  await check('Capture suggestion keep is preselected and needs explicit confirmation', () => verifyCaptureSuggestion('keep'))
 
   await check('AI goal conversation resumes and requires explicit final confirmation', async () => {
     await nav('goals')
@@ -1649,6 +1652,143 @@ try {
     const calls = JSON.stringify(fixture.llmCalls.streams)
     assert.ok(calls.includes('Fixture goal correction'))
   })
+  let taskTree
+  await check('Task tree adds at successive levels, navigates, filters and moves an entire branch', async () => {
+    const before = await snapshot()
+    const project = before.projects.find(row => row.title === 'Fixture editor project')
+    assert.ok(project)
+    const seed = async task => (await command('task.create', { task })).data.changes.find(change => change.kind === 'task')?.id
+    const root = await seed({ title: 'Fixture tree parent', project_id: project.id, estimate_minutes: 90, priority: 3 })
+    const target = await seed({ title: 'Fixture tree move target', estimate_minutes: 60 })
+    const archivedSummary = await seed({ title: 'Fixture summary with only an archived child', estimate_minutes: 20 })
+    const archivedChild = await seed({ title: 'Fixture archived leaf', parent_id: archivedSummary })
+    assert.ok(root && target && archivedSummary && archivedChild)
+    await command('task.complete', { id: archivedChild })
+    await command('task.archive', { id: archivedChild, archived: true })
+    await page.reload({ waitUntil: 'domcontentloaded' }); await connected(); await nav('tasks')
+    const detail = page.getByRole('complementary', { name: '任务详情' })
+    const row = id => page.getByTestId('task-tree-row-' + id)
+    const openTask = id => row(id).getByTestId('task-row-' + id).click()
+    const createChild = async (parentId, title, estimate) => {
+      await detail.getByTestId('task-add-child').click()
+      const editor = page.getByRole('dialog', { name: '新建子任务', exact: true })
+      await editor.getByLabel('标题', { exact: true }).fill(title)
+      assert.equal(await editor.getByLabel('预计分钟').inputValue(), '', 'new child has no invented estimate')
+      assert.equal(await editor.getByLabel('所属项目').inputValue(), project.id)
+      if (estimate !== undefined) await editor.getByLabel('预计分钟').fill(String(estimate))
+      await editor.getByTestId('task-save').click()
+      await editor.waitFor({ state: 'hidden' })
+      const child = (await snapshot()).tasks.find(task => task.title === title)
+      assert.equal(child?.parent_id, parentId)
+      assert.equal(child.project_id, project.id)
+      assert.equal(child.estimate_minutes ?? null, estimate ?? null)
+      return child.id
+    }
+    await openTask(root)
+    const branch = await createChild(root, 'Fixture tree branch', 75)
+    await detail.getByTestId('task-child-row-' + branch).click()
+    const middle = await createChild(branch, 'Fixture tree middle')
+    await detail.getByTestId('task-child-row-' + middle).click()
+    const leafTitle = 'Fixture tree uniquely searchable leaf'
+    const leaf = await createChild(middle, leafTitle, 25)
+    await detail.getByTestId('task-child-row-' + leaf).click()
+    await detail.getByRole('heading', { name: leafTitle, exact: true }).waitFor()
+    await detail.getByTestId('task-path-' + branch).click()
+    await detail.getByRole('heading', { name: 'Fixture tree branch', exact: true }).waitFor()
+    await detail.getByTestId('task-child-progress').waitFor()
+    await detail.getByRole('button', { name: '关闭', exact: true }).click()
+    const fold = page.getByTestId('task-tree-toggle-' + root)
+    await fold.click()
+    assert.equal(await fold.getAttribute('aria-expanded'), 'false')
+    await row(leaf).waitFor({ state: 'hidden' })
+    const search = page.getByPlaceholder('过滤标题…')
+    await search.fill(leafTitle)
+    for (const id of [root, branch, middle, leaf]) await row(id).waitFor()
+    await row(target).waitFor({ state: 'hidden' })
+    await search.clear()
+    await fold.click()
+    await row(leaf).waitFor()
+    const move = async destination => {
+      await detail.getByTestId('task-move').click()
+      const select = page.getByTestId('task-move-parent')
+      const choices = await select.locator('option').evaluateAll(options => options.map(option => option.value))
+      for (const invalid of [branch, middle, leaf]) assert.ok(!choices.includes(invalid), 'self and descendants are not move targets')
+      await select.selectOption(destination)
+      await page.getByTestId('task-move-submit').click()
+      await select.waitFor({ state: 'hidden' })
+    }
+    await openTask(branch)
+    await move('')
+    assert.equal((await snapshot()).tasks.find(row => row.id === branch).parent_id ?? null, null)
+    await move(target)
+    const after = await snapshot()
+    assert.deepEqual(after.allocations, before.allocations, 'creating and moving a subtree never reserves time')
+    const byId = new Map(after.tasks.map(task => [task.id, task]))
+    assert.equal(byId.get(branch).parent_id, target)
+    assert.equal(byId.get(branch).project_id, project.id, 'moving does not change project membership')
+    assert.equal(byId.get(middle).parent_id, branch)
+    assert.equal(byId.get(leaf).parent_id, middle)
+    assert.equal(byId.get(root).estimate_minutes, 90)
+    assert.equal(byId.get(branch).estimate_minutes, 75)
+    await page.setViewportSize({ width: 390, height: 844 })
+    try {
+      await page.reload({ waitUntil: 'domcontentloaded' }); await connected(); await nav('projects')
+      await page.getByTestId('project-open-' + project.id).click()
+      const projectDetail = page.getByTestId('project-detail')
+      for (const id of [target, branch, middle, leaf]) await projectDetail.getByTestId('task-tree-row-' + id).waitFor()
+      const fits = await projectDetail.evaluate(node => node.scrollWidth <= node.clientWidth + 1)
+      assert.ok(fits, 'the task tree does not widen the project view on a narrow screen')
+      await openTask(leaf)
+      await detail.getByRole('heading', { name: leafTitle, exact: true }).waitFor()
+      await detail.getByTestId('task-add-child').waitFor()
+      await screenshot('task-tree-narrow')
+    } finally { await page.setViewportSize({ width: 1440, height: 1000 }) }
+    taskTree = { target, branch, middle, leaf, archivedSummary }
+  })
+
+  await check('Strict scheduling offers only leaves and reserves their time after approval', async () => {
+    assert.ok(taskTree, 'task-tree UI prerequisite')
+    const { target, branch, middle, leaf, archivedSummary } = taskTree
+    const baseline = await snapshot()
+    const capacityTitle = 'Fixture task tree scheduling capacity'
+    const day = shanghaiDay(0)
+    // Add a synthetic future capacity on a visible date, independent of earlier cases.
+    const next = shanghaiDay(1)
+    const start = shanghaiInstant(next, '12:00'), end = shanghaiInstant(next, '12:25')
+    await command('capacity.create', { capacity: { title: capacityTitle, start, end, capacity_minutes: 25, locked: false } })
+    const before = await snapshot()
+    assert.deepEqual(before.allocations, baseline.allocations)
+    const capacity = before.capacity_blocks.find(row => row.title === capacityTitle)
+    assert.ok(capacity)
+    await page.reload({ waitUntil: 'domcontentloaded' }); await connected(); await nav('schedule')
+    // Any visible date can open the strict editor; exact date and capacity are then selected explicitly.
+    await page.getByTestId('schedule-slot-' + day).click()
+    const slot = page.getByRole('dialog', { name: '安排任务时段' })
+    const taskSelect = slot.getByTestId('schedule-slot-task')
+    const options = await taskSelect.locator('option').evaluateAll(rows => rows.map(row => row.value))
+    for (const id of [target, branch, middle, archivedSummary]) {
+      assert.ok(!options.includes(id), 'a summary task is never a scheduling option, even with only archived children')
+    }
+    assert.ok(options.includes(leaf))
+    await taskSelect.selectOption(leaf)
+    await slot.getByTestId('schedule-slot-start').fill(next + 'T12:00')
+    await slot.getByTestId('schedule-slot-end').fill(next + 'T12:25')
+    await slot.getByTestId('schedule-slot-capacity').selectOption(capacity.id)
+    const { data: { proposal } } = await clickForCommand(slot.getByTestId('schedule-slot-preview'), 'proposal.create')
+    assert.equal(proposal.status, 'validated')
+    assert.equal(proposal.operations.length, 1)
+    assert.equal(proposal.operations[0].payload.allocation.task_id, leaf)
+    const review = page.getByRole('dialog', { name: '检查提案' })
+    await review.waitFor()
+    assert.deepEqual((await snapshot()).allocations, before.allocations, 'preview does not allocate')
+    await review.getByTestId('plan-apply').click()
+    await review.waitFor({ state: 'hidden' })
+    const after = await snapshot()
+    const created = after.allocations.filter(row => !before.allocations.some(old => old.id === row.id))
+    assert.deepEqual(created.map(({ task_id, minutes }) => [task_id, minutes]), [[leaf, 25]])
+    assert.deepEqual(after.allocations.filter(row => row.id !== created[0].id), before.allocations, 'existing allocations stay unchanged')
+  })
+
   await check('No client JavaScript errors or external network', async () => {
     assert.deepEqual(report.pageErrors, [])
     assert.deepEqual(report.unexpectedNetwork, [])

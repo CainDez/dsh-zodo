@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, ZodoError};
 use crate::model::{
-    ActivityKind, Allocation, AllocationState, CapacityBlock, Commitment, Dependency, Goal,
-    GoalEvidence, GoalStatus, Note, Project, ProjectStatus, Reminder, ReminderStatus, SourceRef,
-    Tag, Task, TaskStatus, World,
+    ActivityKind, Allocation, AllocationState, CapacityBlock, Commitment, Dependency, FocusState,
+    Goal, GoalEvidence, GoalStatus, Note, Project, ProjectStatus, Reminder, ReminderStatus,
+    SourceRef, Tag, Task, TaskStatus, TaskTree, World,
 };
 use crate::ops::{AllocationDraft, ChangeOp, UnplacedWork};
 use crate::ports::{IdSource, NewEffect};
@@ -100,8 +100,12 @@ pub fn apply_change(
                     outcome,
                 )?,
                 TaskStatus::Cancelled => cancel_task(world, id, note.clone(), now, outcome)?,
-                TaskStatus::Open => reopen_task(world, id, now, outcome)?,
+                TaskStatus::Open => {
+                    require_task_reactivation(world, id, true)?;
+                    reopen_task(world, id, now, outcome)?;
+                }
                 TaskStatus::InProgress => {
+                    require_task_reactivation(world, id, true)?;
                     let task = world
                         .task_mut(id)
                         .ok_or_else(|| ZodoError::not_found("task", id))?;
@@ -113,6 +117,11 @@ pub fn apply_change(
             outcome.record("task", id, "status_changed");
         }
         ChangeOp::TaskArchive { id, archived } => {
+            if *archived {
+                TaskTree::new(world).require_finished_descendants(id)?;
+            } else {
+                require_task_reactivation(world, id, false)?;
+            }
             let task = world
                 .task_mut(id)
                 .ok_or_else(|| ZodoError::not_found("task", id))?;
@@ -395,6 +404,11 @@ pub fn apply_change(
             outcome.record("capacity_block", id, "removed");
         }
         ChangeOp::AllocationCreate { allocation } => {
+            let tree = TaskTree::new(world);
+            let task = tree
+                .task(&allocation.task_id)
+                .ok_or_else(|| ZodoError::not_found("task", &allocation.task_id))?;
+            tree.require_schedulable(task)?;
             let id = create_allocation(world, allocation, &source, now, ids)?;
             outcome.record("allocation", &id, "created");
         }
@@ -572,7 +586,8 @@ fn create_task(
     tz: Tz,
     outcome: &mut ApplyOutcome,
 ) -> Result<String> {
-    validate_task_relations(world, spec, None)?;
+    validate_task_project(world, spec)?;
+    validate_new_parent(world, spec.parent_id.as_deref(), None, now)?;
     let id = ids.next("tsk");
     let remaining = spec.estimate_minutes;
     world.tasks.push(Task {
@@ -617,32 +632,31 @@ fn update_task(
     ids: &dyn IdSource,
     outcome: &mut ApplyOutcome,
 ) -> Result<()> {
-    validate_task_relations(world, spec, Some(id))?;
-    let (completed, has_children) = {
-        let task = world
-            .task(id)
-            .ok_or_else(|| ZodoError::not_found("task", id))?;
-        (
-            task.status == TaskStatus::Done,
-            !world.children_of(id).is_empty(),
-        )
-    };
-    if completed && has_children {
-        return Err(ZodoError::validation(
-            "a completed parent with open children cannot be edited",
-        ));
+    validate_task_project(world, spec)?;
+    let current = world
+        .task(id)
+        .filter(|task| task.workspace_id == world.workspace.id)
+        .ok_or_else(|| ZodoError::not_found("task", id))?;
+    // Do not reinterpret unchanged legacy links as new writes. Detaching a legacy task is allowed.
+    if current.parent_id != spec.parent_id {
+        validate_new_parent(world, spec.parent_id.as_deref(), Some(id), now)?;
     }
     let target = world
         .task_mut(id)
         .ok_or_else(|| ZodoError::not_found("task", id))?;
-    let estimate = spec.estimate_minutes;
-    let consumed = target.actual_minutes;
+    if target.estimate_minutes != spec.estimate_minutes {
+        target.estimate_minutes = spec.estimate_minutes;
+        target.remaining_minutes = spec
+            .estimate_minutes
+            .map(|value| value.saturating_sub(target.actual_minutes));
+        outcome
+            .warnings
+            .push("editing the estimate recalculates remaining minutes".to_string());
+    }
     target.title = spec.title.trim().to_string();
     target.description = spec.description.clone();
     target.project_id = spec.project_id.clone();
     target.parent_id = spec.parent_id.clone();
-    target.estimate_minutes = estimate;
-    target.remaining_minutes = estimate.map(|value| value.saturating_sub(consumed));
     target.priority = spec.priority;
     target.target_due = spec.effective_target_due();
     target.hard_deadline = spec.effective_hard_deadline(tz);
@@ -652,51 +666,67 @@ fn update_task(
     target.updated_at = now;
     target.version += 1;
     ensure_tags(world, &spec.tags, now, ids);
-    outcome
-        .warnings
-        .push("editing the estimate recalculates remaining minutes".to_string());
     Ok(())
 }
 
-fn validate_task_relations(
-    world: &World,
-    spec: &crate::ops::TaskSpec,
-    current_id: Option<&str>,
-) -> Result<()> {
-    if let Some(project_id) = &spec.project_id {
-        if world.project(project_id).is_none() {
-            return Err(ZodoError::not_found("project", project_id));
-        }
-    }
-    if let Some(parent_id) = &spec.parent_id {
-        if current_id == Some(parent_id.as_str()) {
-            return Err(ZodoError::validation("a task cannot be its own parent"));
-        }
-        if world.task(parent_id).is_none() {
-            return Err(ZodoError::not_found("task", parent_id));
-        }
-        if let Some(current_id) = current_id {
-            let mut stack = vec![parent_id.clone()];
-            let mut seen = BTreeSet::new();
-            while let Some(candidate) = stack.pop() {
-                if candidate == current_id {
-                    return Err(ZodoError::validation(
-                        "parent relationship would create a cycle",
-                    ));
-                }
-                if !seen.insert(candidate.clone()) {
-                    continue;
-                }
-                if let Some(parent) = world
-                    .task(&candidate)
-                    .and_then(|task| task.parent_id.clone())
-                {
-                    stack.push(parent);
-                }
-            }
+fn validate_task_project(world: &World, spec: &crate::ops::TaskSpec) -> Result<()> {
+    if let Some(id) = &spec.project_id {
+        if !world
+            .project(id)
+            .is_some_and(|project| project.workspace_id == world.workspace.id)
+        {
+            return Err(ZodoError::not_found("project", id));
         }
     }
     Ok(())
+}
+
+fn validate_new_parent(
+    world: &World,
+    parent: Option<&str>,
+    id: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<()> {
+    let Some(parent) = parent else {
+        return Ok(());
+    };
+    let tree = TaskTree::new(world);
+    tree.require_active_ancestors(Some(parent), id)?;
+    if tree.is_leaf(parent) {
+        if world.focus_sessions.iter().any(|session| {
+            session.task_id.as_deref() == Some(parent)
+                && matches!(session.state, FocusState::Running | FocusState::Paused)
+        }) {
+            return Err(ZodoError::validation(
+                "finish or cancel the active focus before adding the first child",
+            ));
+        }
+        if world.allocations.iter().any(|allocation| {
+            allocation.task_id == parent
+                && (allocation.state == AllocationState::Started
+                    || (allocation.state == AllocationState::Planned
+                        && allocation.reserves_work_at(now)))
+        }) {
+            return Err(ZodoError::validation(
+                "resolve outstanding allocations before adding the first child",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn require_task_reactivation(world: &World, id: &str, require_unarchived: bool) -> Result<()> {
+    let tree = TaskTree::new(world);
+    let task = tree
+        .task(id)
+        .filter(|task| task.workspace_id == world.workspace.id)
+        .ok_or_else(|| ZodoError::not_found("task", id))?;
+    if require_unarchived && task.archived {
+        return Err(ZodoError::validation(
+            "restore the archived task before reopening it",
+        ));
+    }
+    tree.require_active_ancestors(task.parent_id.as_deref(), Some(id))
 }
 
 fn ensure_tags(world: &mut World, tags: &[String], now: DateTime<Utc>, ids: &dyn IdSource) {
@@ -739,15 +769,9 @@ fn complete_task(
     ids: &dyn IdSource,
     outcome: &mut ApplyOutcome,
 ) -> Result<()> {
-    let has_open_children = world
-        .children_of(id)
-        .into_iter()
-        .any(|child| !matches!(child.status, TaskStatus::Done | TaskStatus::Cancelled));
-    if has_open_children {
-        return Err(ZodoError::validation(
-            "a parent with open children cannot be completed; complete or cancel the children explicitly",
-        ));
-    }
+    let tree = TaskTree::new(world);
+    tree.require_finished_descendants(id)?;
+    let is_leaf = tree.is_leaf(id);
     let task = world
         .task_mut(id)
         .ok_or_else(|| ZodoError::not_found("task", id))?;
@@ -757,26 +781,30 @@ fn complete_task(
     task.updated_at = now;
     task.version += 1;
     let _ = note;
-    // Planned future work is no longer useful, but executed and locked facts remain.
-    let ids_to_remove: Vec<String> = world
-        .allocations
-        .iter()
-        .filter(|allocation| {
-            allocation.task_id == id
-                && !allocation.locked
-                && allocation.state == AllocationState::Planned
-                && allocation.end > now
-        })
-        .map(|allocation| allocation.id.clone())
-        .collect();
-    for allocation_id in ids_to_remove {
-        world
-            .allocations
-            .retain(|allocation| allocation.id != allocation_id);
-        outcome.record("allocation", &allocation_id, "removed_with_task");
+    // Preserve pre-existing rollup allocations, as well as executed and locked facts.
+    if is_leaf {
+        clear_future_planned_allocations(world, id, now, outcome);
     }
     crate::recurrence::schedule_after_completion(world, id, actor_id, channel, now, ids, outcome)?;
     Ok(())
+}
+
+fn clear_future_planned_allocations(
+    world: &mut World,
+    id: &str,
+    now: DateTime<Utc>,
+    outcome: &mut ApplyOutcome,
+) {
+    world.allocations.retain(|allocation| {
+        let remove = allocation.task_id == id
+            && !allocation.locked
+            && allocation.state == AllocationState::Planned
+            && allocation.end > now;
+        if remove {
+            outcome.record("allocation", &allocation.id, "removed_with_task");
+        }
+        !remove
+    });
 }
 
 fn cancel_task(
@@ -786,28 +814,17 @@ fn cancel_task(
     now: DateTime<Utc>,
     outcome: &mut ApplyOutcome,
 ) -> Result<()> {
+    let tree = TaskTree::new(world);
+    tree.require_finished_descendants(id)?;
+    let is_leaf = tree.is_leaf(id);
     let task = world
         .task_mut(id)
         .ok_or_else(|| ZodoError::not_found("task", id))?;
     task.status = TaskStatus::Cancelled;
     task.updated_at = now;
     task.version += 1;
-    let ids_to_remove: Vec<String> = world
-        .allocations
-        .iter()
-        .filter(|allocation| {
-            allocation.task_id == id
-                && !allocation.locked
-                && allocation.state == AllocationState::Planned
-                && allocation.end > now
-        })
-        .map(|allocation| allocation.id.clone())
-        .collect();
-    for allocation_id in ids_to_remove {
-        world
-            .allocations
-            .retain(|allocation| allocation.id != allocation_id);
-        outcome.record("allocation", &allocation_id, "removed_with_task");
+    if is_leaf {
+        clear_future_planned_allocations(world, id, now, outcome);
     }
     Ok(())
 }
@@ -821,7 +838,7 @@ fn reopen_task(
     let task = world
         .task_mut(id)
         .ok_or_else(|| ZodoError::not_found("task", id))?;
-    if task.status != TaskStatus::Done && task.status != TaskStatus::Cancelled {
+    if !task.status.is_terminal() {
         return Err(ZodoError::validation(
             "only a done or cancelled task can be reopened",
         ));
@@ -983,7 +1000,8 @@ fn validate_scheduled_allocation(
             "task changed; refresh and create a new scheduling proposal",
         ));
     }
-    if !world.is_leaf(&task.id) || task.blocked_manual {
+    TaskTree::new(world).require_schedulable(task)?;
+    if task.blocked_manual {
         return Err(ZodoError::validation(
             "only an unblocked leaf task can be scheduled",
         ));
@@ -1208,6 +1226,16 @@ fn update_allocation(
         .ok_or_else(|| ZodoError::not_found("allocation", id))?
         .clone();
     require_manual_allocation_editable(&existing, now)?;
+    let tree = TaskTree::new(world);
+    if !tree.is_leaf(&existing.task_id) {
+        return Err(ZodoError::validation(
+            "a rollup parent's historical allocation cannot be rescheduled",
+        ));
+    }
+    let task = tree
+        .task(&draft.task_id)
+        .ok_or_else(|| ZodoError::not_found("task", &draft.task_id))?;
+    tree.require_schedulable(task)?;
     if draft.start <= now {
         return Err(ZodoError::validation(
             "new allocation start must be in the future",
@@ -1380,6 +1408,23 @@ fn apply_plan(
             "legacy plan has no deletion binding; regenerate plan and approve its new preview",
         )
     })?;
+    let tree = TaskTree::new(world);
+    let eligible: BTreeSet<_> = tree
+        .open_leaf_tasks(&world.tasks)
+        .into_iter()
+        .map(|task| task.id.as_str())
+        .collect();
+    for id in replace_task_ids
+        .iter()
+        .chain(assignments.iter().map(|draft| &draft.task_id))
+    {
+        if !eligible.contains(id.as_str()) {
+            let task = tree
+                .task(id)
+                .ok_or_else(|| ZodoError::not_found("task", id))?;
+            tree.require_schedulable(task)?;
+        }
+    }
     let removed = plan_removal_ids(world, replace_task_ids, now);
     let mut expected = expected.to_vec();
     expected.sort();

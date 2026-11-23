@@ -4,7 +4,7 @@ use chrono::{DateTime, Datelike, Duration, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, ZodoError};
-use crate::model::{AllocationState, World};
+use crate::model::{AllocationState, TaskTree, World};
 use crate::ops::{AllocationDraft, UnplacedWork};
 
 #[derive(Debug, Clone)]
@@ -47,37 +47,24 @@ pub fn plan(world: &World, input: &PlanInput, now: DateTime<Utc>) -> Result<Plan
             "planning horizon end must be after start",
         ));
     }
+    let tree = TaskTree::new(world);
+    let eligible = tree.open_leaf_tasks(&world.tasks);
     let mut replace_task_ids: Vec<String> = if input.task_ids.is_empty() {
-        world
-            .open_leaf_tasks()
-            .into_iter()
-            .map(|task| task.id.clone())
-            .collect()
+        eligible.into_iter().map(|task| task.id.clone()).collect()
     } else {
+        let eligible: BTreeSet<_> = eligible.into_iter().map(|task| task.id.as_str()).collect();
+        for id in &input.task_ids {
+            if !eligible.contains(id.as_str()) {
+                let task = tree
+                    .task(id)
+                    .ok_or_else(|| ZodoError::not_found("task", id))?;
+                tree.require_schedulable(task)?;
+            }
+        }
         input.task_ids.clone()
     };
     replace_task_ids.sort();
     replace_task_ids.dedup();
-    for id in &replace_task_ids {
-        let task = world
-            .task(id)
-            .ok_or_else(|| ZodoError::not_found("task", id))?;
-        if task.archived
-            || matches!(
-                task.status,
-                crate::model::TaskStatus::Done | crate::model::TaskStatus::Cancelled
-            )
-        {
-            return Err(ZodoError::validation(format!(
-                "task {id} is closed and cannot be planned"
-            )));
-        }
-        if !world.is_leaf(id) {
-            return Err(ZodoError::validation(format!(
-                "task {id} is a rollup parent; schedule its leaf children instead"
-            )));
-        }
-    }
     let scope: BTreeSet<&str> = replace_task_ids.iter().map(String::as_str).collect();
     let mut removed_allocations: BTreeSet<String> = BTreeSet::new();
     if input.move_unlocked {
